@@ -492,13 +492,11 @@ class GenogramCanvas {
             this.ctx.lineWidth = style.width + 4;
             this.ctx.globalAlpha = 0.3;
             if (category === 'marriage') {
-                const fromPoint = fromPerson.getConnectionPoint('bottom');
-                const toPoint = toPerson.getConnectionPoint('bottom');
-                const midY = Math.min(fromPoint.y, toPoint.y) + 40;
+                // 選取高亮：直接連結中點（左右）
+                const fromPoint = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
+                const toPoint = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
                 this.ctx.beginPath();
                 this.ctx.moveTo(fromPoint.x, fromPoint.y);
-                this.ctx.lineTo(fromPoint.x, midY);
-                this.ctx.lineTo(toPoint.x, midY);
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else {
@@ -535,9 +533,14 @@ class GenogramCanvas {
             }
             this.drawStandardLine(fromPoint, toPoint, style);
         } else if (category === 'marriage') {
-            // 婚姻關係：從底部連接 (呈現倒U型)
-            fromPoint = fromPerson.getConnectionPoint('bottom');
-            toPoint = toPerson.getConnectionPoint('bottom');
+            // 婚姻關係：從側面連接 (呈現左右直線)
+            if (fromPerson.x < toPerson.x) {
+                fromPoint = fromPerson.getConnectionPoint('right');
+                toPoint = toPerson.getConnectionPoint('left');
+            } else {
+                fromPoint = fromPerson.getConnectionPoint('left');
+                toPoint = toPerson.getConnectionPoint('right');
+            }
             this.drawMarriageLine(fromPoint, toPoint, style);
         } else {
             // 情感關係：使用智慧路徑
@@ -578,22 +581,19 @@ class GenogramCanvas {
     drawMarriageLine(from, to, style) {
         this.ctx.setLineDash(this.getLineDash(style.pattern));
 
-        // 繪製主線（ㄇ字型）
-        const midX = (from.x + to.x) / 2;
-        const midY = Math.min(from.y, to.y) + 40; // 往下延伸的高度
+        // 繪製主線（左右直線）
+        const centerX = (from.x + to.x) / 2;
+        const centerY = (from.y + to.y) / 2;
 
         this.ctx.beginPath();
         this.ctx.moveTo(from.x, from.y);
-        this.ctx.lineTo(from.x, midY);
-        this.ctx.lineTo(to.x, midY);
         this.ctx.lineTo(to.x, to.y);
         this.ctx.stroke();
 
         this.ctx.setLineDash([]); // 重置虛線以繪製裝飾
 
         // 裝飾
-        const centerX = midX;
-        const centerY = midY;
+        // 使用前面計算好的 centerX, centerY
 
         if (style.decoration === 'slash') {
             this.drawSlash(centerX, centerY);
@@ -1649,6 +1649,12 @@ class GenogramCanvas {
             ctx.moveTo(x, y + 5);
             ctx.lineTo(x + width, y + 5);
             ctx.stroke();
+        } else if (item.label === '結婚' || item.label === '同居' || item.label === '訂婚') {
+            // 直線圖例 (配合新的「左右」風格)
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
+            ctx.stroke();
         } else if (item.style === 'broken') {
             // 中斷線
             ctx.setLineDash([]);
@@ -1820,9 +1826,9 @@ class GenogramCanvas {
                 );
 
                 if (marriageRel) {
-                    // 從婚姻線中間往下
+                    // 從婚姻線中間往下 (現在婚姻線是左右直線，從中心出發)
                     sourceX = (p1.x + p2.x) / 2;
-                    sourceY = Math.min(p1.y, p2.y) + this.personSize / 2 + 40; // 配合 drawMarriageLine 的 midY (bottom + 40)
+                    sourceY = (p1.y + p2.y) / 2;
                 } else {
                     // 無婚姻線，假定為共同父母
                     // 畫一條隱形連接線 (虛線)
