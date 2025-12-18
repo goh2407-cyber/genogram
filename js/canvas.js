@@ -1483,10 +1483,10 @@ class GenogramCanvas {
         const contentWidth = maxX - minX + padding * 2;
         const contentHeight = maxY - minY + padding * 2;
 
-        // ===== 圖例設定 =====
-        const legendWidth = 170;
-        const legendPadding = 20;
-        const legendHeight = 520;
+        // ===== 圖例設定 (配合目前 20+ 種關係) =====
+        const legendWidth = 220;
+        const legendPadding = 40;
+        const legendHeight = 800; // 增加高度以容納目前所有 20+ 個項目
 
         // 總畫布尺寸（內容 + 圖例）
         const totalWidth = contentWidth + legendWidth + legendPadding;
@@ -1607,7 +1607,7 @@ class GenogramCanvas {
         };
 
         // 計算總高度
-        const totalWidth = 200; // 稍微加寬以容納文字
+        const totalWidth = 210; // 稍微加寬以容納文字
         const totalHeight = (legendData.marriage.items.length + legendData.emotional.items.length) * lineHeight +
             titleFontSize * 2 + sectionGap * 3 + padding * 2;
 
