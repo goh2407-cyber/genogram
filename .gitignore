@@ -1,3 +1,17 @@
-"*.json" 
-"*.7z" 
-"test_*" 
+# 資料與備份
+*.json
+*.7z
+*.md
+!README.md
+!manifest.json
+
+# 測試與紀錄
+test_*
+line_check.md
+.system_generated/
+app_icon_*.png
+
+# OS 檔案
+Thumbs.db
+Desktop.ini
+.DS_Store
