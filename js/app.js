@@ -156,7 +156,8 @@ class GenogramApp {
         // 關係類型按鈕
         document.querySelectorAll('.rel-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const type = e.target.dataset.type;
+                // 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)
+                const type = e.currentTarget.dataset.type;
                 this.createRelationship(type);
             });
         });
@@ -1119,6 +1120,7 @@ class GenogramApp {
      * 建立關係
      */
     createRelationship(type) {
+        if (!type || type === 'undefined') return; // 安全檢查：防止 undefined 類型
         if (!this.connectingFrom || !this.connectingTo) return;
 
         const fromId = this.connectingFrom.person.id;

@@ -824,12 +824,14 @@ class GenogramCanvas {
             } else if (style.decoration === 'diagonal-bars') {
                 this.drawDiagonalBars(sx, sy, ex, ey);
             } else if (style.decoration === 'cross-bars') {
-                // Hostile: 實線加十字
-                // 在中點畫十字
-                this.drawCrossBar(midPt.x, midPt.y);
+                // 敵對 (Hostile): 實線加兩個叉號
+                const p1 = this.getPointInfoAtDistance(path, totalLen * 0.35);
+                const p2 = this.getPointInfoAtDistance(path, totalLen * 0.65);
+                this.drawCrossBar(p1.point.x, p1.point.y);
+                this.drawCrossBar(p2.point.x, p2.point.y);
             } else if (style.decoration === 'vertical-bar') {
-                // Cutoff legacy decoration check
-                // 但 cutoff 主要是 pattern 'cutoff-line'
+                // 斷絕 (Cutoff): 改用 drawGapBarLine
+                this.drawGapBarLine(sx, sy, ex, ey);
             }
         }
     }
@@ -1063,22 +1065,19 @@ class GenogramCanvas {
     }
 
     /**
-     * 繪製十字 (用於 Hostile)
+     * 繪製交叉標記 (用於 敵對)
      */
     drawCrossBar(x, y) {
-        const s = 8;
+        const s = 5;
         this.ctx.save();
         this.ctx.setLineDash([]);
         this.ctx.lineWidth = 2;
-        // 垂直線
         this.ctx.beginPath();
-        this.ctx.moveTo(x, y - s);
-        this.ctx.lineTo(x, y + s);
-        this.ctx.stroke();
-        // 水平線
-        this.ctx.beginPath();
-        this.ctx.moveTo(x - s, y);
-        this.ctx.lineTo(x + s, y);
+        // X 標記
+        this.ctx.moveTo(x - s, y - s);
+        this.ctx.lineTo(x + s, y + s);
+        this.ctx.moveTo(x + s, y - s);
+        this.ctx.lineTo(x - s, y + s);
         this.ctx.stroke();
         this.ctx.restore();
     }
@@ -1157,7 +1156,7 @@ class GenogramCanvas {
     }
 
     /**
-     * 繪製帶有斷點和豎線的線 (Cutoff)
+     * 繪製帶有斷點和雙豎線的線 (斷絕/冷戰)
      */
     drawGapBarLine(x1, y1, x2, y2) {
         const midX = (x1 + x2) / 2;
@@ -1165,7 +1164,7 @@ class GenogramCanvas {
         const dx = x2 - x1;
         const dy = y2 - y1;
         const angle = Math.atan2(dy, dx);
-        const gapSize = 20;
+        const gapSize = 24;
 
         // 計算斷開點
         const gapStartX = midX - Math.cos(angle) * (gapSize / 2);
@@ -1184,33 +1183,24 @@ class GenogramCanvas {
         this.ctx.lineTo(x2, y2);
         this.ctx.stroke();
 
-        // 畫中間的豎線（阻斷）
+        // 畫中間的兩條豎線 (||)
         const barSize = 10;
-        const barNx = -Math.sin(angle) * barSize;
-        const barNy = Math.cos(angle) * barSize; // 其實垂直向量
-
-        // 不對，前面垂直向量計算有誤，重算
-        // 垂直向量 (vx, vy) = (-dy, dx) normalized
+        const barDist = 4; // 兩條線的距離
         const len = Math.sqrt(dx * dx + dy * dy);
         const perpX = -dy / len * barSize;
         const perpY = dx / len * barSize;
 
-        // 在 gapStart 和 gapEnd 各畫一條豎線，或者中間畫一條？
-        // Cutoff 通常是 gap 中間有一條線，或者兩段線中間斷開。
-        // 用戶提供的圖示是 "Cutoff/Estranged":  □ -- || -- ○ (兩條豎線)
-        // 讓我畫兩條豎線在 gap 中間
+        const drawBarAt = (dist) => {
+            const bx = midX + Math.cos(angle) * dist;
+            const by = midY + Math.sin(angle) * dist;
+            this.ctx.beginPath();
+            this.ctx.moveTo(bx - perpX, by - perpY);
+            this.ctx.lineTo(bx + perpX, by + perpY);
+            this.ctx.stroke();
+        };
 
-        const bar1X = midX - Math.cos(angle) * 3;
-        const bar1Y = midY - Math.sin(angle) * 3;
-        const bar2X = midX + Math.cos(angle) * 3;
-        const bar2Y = midY + Math.sin(angle) * 3;
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(bar1X + perpX, bar1Y + perpY);
-        this.ctx.lineTo(bar1X - perpX, bar1Y - perpY);
-        this.ctx.moveTo(bar2X + perpX, bar2Y + perpY);
-        this.ctx.lineTo(bar2X - perpX, bar2Y - perpY);
-        this.ctx.stroke();
+        drawBarAt(-barDist);
+        drawBarAt(barDist);
     }
 
     /**
@@ -1587,20 +1577,20 @@ class GenogramCanvas {
             emotional: {
                 title: '情感關係',
                 items: [
-                    { label: '正向關係', style: 'solid', color: '#4CAF50', lines: 1 },
-                    { label: '親密', style: 'solid', color: '#4CAF50', lines: 2 },
-                    { label: '過度親密', style: 'solid', color: '#4CAF50', lines: 3 },
+                    { label: '正向關係', style: 'solid', color: '#4caf50', lines: 1 },
+                    { label: '親密', style: 'solid', color: '#4caf50', lines: 2 },
+                    { label: '過度親密', style: 'solid', color: '#4caf50', lines: 3 },
                     { label: '崇拜', style: 'circle-arrow', color: '#28a745' },
                     { label: '關注', style: 'arrow', color: '#4a90d9' },
                     { label: '冷漠', style: 'dashed', color: '#9E9E9E' },
                     { label: '疏離', style: 'dotted', color: '#666666' },
                     { label: '衝突', style: 'wave', color: '#E53935' },
-                    { label: '敵對', style: 'cross', color: '#FF9800' },
+                    { label: '敵對', style: 'cross', color: '#ff9800' },
                     { label: '暴力', style: 'wave', color: '#E53935', lines: 2 },
                     { label: '虐待', style: 'wave', color: '#5C6BC0' },
-                    { label: '操控', style: 'arrow-wave', color: '#ba68c8' },
+                    { label: '操控', style: 'arrow-wave', color: '#fd7e14' },
                     { label: '控制', style: 'box-arrow', color: '#dc3545' },
-                    { label: '斷絕/冷戰', style: 'broken', color: '#666666' },
+                    { label: '斷絕/冷戰', style: 'broken', color: '#333333' },
                     { label: '衝突又親密', style: 'conflict-close' }
                 ]
             }
@@ -1714,18 +1704,24 @@ class GenogramCanvas {
             ctx.lineTo(x + width, y);
             ctx.stroke();
         } else if (item.style === 'broken') {
-            // 中斷線
+            // 斷絕 (Cutoff): 中間斷開加雙豎線 (||)
             ctx.setLineDash([]);
+            const gapSize = 16;
             ctx.beginPath();
             ctx.moveTo(x, y);
-            ctx.lineTo(x + width * 0.35, y);
-            ctx.moveTo(x + width * 0.65, y);
+            ctx.lineTo(x + width / 2 - gapSize / 2, y);
+            ctx.moveTo(x + width / 2 + gapSize / 2, y);
             ctx.lineTo(x + width, y);
             ctx.stroke();
-            // 中斷標記
+
+            // 雙豎線
+            const barDist = 3;
+            const barSize = 5;
             ctx.beginPath();
-            ctx.moveTo(x + width * 0.42, y - 5);
-            ctx.lineTo(x + width * 0.58, y + 5);
+            ctx.moveTo(x + width / 2 - barDist, y - barSize);
+            ctx.lineTo(x + width / 2 - barDist, y + barSize);
+            ctx.moveTo(x + width / 2 + barDist, y - barSize);
+            ctx.lineTo(x + width / 2 + barDist, y + barSize);
             ctx.stroke();
         } else if (item.style === 'box-arrow') {
             ctx.beginPath();
@@ -1771,22 +1767,25 @@ class GenogramCanvas {
             ctx.textAlign = 'center';
             ctx.fillText(item.symbol, x + width - 5, y + 5);
         } else if (item.style === 'cross') {
-            // 帶叉的線
+            // 敵對 (Hostile): 繪製兩個交叉標記
             ctx.setLineDash([]);
-            for (let i = 0; i < lines; i++) {
-                ctx.beginPath();
-                ctx.moveTo(x, startY + i * gap);
-                ctx.lineTo(x + width, startY + i * gap);
-                ctx.stroke();
-            }
-            // 叉叉
-            const crossX = x + width / 2;
             ctx.beginPath();
-            ctx.moveTo(crossX - 5, y - 5);
-            ctx.lineTo(crossX + 5, y + 5);
-            ctx.moveTo(crossX + 5, y - 5);
-            ctx.lineTo(crossX - 5, y + 5);
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
             ctx.stroke();
+
+            const drawInnerCrossAt = (cx) => {
+                const s = 4;
+                ctx.beginPath();
+                ctx.moveTo(cx - s, y - s);
+                ctx.lineTo(cx + s, y + s);
+                ctx.moveTo(cx + s, y - s);
+                ctx.lineTo(cx - s, y + s);
+                ctx.stroke();
+            };
+
+            drawInnerCrossAt(x + width * 0.35);
+            drawInnerCrossAt(x + width * 0.65);
         } else {
             // 普通直線
             for (let i = 0; i < lines; i++) {
@@ -2196,14 +2195,11 @@ class GenogramCanvas {
                 points.push(toPoint);
             }
         } else if (category === 'marriage') {
-            // 婚姻關係：ㄇ字型路徑 (從底部)
-            const fromPoint = fromPerson.getConnectionPoint('bottom');
-            const toPoint = toPerson.getConnectionPoint('bottom');
-            const midY = Math.min(fromPoint.y, toPoint.y) + 40;
-            points.push(fromPoint);
-            points.push({ x: fromPoint.x, y: midY });
-            points.push({ x: toPoint.x, y: midY });
-            points.push(toPoint);
+            // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
+            const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
+            const toPt = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
+            points.push(fromPt);
+            points.push(toPt);
         } else {
             // 情感關係：直線路徑
             const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);
@@ -2231,13 +2227,17 @@ class GenogramCanvas {
      */
     isPointOnRelationship(px, py, fromPerson, toPerson, relationship, tolerance = 10) {
         const path = this.getRelationshipPath(fromPerson, toPerson, relationship);
+        const category = relationship.getCategory();
+
+        // 針對婚姻線增加一點點點擊範圍 (從 10 改為 15)
+        const effectiveTolerance = category === 'marriage' ? 15 : tolerance;
 
         // 檢查每一段線段
         for (let i = 0; i < path.length - 1; i++) {
             const p1 = path[i];
             const p2 = path[i + 1];
             const distance = this.distanceToLineSegment(px, py, p1.x, p1.y, p2.x, p2.y);
-            if (distance <= tolerance) {
+            if (distance <= effectiveTolerance) {
                 return true;
             }
         }

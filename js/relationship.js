@@ -51,7 +51,7 @@ class Relationship {
             'widowed': '喪偶',
             'affair': '外遇',
             'estranged': '疏遠/離異',
-            'harmony': '和諧',
+            'harmony': '正向關係',
             'indifferent': '冷漠',
             'close': '親密',
             'very-close': '非常親密',
@@ -123,8 +123,8 @@ class Relationship {
             'indifferent': { color: '#9e9e9e', width: 2, pattern: 'dashed' },    // 冷漠
             'conflict': { color: '#E53935', width: 2, pattern: 'wave' },         // 衝突：紅色波浪線
             'conflict-close': { color: '#E53935', width: 2, pattern: 'wave', decoration: 'close-parallel', decorationColor: '#4caf50' }, // 衝突又親密
-            'hostile': { color: '#ff9800', width: 2, pattern: 'solid', decoration: 'cross-bars' }, // 關係惡化：橘色實線加十字
-            'cutoff': { color: '#333333', width: 2, pattern: 'solid', decoration: 'vertical-bar' }, // 溝通中斷：黑色實線加垂直線
+            'hostile': { color: '#ff9800', width: 2, pattern: 'solid', decoration: 'cross-bars' }, // 敵對：橘色實線加十字
+            'cutoff': { color: '#333333', width: 2, pattern: 'solid', decoration: 'vertical-bar' }, // 斷絕/冷戰：黑色實線加垂直線
 
             // 其他
             'violence': { pattern: 'wave', color: '#E53935', width: 2, decoration: null, lines: 2 },
