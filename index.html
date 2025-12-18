@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專業家系圖生成器 | Genogram Generator</title>
+    <meta name="description" content="專為社工家庭評估設計的專業家系圖繪製工具">
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker registration failed', err));
+            });
+        }
+    </script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 頂部工具列 -->
+        <header class="toolbar">
+            <div class="toolbar-left">
+                <h1 class="app-title">家系圖生成器</h1>
+            </div>
+            <div class="toolbar-center">
+                <div class="tool-group">
+                    <button class="tool-btn" id="addMale" title="新增男性 (M)">
+                        <span class="icon male-icon"></span>
+                        <span class="tool-label">男性 (M)</span>
+                    </button>
+                    <button class="tool-btn" id="addFemale" title="新增女性 (F)">
+                        <span class="icon female-icon"></span>
+                        <span class="tool-label">女性 (F)</span>
+                    </button>
+                </div>
+                <div class="tool-divider"></div>
+                <div class="tool-group">
+                    <button class="tool-btn" id="selectTool" title="選取工具 (V)">
+                        <span class="icon select-icon">↖</span>
+                        <span class="tool-label">選取 (V)</span>
+                    </button>
+                    <button class="tool-btn" id="boxSelectTool" title="範圍圈選 (B)">
+                        <span class="icon box-select-icon">⊞</span>
+                        <span class="tool-label">範圍圈選 (B)</span>
+                    </button>
+
+                    <button class="tool-btn" id="householdTool" title="同住/圈選 (H)">
+                        <span class="icon household-icon" style="font-size: 20px;">⌂</span>
+                        <span class="tool-label">同住 (H)</span>
+                    </button>
+
+                    <button class="tool-btn" id="connectTool" title="連接關係 (C)">
+                        <span class="icon">⟷</span> <!-- 雙向箭頭 -->
+                        <span class="tool-label">連接 (C)</span>
+                    </button>
+                    <button class="tool-btn" id="deleteTool" title="刪除 (Del)">
+                        <span class="icon delete-icon">✕</span>
+                        <span class="tool-label">刪除 (Del)</span>
+                    </button>
+                </div>
+                <div class="tool-divider"></div>
+                <div class="tool-group">
+                    <button class="tool-btn" id="undoBtn" title="復原 (Ctrl+Z)">
+                        <span class="icon undo-icon">↶</span>
+                        <span class="tool-label">復原 (Ctrl+Z)</span>
+                    </button>
+                    <button class="tool-btn" id="redoBtn" title="重做 (Ctrl+Y)">
+                        <span class="icon redo-icon">↷</span>
+                        <span class="tool-label">重做 (Ctrl+Y)</span>
+                    </button>
+                    <button class="tool-btn" id="autoLayoutBtn" title="自動排列同輩份">
+                        <span class="icon layout-icon">⚏</span>
+                        <span class="tool-label">自動排列</span>
+                    </button>
+                </div>
+            </div>
+            <div class="toolbar-right">
+                <div class="tool-group">
+                    <button class="tool-btn primary" id="saveBtn" title="儲存檔案 (Ctrl+S)">
+                        <span class="icon save-icon">💾</span>
+                        <span class="tool-label">儲存 (Ctrl+S)</span>
+                    </button>
+                    <button class="tool-btn" id="downloadBtn" title="另存新檔">
+                        <span class="icon download-icon">⬇</span>
+                        <span class="tool-label">另存</span>
+                    </button>
+                    <button class="tool-btn" id="loadBtn" title="載入檔案">
+                        <span class="icon load-icon">📂</span>
+                        <span class="tool-label">載入</span>
+                    </button>
+                    <button class="tool-btn" id="exportBtn" title="匯出圖片">
+                        <span class="icon export-icon">🖼</span>
+                        <span class="tool-label">匯出</span>
+                    </button>
+                    <button class="tool-btn" id="helpBtn" title="使用說明">
+                        <span class="icon">❓</span>
+                        <span class="tool-label">說明</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要內容區 -->
+        <main class="main-content">
+            <!-- 畫布區域 -->
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="genogramCanvas"></canvas>
+                <!-- 狀態提示條 -->
+                <div class="status-bar" id="statusBar">選取工具已啟用</div>
+                <!-- 縮放控制 -->
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoomIn" title="放大">+</button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button class="zoom-btn" id="zoomOut" title="縮小">−</button>
+                    <button class="zoom-btn" id="zoomReset" title="重置縮放">⊙</button>
+                </div>
+            </div>
+
+            <!-- 右側面板 -->
+            <aside class="side-panel" id="sidePanel">
+                <!-- 屬性編輯面板 -->
+                <section class="panel-section" id="propertyPanel">
+                    <h3 class="panel-title">屬性編輯</h3>
+                    <div class="panel-content" id="propertyContent">
+                        <p class="empty-hint">點選成員以編輯屬性</p>
+                    </div>
+                </section>
+
+                <!-- 關係圖例 -->
+                <section class="panel-section" id="legendPanel">
+                    <h3 class="panel-title">
+                        <span class="toggle-icon">▼</span>
+                        關係類型圖例
+                    </h3>
+                    <div class="panel-content legend-content">
+                        <div class="legend-category">
+                            <h4>婚姻關係</h4>
+                            <div class="legend-item">
+                                <span class="legend-line married"></span>
+                                <span>結婚</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line cohabiting"></span>
+                                <span>同居</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line separated"></span>
+                                <span>分居</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line divorced"></span>
+                                <span>離婚</span>
+                            </div>
+                            <!-- 保留常用但圖上未列出的 -->
+                            <div class="legend-item">
+                                <span class="legend-line widowed"></span>
+                                <span>喪偶</span>
+                            </div>
+                        </div>
+
+                        <div class="legend-category">
+                            <h4>情感關係</h4>
+                            <div class="legend-item">
+                                <span class="legend-line harmony"></span>
+                                <span>正向關係</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line close"></span>
+                                <span>親密</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line very-close"></span>
+                                <span>過度親密</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line distant"></span>
+                                <span>關係疏離</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line conflict"></span>
+                                <span>衝突</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line hostile"></span>
+                                <span>關係惡化</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line cutoff"></span>
+                                <span>溝通中斷</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line conflict-close"></span>
+                                <span>衝突又親密</span>
+                            </div>
+                            <!-- 保留常用但圖上未列出的 -->
+                            <div class="legend-item">
+                                <span class="legend-line abuse"></span>
+                                <span>虐待</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line violence"></span>
+                                <span>暴力</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </main>
+
+        <!-- 關係選擇對話框 -->
+        <div class="modal-overlay" id="relationshipModal">
+            <div class="modal">
+                <h3 class="modal-title">選擇關係類型</h3>
+                <div class="modal-content">
+                    <div class="relationship-type-group">
+                        <h4>親屬/結構關係</h4>
+                        <div class="btn-grid">
+                            <button class="rel-btn" data-type="parent-child">親子關係</button>
+                            <button class="rel-btn" data-type="married">結婚</button>
+                            <button class="rel-btn" data-type="engaged">訂婚</button>
+                            <button class="rel-btn" data-type="cohabiting">同居</button>
+                            <button class="rel-btn" data-type="separated">分居</button>
+                            <button class="rel-btn" data-type="divorced">離婚</button>
+                            <button class="rel-btn" data-type="widowed">喪偶</button>
+                            <button class="rel-btn" data-type="affair">外遇</button>
+                        </div>
+                    </div>
+                    <div class="relationship-type-group">
+                        <h4>情感關係 (正向)</h4>
+                        <div class="btn-grid">
+                            <button class="rel-btn" data-type="harmony">和諧</button>
+                            <button class="rel-btn" data-type="close">親密</button>
+                            <button class="rel-btn" data-type="very-close">非常親密</button>
+                            <button class="rel-btn" data-type="admiration">崇拜</button>
+                            <button class="rel-btn" data-type="focused">關注</button>
+                        </div>
+                    </div>
+                    <div class="relationship-type-group">
+                        <h4>情感關係 (負向/其他)</h4>
+                        <div class="btn-grid">
+                            <button class="rel-btn" data-type="indifferent">冷漠</button>
+                            <button class="rel-btn" data-type="distant">疏離</button>
+                            <button class="rel-btn" data-type="conflict">衝突</button>
+                            <button class="rel-btn" data-type="hostile">敵對</button>
+                            <button class="rel-btn" data-type="violence">暴力</button>
+                            <button class="rel-btn" data-type="cutoff">斷絕/冷戰</button>
+                            <button class="rel-btn" data-type="abuse">虐待</button>
+                            <button class="rel-btn" data-type="manipulative">操控</button>
+                            <button class="rel-btn" data-type="controlling">控制</button>
+                            <button class="rel-btn" data-type="conflict-close">衝突又親密</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" id="cancelRelationship">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 使用說明對話框 -->
+    <div class="modal-overlay" id="helpModal">
+        <div class="modal" style="max-width: 650px;">
+            <h3 class="modal-title">家系圖繪製工具 - 使用說明</h3>
+            <div class="modal-content help-modal-content">
+                <div class="help-section">
+                    <h4>如何啟動程式</h4>
+                    <ul>
+                        <li><strong>離線使用：</strong>直接使用瀏覽器開啟此資料夾中的 <strong>index.html</strong>。</li>
+                        <li><strong>安裝為 App：</strong>若已部署於網路 (HTTPS)，點擊網址列右側的<strong>「安裝」</strong>圖示，即可將其化身為桌面
+                            App，並支援完全離線使用。</li>
+                        <li>建議使用 <strong>Chrome</strong> 或 <strong>Edge</strong> 瀏覽器。</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h4>基本操作</h4>
+                    <ul>
+                        <li><strong>新增人物：</strong>點擊「男(M)」或「女(F)」，然後點擊畫布任何位置。</li>
+                        <li><strong>修改內容：</strong>使用「選取(V)」工具點擊人物或關係線。</li>
+                        <li><strong>編輯人物：</strong>選取後在右側面板修改姓名、備註、是否死亡。</li>
+                        <li><strong>建立關係：</strong>使用「連接(C)」工具，先點擊第一個人，再點擊第二個。</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h4>存檔邏輯 (重要)</h4>
+                    <ul>
+                        <li><strong>儲存 (Ctrl+S)：</strong>快速儲存至瀏覽器暫存。如果有連結檔案，則會直接同步。</li>
+                        <li><strong>另存：</strong>將目前進度下載為 JSON 檔案，或是備份到電腦。</li>
+                        <li><strong>同步存檔：</strong>先執行一次「另存」或「載入」建立連結後，按儲存就會直接更新檔案。</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h4>快速鍵</h4>
+                    <div class="shortcut-grid">
+                        <span>V: 選取</span> <span>M: 男性</span> <span>F: 女性</span>
+                        <span>C: 連接</span> <span>B: 範圍圈選</span> <span>H: 同住圈選</span>
+                        <span>Del: 刪除</span> <span>Ctrl+Z: 復原</span> <span>Ctrl+S: 儲存</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="closeHelp">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 隱藏的檔案輸入 -->
+    <input type="file" id="fileInput" accept=".json" style="display: none;">
+    </div>
+
+    <script src="js/person.js"></script>
+    <script src="js/relationship.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>

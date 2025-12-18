@@ -1,0 +1,891 @@
+/* ===================================
+   專業家系圖生成器 - 樣式表
+   =================================== */
+
+:root {
+    /* 主題色彩 */
+    --primary-color: #4a90d9;
+    --primary-hover: #357abd;
+    --primary-light: #e8f2fc;
+    --secondary-color: #6c757d;
+    --danger-color: #dc3545;
+    --success-color: #28a745;
+
+    /* 背景與邊框 */
+    --bg-dark: #1e2530;
+    --bg-medium: #2a3441;
+    --bg-light: #f8f9fa;
+    --bg-canvas: #ffffff;
+    --border-color: #dee2e6;
+    --border-light: #e9ecef;
+
+    /* 文字顏色 */
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-light: #ffffff;
+    --text-muted: #adb5bd;
+
+    /* 關係線條顏色 */
+    --color-married: #6b66ff;
+    --color-engaged: #6b66ff;
+    --color-cohabiting: #4caf50;
+    --color-separated: #fec107;
+    --color-divorced: #f44336;
+    --color-positive: #4caf50;
+    --color-close: #4caf50;
+    /* 親密 - 綠色 */
+    --color-very-close: #4caf50;
+    /* 過度親密 - 綠色 */
+    --color-distant: #9e9e9e;
+    --color-conflict: #f44336;
+    --color-hostile: #ff9800;
+    /* 敵對/惡化 - 橙色 */
+    --color-cutoff: #333333;
+    --color-abuse: #4a90d9;
+    /* 虐待 - 藍色 */
+    --color-manipulative: #fd7e14;
+    /* 操控 - 橙色 */
+    --color-controlling: #dc3545;
+    /* 控制 - 紅色 */
+    --color-focused: #4a90d9;
+    /* 關注 - 藍色 */
+    --color-admiration: #28a745;
+    /* 崇拜 - 綠色 */
+    --color-indifferent: #9e9e9e;
+    /* 冷漠 - 灰色 */
+
+    /* 間距與尺寸 */
+    --toolbar-height: 60px;
+    --panel-width: 280px;
+    --border-radius: 8px;
+    --border-radius-sm: 4px;
+
+    /* 陰影 */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
+
+    /* 過渡動畫 */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.25s ease;
+}
+
+/* ===================================
+   基礎重置
+   =================================== */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    color: var(--text-primary);
+    background-color: var(--bg-light);
+    line-height: 1.5;
+}
+
+/* ===================================
+   應用程式容器
+   =================================== */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* ===================================
+   頂部工具列
+   =================================== */
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--toolbar-height);
+    padding: 0 16px;
+    background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-medium) 100%);
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+}
+
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.app-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-light);
+    letter-spacing: 1px;
+}
+
+.tool-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius);
+}
+
+.tool-divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 8px;
+}
+
+.tool-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.tool-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.tool-btn:active {
+    transform: scale(0.95);
+}
+
+.tool-btn.active {
+    background: var(--primary-color);
+}
+
+.tool-btn.primary {
+    background: var(--primary-color);
+}
+
+.tool-btn.primary:hover {
+    background: var(--primary-hover);
+}
+
+.tool-btn .icon {
+    font-size: 18px;
+    margin-bottom: 2px;
+}
+
+.tool-btn .tool-label {
+    font-size: 11px;
+    opacity: 0.9;
+}
+
+/* 人物圖示 */
+.male-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    background: transparent;
+}
+
+.female-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    background: transparent;
+}
+
+/* ===================================
+   主要內容區
+   =================================== */
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ===================================
+   畫布區域
+   =================================== */
+.canvas-container {
+    flex: 1;
+    position: relative;
+    background-color: var(--bg-canvas);
+    background-image:
+        linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    overflow: hidden;
+}
+
+#genogramCanvas {
+    display: block;
+    cursor: default;
+}
+
+/* 狀態提示條 */
+.status-bar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 10;
+    transition: all var(--transition-fast);
+    pointer-events: none;
+    white-space: normal;
+    width: auto;
+    min-width: 200px;
+    max-width: 80%;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.status-bar.connecting {
+    background: var(--primary-color);
+}
+
+.status-bar.success {
+    background: var(--success-color);
+}
+
+.status-bar.error {
+    background: var(--danger-color);
+}
+
+.status-bar.hidden {
+    display: none !important;
+}
+
+/* 縮放控制 */
+.zoom-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+}
+
+.zoom-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+}
+
+.zoom-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary-color);
+}
+
+.zoom-level {
+    min-width: 48px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* ===================================
+   右側面板
+   =================================== */
+.side-panel {
+    width: var(--panel-width);
+    background: var(--bg-light);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.panel-section {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-canvas);
+    cursor: pointer;
+    user-select: none;
+}
+
+.panel-title .toggle-icon {
+    font-size: 10px;
+    transition: transform var(--transition-fast);
+}
+
+.panel-section.collapsed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.panel-section.collapsed .panel-content {
+    display: none;
+}
+
+.panel-content {
+    padding: 16px;
+}
+
+.empty-hint {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* 屬性表單 */
+.property-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-group label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.form-group input,
+.form-group select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 14px;
+    transition: border-color var(--transition-fast);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.form-group-row {
+    display: flex;
+    gap: 12px;
+}
+
+.form-group-row .form-group {
+    flex: 1;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.checkbox-group label {
+    cursor: pointer;
+}
+
+/* ===================================
+   關係圖例
+   =================================== */
+.legend-content {
+    padding: 12px 16px;
+}
+
+.legend-category {
+    margin-bottom: 16px;
+}
+
+.legend-category:last-child {
+    margin-bottom: 0;
+}
+
+.legend-category h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.legend-line {
+    display: inline-block;
+    width: 40px;
+    height: 2px;
+    position: relative;
+}
+
+/* 婚姻關係線條 */
+.legend-line.married {
+    background: var(--color-married);
+}
+
+.legend-line.parent-child {
+    background: #333333;
+}
+
+.legend-line.engaged {
+    background: repeating-linear-gradient(90deg,
+            var(--color-married) 0,
+            var(--color-married) 6px,
+            transparent 6px,
+            transparent 10px);
+    height: 2px;
+}
+
+.legend-line.widowed {
+    position: relative;
+    background: #333333;
+}
+
+.legend-line.widowed::after {
+    content: '✕';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10px;
+    color: #333333;
+}
+
+.legend-line.affair {
+    background: repeating-linear-gradient(90deg,
+            var(--color-conflict) 0,
+            var(--color-conflict) 6px,
+            transparent 6px,
+            transparent 10px);
+    height: 2px;
+}
+
+.legend-line.harmony {
+    background: var(--color-positive);
+}
+
+.legend-line.indifferent {
+    background: repeating-linear-gradient(90deg,
+            var(--color-indifferent) 0,
+            var(--color-indifferent) 6px,
+            transparent 6px,
+            transparent 12px);
+}
+
+.legend-line.cohabiting {
+    background: repeating-linear-gradient(90deg,
+            var(--color-cohabiting) 0,
+            var(--color-cohabiting) 2px,
+            transparent 2px,
+            transparent 4px);
+    height: 2px;
+}
+
+.legend-line.separated {
+    background: repeating-linear-gradient(90deg,
+            var(--color-separated) 0,
+            var(--color-separated) 8px,
+            transparent 8px,
+            transparent 12px);
+    height: 2px;
+}
+
+.legend-line.divorced {
+    background: var(--color-divorced);
+    position: relative;
+}
+
+.legend-line.divorced::after {
+    content: '✕';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--color-divorced);
+    letter-spacing: 0;
+}
+
+/* 情感關係線條 */
+.legend-line.positive {
+    background: var(--color-positive);
+}
+
+.legend-line.close {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='2' x2='40' y2='2' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='8' x2='40' y2='8' stroke='%234caf50' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.very-close {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='9' x2='40' y2='9' stroke='%234caf50' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.distant {
+    background: repeating-linear-gradient(90deg,
+            var(--color-distant) 0,
+            var(--color-distant) 2px,
+            transparent 2px,
+            transparent 4px);
+    height: 2px;
+}
+
+.legend-line.conflict {
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cpath d='M0,4 Q5,0 10,4 T20,4 T30,4 T40,4' stroke='%23E53935' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.violence {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,3 Q5,-1 10,3 T20,3 T30,3 T40,3' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3Cpath d='M0,9 Q5,5 10,9 T20,9 T30,9 T40,9' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.hostile {
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='4' x2='40' y2='4' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='10' y1='1' x2='10' y2='7' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='20' y1='1' x2='20' y2='7' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='30' y1='1' x2='30' y2='7' stroke='%23ff9800' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.cutoff {
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='4' x2='40' y2='4' stroke='%23333333' stroke-width='2'/%3E%3Cline x1='20' y1='0' x2='20' y2='8' stroke='%23333333' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.abuse {
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cpath d='M0,4 Q5,0 10,4 T20,4 T30,4 T40,4' stroke='%234a90d9' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+.legend-line.manipulative {
+    position: relative;
+    background: var(--color-manipulative);
+}
+
+.legend-line.manipulative::after {
+    content: '→';
+    position: absolute;
+    right: -8px;
+    top: -6px;
+    font-size: 12px;
+    color: var(--color-manipulative);
+}
+
+.legend-line.controlling {
+    position: relative;
+    background: var(--color-controlling);
+}
+
+.legend-line.controlling::after {
+    content: '⯈';
+    position: absolute;
+    right: -10px;
+    top: -6px;
+    font-size: 12px;
+    color: var(--color-controlling);
+}
+
+.legend-line.focused {
+    position: relative;
+    background: var(--color-focused);
+}
+
+.legend-line.focused::after {
+    content: '→';
+    position: absolute;
+    right: -8px;
+    top: -6px;
+    font-size: 12px;
+    color: var(--color-focused);
+}
+
+.legend-line.admiration {
+    position: relative;
+    background: var(--color-admiration);
+}
+
+.legend-line.admiration::after {
+    content: '◎';
+    position: absolute;
+    right: -10px;
+    top: -8px;
+    font-size: 12px;
+    color: var(--color-positive);
+}
+
+.legend-line.conflict-close {
+    height: 12px;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,6 Q5,2 10,6 T20,6 T30,6 T40,6' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%234caf50' stroke-width='1.5'/%3E%3Cline x1='0' y1='11' x2='40' y2='11' stroke='%234caf50' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+    background-size: contain;
+}
+
+/* ===================================
+   關係選擇對話框
+   =================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--transition-normal);
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background: var(--bg-canvas);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-lg);
+    max-width: 480px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    transform: translateY(-20px);
+    transition: transform var(--transition-normal);
+}
+
+.modal-overlay.active .modal {
+    transform: translateY(0);
+}
+
+.modal-title {
+    padding: 16px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-content {
+    padding: 20px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.relationship-type-group {
+    margin-bottom: 16px;
+}
+
+.relationship-type-group:last-child {
+    margin-bottom: 0;
+}
+
+.relationship-type-group h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.btn-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+}
+
+.btn-grid .rel-btn {
+    margin: 0;
+    width: 100%;
+}
+
+.help-modal-content {
+    line-height: 1.6;
+}
+
+.help-section {
+    margin-bottom: 20px;
+}
+
+.help-section h4 {
+    margin-bottom: 8px;
+    color: var(--primary-color);
+    border-left: 4px solid var(--primary-color);
+    padding-left: 10px;
+}
+
+.help-section ul {
+    padding-left: 20px;
+    margin: 0;
+}
+
+.help-section li {
+    margin-bottom: 6px;
+}
+
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    background: var(--bg-light);
+    padding: 12px;
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+}
+
+.rel-btn {
+    padding: 8px 16px;
+    margin: 4px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.rel-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-cancel {
+    padding: 8px 20px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-cancel:hover {
+    background: var(--border-color);
+}
+
+/* ===================================
+   響應式設計
+   =================================== */
+@media (max-width: 768px) {
+    .side-panel {
+        position: fixed;
+        right: -100%;
+        top: var(--toolbar-height);
+        bottom: 0;
+        z-index: 50;
+        transition: right var(--transition-normal);
+    }
+
+    .side-panel.open {
+        right: 0;
+    }
+
+    .tool-label {
+        display: none;
+    }
+
+    .tool-btn {
+        min-width: 40px;
+    }
+}
+
+/* ===================================
+   動畫效果
+   =================================== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.fade-in {
+    animation: fadeIn var(--transition-normal) ease;
+}
+
+.slide-in {
+    animation: slideIn var(--transition-normal) ease;
+}

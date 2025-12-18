@@ -1,0 +1,276 @@
+{
+  "version": "1.0",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "persons": [
+    {
+      "id": "person_1",
+      "name": "蔡夫父",
+      "gender": "male",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 200,
+      "y": 100,
+      "notes": ""
+    },
+    {
+      "id": "person_2",
+      "name": "蔡夫母",
+      "gender": "female",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 350,
+      "y": 100,
+      "notes": ""
+    },
+    {
+      "id": "person_3",
+      "name": "蔡夫兄",
+      "gender": "male",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 200,
+      "y": 250,
+      "notes": ""
+    },
+    {
+      "id": "person_4",
+      "name": "陳先生",
+      "gender": "male",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 350,
+      "y": 250,
+      "notes": ""
+    },
+    {
+      "id": "person_5",
+      "name": "案父",
+      "gender": "male",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 650,
+      "y": 100,
+      "notes": ""
+    },
+    {
+      "id": "person_6",
+      "name": "案母",
+      "gender": "female",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 800,
+      "y": 100,
+      "notes": ""
+    },
+    {
+      "id": "person_7",
+      "name": "許小姐",
+      "gender": "female",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": true,
+      "medical": null,
+      "x": 650,
+      "y": 250,
+      "notes": ""
+    },
+    {
+      "id": "person_8",
+      "name": "案主大姊",
+      "gender": "female",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 750,
+      "y": 250,
+      "notes": ""
+    },
+    {
+      "id": "person_9",
+      "name": "案主二姊",
+      "gender": "female",
+      "age": null,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 850,
+      "y": 250,
+      "notes": ""
+    },
+    {
+      "id": "person_10",
+      "name": "6",
+      "gender": "pregnancy",
+      "age": 6,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 650,
+      "y": 400,
+      "notes": ""
+    },
+    {
+      "id": "person_11",
+      "name": "4",
+      "gender": "pregnancy",
+      "age": 4,
+      "isDeceased": false,
+      "isIdentifiedPatient": false,
+      "medical": null,
+      "x": 750,
+      "y": 400,
+      "notes": ""
+    }
+  ],
+  "relationships": [
+    {
+      "id": "rel_1",
+      "fromPersonId": "person_1",
+      "toPersonId": "person_2",
+      "type": "hostile",
+      "notes": ""
+    },
+    {
+      "id": "rel_2",
+      "fromPersonId": "person_1",
+      "toPersonId": "person_3",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_3",
+      "fromPersonId": "person_1",
+      "toPersonId": "person_4",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_4",
+      "fromPersonId": "person_2",
+      "toPersonId": "person_3",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_5",
+      "fromPersonId": "person_2",
+      "toPersonId": "person_4",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_6",
+      "fromPersonId": "person_5",
+      "toPersonId": "person_6",
+      "type": "married",
+      "notes": ""
+    },
+    {
+      "id": "rel_7",
+      "fromPersonId": "person_5",
+      "toPersonId": "person_7",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_8",
+      "fromPersonId": "person_5",
+      "toPersonId": "person_8",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_9",
+      "fromPersonId": "person_5",
+      "toPersonId": "person_9",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_10",
+      "fromPersonId": "person_6",
+      "toPersonId": "person_7",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_11",
+      "fromPersonId": "person_6",
+      "toPersonId": "person_8",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_12",
+      "fromPersonId": "person_6",
+      "toPersonId": "person_9",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_13",
+      "fromPersonId": "person_7",
+      "toPersonId": "person_8",
+      "type": "very-close",
+      "notes": ""
+    },
+    {
+      "id": "rel_14",
+      "fromPersonId": "person_8",
+      "toPersonId": "person_9",
+      "type": "very-close",
+      "notes": ""
+    },
+    {
+      "id": "rel_15",
+      "fromPersonId": "person_4",
+      "toPersonId": "person_7",
+      "type": "conflict",
+      "notes": ""
+    },
+    {
+      "id": "rel_16",
+      "fromPersonId": "person_7",
+      "toPersonId": "person_10",
+      "type": "parent-child",
+      "notes": ""
+    },
+    {
+      "id": "rel_17",
+      "fromPersonId": "person_7",
+      "toPersonId": "person_11",
+      "type": "parent-child",
+      "notes": ""
+    }
+  ],
+  "households": [
+    {
+      "id": "household_1",
+      "ids": ["person_5", "person_6"],
+      "notes": ""
+    },
+    {
+      "id": "household_2",
+      "ids": ["person_5", "person_6", "person_7", "person_8", "person_9"],
+      "notes": ""
+    },
+    {
+      "id": "household_3",
+      "ids": ["person_7", "person_10", "person_11"],
+      "notes": ""
+    }
+  ]
+}
