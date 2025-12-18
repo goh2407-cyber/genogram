@@ -145,6 +145,10 @@
                                 <span>結婚</span>
                             </div>
                             <div class="legend-item">
+                                <span class="legend-line engaged"></span>
+                                <span>訂婚</span>
+                            </div>
+                            <div class="legend-item">
                                 <span class="legend-line cohabiting"></span>
                                 <span>同居</span>
                             </div>
@@ -156,10 +160,13 @@
                                 <span class="legend-line divorced"></span>
                                 <span>離婚</span>
                             </div>
-                            <!-- 保留常用但圖上未列出的 -->
                             <div class="legend-item">
                                 <span class="legend-line widowed"></span>
                                 <span>喪偶</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line affair"></span>
+                                <span>外遇</span>
                             </div>
                         </div>
 
@@ -197,7 +204,6 @@
                                 <span class="legend-line conflict-close"></span>
                                 <span>衝突又親密</span>
                             </div>
-                            <!-- 保留常用但圖上未列出的 -->
                             <div class="legend-item">
                                 <span class="legend-line abuse"></span>
                                 <span>虐待</span>
@@ -205,6 +211,18 @@
                             <div class="legend-item">
                                 <span class="legend-line violence"></span>
                                 <span>暴力</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line admiration"></span>
+                                <span>崇拜</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line focused"></span>
+                                <span>關注</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line indifferent"></span>
+                                <span>冷漠</span>
                             </div>
                         </div>
                     </div>
@@ -220,39 +238,60 @@
                     <div class="relationship-type-group">
                         <h4>親屬/結構關係</h4>
                         <div class="btn-grid">
-                            <button class="rel-btn" data-type="parent-child">親子關係</button>
-                            <button class="rel-btn" data-type="married">結婚</button>
-                            <button class="rel-btn" data-type="engaged">訂婚</button>
-                            <button class="rel-btn" data-type="cohabiting">同居</button>
-                            <button class="rel-btn" data-type="separated">分居</button>
-                            <button class="rel-btn" data-type="divorced">離婚</button>
-                            <button class="rel-btn" data-type="widowed">喪偶</button>
-                            <button class="rel-btn" data-type="affair">外遇</button>
+                            <button class="rel-btn" data-type="parent-child"><span
+                                    class="legend-line parent-child"></span>親子關係</button>
+                            <button class="rel-btn" data-type="married"><span
+                                    class="legend-line married"></span>結婚</button>
+                            <button class="rel-btn" data-type="engaged"><span
+                                    class="legend-line engaged"></span>訂婚</button>
+                            <button class="rel-btn" data-type="cohabiting"><span
+                                    class="legend-line cohabiting"></span>同居</button>
+                            <button class="rel-btn" data-type="separated"><span
+                                    class="legend-line separated"></span>分居</button>
+                            <button class="rel-btn" data-type="divorced"><span
+                                    class="legend-line divorced"></span>離婚</button>
+                            <button class="rel-btn" data-type="widowed"><span
+                                    class="legend-line widowed"></span>喪偶</button>
+                            <button class="rel-btn" data-type="affair"><span
+                                    class="legend-line affair"></span>外遇</button>
                         </div>
                     </div>
                     <div class="relationship-type-group">
                         <h4>情感關係 (正向)</h4>
                         <div class="btn-grid">
-                            <button class="rel-btn" data-type="harmony">和諧</button>
-                            <button class="rel-btn" data-type="close">親密</button>
-                            <button class="rel-btn" data-type="very-close">非常親密</button>
-                            <button class="rel-btn" data-type="admiration">崇拜</button>
-                            <button class="rel-btn" data-type="focused">關注</button>
+                            <button class="rel-btn" data-type="harmony"><span
+                                    class="legend-line harmony"></span>和諧</button>
+                            <button class="rel-btn" data-type="close"><span class="legend-line close"></span>親密</button>
+                            <button class="rel-btn" data-type="very-close"><span
+                                    class="legend-line very-close"></span>非常親密</button>
+                            <button class="rel-btn" data-type="admiration"><span
+                                    class="legend-line admiration"></span>崇拜</button>
+                            <button class="rel-btn" data-type="focused"><span
+                                    class="legend-line focused"></span>關注</button>
                         </div>
                     </div>
                     <div class="relationship-type-group">
                         <h4>情感關係 (負向/其他)</h4>
                         <div class="btn-grid">
-                            <button class="rel-btn" data-type="indifferent">冷漠</button>
-                            <button class="rel-btn" data-type="distant">疏離</button>
-                            <button class="rel-btn" data-type="conflict">衝突</button>
-                            <button class="rel-btn" data-type="hostile">敵對</button>
-                            <button class="rel-btn" data-type="violence">暴力</button>
-                            <button class="rel-btn" data-type="cutoff">斷絕/冷戰</button>
-                            <button class="rel-btn" data-type="abuse">虐待</button>
-                            <button class="rel-btn" data-type="manipulative">操控</button>
-                            <button class="rel-btn" data-type="controlling">控制</button>
-                            <button class="rel-btn" data-type="conflict-close">衝突又親密</button>
+                            <button class="rel-btn" data-type="indifferent"><span
+                                    class="legend-line indifferent"></span>冷漠</button>
+                            <button class="rel-btn" data-type="distant"><span
+                                    class="legend-line distant"></span>疏離</button>
+                            <button class="rel-btn" data-type="conflict"><span
+                                    class="legend-line conflict"></span>衝突</button>
+                            <button class="rel-btn" data-type="hostile"><span
+                                    class="legend-line hostile"></span>敵對</button>
+                            <button class="rel-btn" data-type="violence"><span
+                                    class="legend-line violence"></span>暴力</button>
+                            <button class="rel-btn" data-type="cutoff"><span
+                                    class="legend-line cutoff"></span>斷絕/冷戰</button>
+                            <button class="rel-btn" data-type="abuse"><span class="legend-line abuse"></span>虐待</button>
+                            <button class="rel-btn" data-type="manipulative"><span
+                                    class="legend-line manipulative"></span>操控</button>
+                            <button class="rel-btn" data-type="controlling"><span
+                                    class="legend-line controlling"></span>控制</button>
+                            <button class="rel-btn" data-type="conflict-close"><span
+                                    class="legend-line conflict-close"></span>衝突又親密</button>
                         </div>
                     </div>
                 </div>

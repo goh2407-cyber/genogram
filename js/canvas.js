@@ -775,9 +775,42 @@ class GenogramCanvas {
                     true
                 );
             } else if (style.decoration === 'box-arrow') {
-                // 類似 logic
+                // 控制 (Controlling): 帶實心三角形的線
+                const endInfo = this.getPointInfoAtDistance(path, totalLen - 10);
+                const endPt = endInfo.point;
+                const endTan = endInfo.tangent;
+                this.drawBoxArrow(
+                    endPt.x - endTan.x * 12,
+                    endPt.y - endTan.y * 12,
+                    endPt.x,
+                    endPt.y
+                );
             } else if (style.decoration === 'circle-arrow') {
-                // 類似 logic
+                // 崇拜 (Admiration): 帶圓圈的線 (修正為空心圓圈以增加辨識度)
+                const midDist = totalLen / 2;
+                const midPtInfo = this.getPointInfoAtDistance(path, midDist);
+                const midPt = midPtInfo.point;
+                this.ctx.save();
+                this.ctx.fillStyle = 'white';
+                this.ctx.strokeStyle = style.color;
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(midPt.x, midPt.y, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.restore();
+
+                // 箭頭
+                const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+                const endPt = endInfo.point;
+                const endTan = endInfo.tangent;
+                this.drawArrow(
+                    endPt.x - endTan.x * 10,
+                    endPt.y - endTan.y * 10,
+                    endPt.x + endTan.x * 10,
+                    endPt.y + endTan.y * 10,
+                    true
+                );
             } else if (style.decoration === 'solid-above') {
                 // 特殊：沿著整條路徑畫一條平行線
                 this.drawParallelPath(path, -6); // 上方 6px
@@ -1181,6 +1214,26 @@ class GenogramCanvas {
     }
 
     /**
+     * 繪製實心三角形箭頭 (用於控制)
+     */
+    drawBoxArrow(x1, y1, x2, y2) {
+        const headlen = 12;
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const angle = Math.atan2(dy, dx);
+
+        this.ctx.save();
+        this.ctx.fillStyle = this.ctx.strokeStyle;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x2, y2);
+        this.ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+        this.ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.restore();
+    }
+
+    /**
      * 繪製箭頭
      */
     drawArrow(x1, y1, x2, y2, atEnd = true) {
@@ -1523,10 +1576,12 @@ class GenogramCanvas {
                 title: '婚姻關係',
                 items: [
                     { label: '結婚', style: 'solid', color: '#6699CC' },
+                    { label: '訂婚', style: 'dashed', color: '#6699CC' },
                     { label: '同居', style: 'dotted', color: '#66AA66' },
                     { label: '分居', style: 'dashed', color: '#DDAA00' },
                     { label: '離婚', style: 'solid', color: '#CC4444', marker: 'x' },
-                    { label: '喪偶', style: 'solid', color: '#666666', marker: 'x-double' }
+                    { label: '喪偶', style: 'solid', color: '#666666', marker: 'x-double' },
+                    { label: '外遇', style: 'dashed', color: '#E53935' }
                 ]
             },
             emotional: {
@@ -1534,24 +1589,27 @@ class GenogramCanvas {
                 items: [
                     { label: '正向關係', style: 'solid', color: '#4CAF50', lines: 1 },
                     { label: '親密', style: 'solid', color: '#4CAF50', lines: 2 },
-                    { label: '過度親密', style: 'solid', color: '#4CAF50', lines: 4 },
-                    { label: '關係疏離', style: 'dotted', color: '#666666', lines: 1 },
-                    { label: '衝突', style: 'wave', color: '#E53935', lines: 1 },
-                    { label: '關係惡化', style: 'cross', color: '#4CAF50', lines: 1 },
-                    { label: '溝通中斷', style: 'broken', color: '#666666', lines: 1 },
-                    { label: '衝突又親密', style: 'conflict-close' },
-                    { label: '虐待', style: 'wave', color: '#5C6BC0', lines: 1 },
-                    { label: '暴力', style: 'wave', color: '#E53935', lines: 2 }
+                    { label: '過度親密', style: 'solid', color: '#4CAF50', lines: 3 },
+                    { label: '崇拜', style: 'circle-arrow', color: '#28a745' },
+                    { label: '關注', style: 'arrow', color: '#4a90d9' },
+                    { label: '冷漠', style: 'dashed', color: '#9E9E9E' },
+                    { label: '疏離', style: 'dotted', color: '#666666' },
+                    { label: '衝突', style: 'wave', color: '#E53935' },
+                    { label: '敵對', style: 'cross', color: '#FF9800' },
+                    { label: '暴力', style: 'wave', color: '#E53935', lines: 2 },
+                    { label: '虐待', style: 'wave', color: '#5C6BC0' },
+                    { label: '操控', style: 'arrow-wave', color: '#ba68c8' },
+                    { label: '控制', style: 'box-arrow', color: '#dc3545' },
+                    { label: '斷絕/冷戰', style: 'broken', color: '#666666' },
+                    { label: '衝突又親密', style: 'conflict-close' }
                 ]
             }
         };
 
         // 計算總高度
-        const marriageCount = legendData.marriage.items.length;
-        const emotionalCount = legendData.emotional.items.length;
-        const totalHeight = (marriageCount + emotionalCount) * lineHeight +
+        const totalWidth = 200; // 稍微加寬以容納文字
+        const totalHeight = (legendData.marriage.items.length + legendData.emotional.items.length) * lineHeight +
             titleFontSize * 2 + sectionGap * 3 + padding * 2;
-        const totalWidth = 160;
 
         // 繪製背景（圓角矩形）
         ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
@@ -1669,6 +1727,49 @@ class GenogramCanvas {
             ctx.moveTo(x + width * 0.42, y - 5);
             ctx.lineTo(x + width * 0.58, y + 5);
             ctx.stroke();
+        } else if (item.style === 'box-arrow') {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
+            ctx.stroke();
+            this.drawBoxArrow(x + width - 15, y, x + width, y);
+        } else if (item.style === 'circle-arrow') {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
+            ctx.stroke();
+            // 圓圈 (空心)
+            ctx.save();
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x + width / 2, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+            // 箭頭
+            this.drawArrow(x + width - 15, y, x + width, y, true);
+        } else if (item.style === 'arrow') {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
+            ctx.stroke();
+            this.drawArrow(x + width - 15, y, x + width, y, true);
+        } else if (item.style === 'arrow-wave') {
+            this.drawLegendWave(ctx, x, y, width);
+            this.drawArrow(x + width - 15, y, x + width, y, true);
+        } else if (item.style === 'symbol') {
+            // 帶符號的線 (操控、控制、崇拜、關注)
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + width, y);
+            ctx.stroke();
+
+            ctx.fillStyle = item.color;
+            ctx.font = 'bold 14px "Segoe UI Symbol", "Apple Color Emoji", "Segoe UI Emoji"';
+            ctx.textAlign = 'center';
+            ctx.fillText(item.symbol, x + width - 5, y + 5);
         } else if (item.style === 'cross') {
             // 帶叉的線
             ctx.setLineDash([]);
