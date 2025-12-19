@@ -114,11 +114,16 @@ class GenogramCanvas {
     /**
      * 繪製整個家系圖
      */
-    render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null) {
+    render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null, households = [], selectedHouseholdId = null) {
         this.clear();
 
         this.ctx.save();
         this.applyTransform();
+
+        // 1. 繪製同住家庭 (最底層)
+        if (households && households.length > 0) {
+            this.drawHouseholds(households, persons, relationships, false, selectedHouseholdId);
+        }
 
         // 分類關係
         const familyRels = [];
@@ -133,10 +138,10 @@ class GenogramCanvas {
             }
         });
 
-        // 1. 先繪製親子關係 (樹狀結構) - 先畫，因為它在底層
+        // 2. 繪製親子關係
         this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId);
 
-        // 2. 繪製非親子關係 (婚姻、情感) - 後畫，因為它在表層
+        // 3. 繪製非親子關係
         otherRels.forEach(rel => {
             const fromPerson = persons.find(p => p.id === rel.fromPersonId);
             const toPerson = persons.find(p => p.id === rel.toPersonId);
@@ -146,7 +151,7 @@ class GenogramCanvas {
             }
         });
 
-        // 3. 繪製正在連接的線
+        // 4. 繪製正在連接的線
         if (connectingFrom && connectingFrom.targetX !== undefined) {
             this.ctx.save();
             this.ctx.strokeStyle = '#4a90d9';
@@ -159,7 +164,7 @@ class GenogramCanvas {
             this.ctx.restore();
         }
 
-        // 4. 繪製人物
+        // 5. 繪製人物
         persons.forEach(person => {
             const isSelected = selectedId === person.id;
             const isMultiSelected = (selectedPersonIds || []).includes(person.id);
@@ -168,7 +173,12 @@ class GenogramCanvas {
             this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted);
         });
 
-        // 5. 繪製範圍圈選框
+        // 6. 繪製多選邊框 (視覺提示可移動區域)
+        if (selectedPersonIds && selectedPersonIds.length > 1) {
+            this.drawMultiSelectionBounds(selectedPersonIds, persons);
+        }
+
+        // 7. 繪製範圍圈選框
         if (boxSelectStart && boxSelectEnd) {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
         }
@@ -196,6 +206,57 @@ class GenogramCanvas {
 
         // 繪製邊框
         this.ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 繪製多選邊界矩形 (視覺提示)
+     */
+    drawMultiSelectionBounds(selectedPersonIds, persons) {
+        if (!selectedPersonIds || selectedPersonIds.length < 2) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const radius = 25;
+
+        selectedPersonIds.forEach(id => {
+            const p = persons.find(per => per.id === id);
+            if (p) {
+                minX = Math.min(minX, p.x - radius);
+                maxX = Math.max(maxX, p.x + radius);
+                minY = Math.min(minY, p.y - radius);
+                maxY = Math.max(maxY, p.y + radius);
+            }
+        });
+
+        const padding = 10;
+        const x1 = minX - padding;
+        const y1 = minY - padding;
+        const x2 = maxX + padding;
+        const y2 = maxY + padding;
+
+        this.ctx.save();
+        this.ctx.strokeStyle = '#4a90d9';
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.globalAlpha = 0.4;
+
+        // 繪製一個淡淡的虛線框
+        this.ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+        // 在角落畫一點裝飾線，讓它看起來更像「選取範圍」
+        const s = 10; // corner size
+        this.ctx.globalAlpha = 0.8;
+        this.ctx.setLineDash([]);
+
+        // Top-left
+        this.ctx.beginPath(); this.ctx.moveTo(x1, y1 + s); this.ctx.lineTo(x1, y1); this.ctx.lineTo(x1 + s, y1); this.ctx.stroke();
+        // Top-right
+        this.ctx.beginPath(); this.ctx.moveTo(x2 - s, y1); this.ctx.lineTo(x2, y1); this.ctx.lineTo(x2, y1 + s); this.ctx.stroke();
+        // Bottom-right
+        this.ctx.beginPath(); this.ctx.moveTo(x2, y2 - s); this.ctx.lineTo(x2, y2); this.ctx.lineTo(x2 - s, y2); this.ctx.stroke();
+        // Bottom-left
+        this.ctx.beginPath(); this.ctx.moveTo(x1 + s, y2); this.ctx.lineTo(x1, y2); this.ctx.lineTo(x1, y2 - s); this.ctx.stroke();
 
         this.ctx.restore();
     }
@@ -1931,10 +1992,10 @@ class GenogramCanvas {
                     sourceY = (p1.y + p2.y) / 2;
                 } else {
                     // 無婚姻線，假定為共同父母
-                    // 畫一條隱形連接線 (虛線)
+                    // 畫一條輕微的隱形連接線 (極淺色虛線)，用於標示子代起源，避免與正式關係線混淆
                     this.ctx.save();
-                    this.ctx.strokeStyle = '#999';
-                    this.ctx.setLineDash([3, 3]);
+                    this.ctx.strokeStyle = '#f0f0f0';
+                    this.ctx.setLineDash([2, 6]);
                     this.ctx.beginPath();
                     this.ctx.moveTo(p1.x, p1.y);
                     this.ctx.lineTo(p2.x, p2.y);
@@ -2003,64 +2064,69 @@ class GenogramCanvas {
      * @param {boolean} applyTransformFlag - 是否應用變換（在匯出時通常為 false）
      * @param {string} selectedHouseholdId - 選中的圈選框 ID
      */
-    drawHouseholds(households, persons, applyTransformFlag = true, selectedHouseholdId = null) {
+    drawHouseholds(households, persons, relationships = [], applyTransformFlag = true, selectedHouseholdId = null) {
         if (!households || households.length === 0) return;
 
         this.ctx.save();
         if (applyTransformFlag) {
             this.applyTransform(); // 應用縮放和平移（僅在正常渲染時）
         }
-        this.ctx.setLineDash([15, 10]); // 更明顯的虛線
+        this.ctx.setLineDash([10, 5]); // 改為較密的虛線，在不同縮放比例下更容易看清
         this.ctx.lineWidth = 3;
         this.ctx.lineJoin = 'round';
 
         households.forEach(household => {
-            const members = household.ids.map(id => persons.find(p => p.id === id)).filter(p => p);
-            if (members.length === 0) return;
+            const bounds = this.getHouseholdBounds(household, persons, relationships);
+            if (!bounds || !bounds.hullPoints) return;
 
-            const bounds = this.getHouseholdBounds(household, persons);
-            if (!bounds) return;
-
-            const { minX, minY, maxX, maxY } = bounds;
+            const { hullPoints } = bounds;
             const isSelected = selectedHouseholdId === household.id;
+
+            // 繪製路徑
+            const drawHull = (isGlow = false) => {
+                this.ctx.beginPath();
+                if (hullPoints.length < 3) return;
+
+                // 圓角多邊形繪製邏輯
+                const cornerRadius = 10; // 更小的圓角
+                for (let i = 0; i < hullPoints.length; i++) {
+                    const p1 = hullPoints[i];
+                    const p2 = hullPoints[(i + 1) % hullPoints.length];
+                    const p3 = hullPoints[(i + 2) % hullPoints.length];
+
+                    const dx1 = p2.x - p1.x;
+                    const dy1 = p2.y - p1.y;
+                    const dx2 = p3.x - p2.x;
+                    const dy2 = p3.y - p2.y;
+
+                    const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+                    const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+                    const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
+
+                    if (i === 0) {
+                        this.ctx.moveTo(p1.x + (dx1 / len1) * r, p1.y + (dy1 / len1) * r);
+                    }
+                    this.ctx.arcTo(p2.x, p2.y, p2.x + (dx2 / len2) * r, p2.y + (dy2 / len2) * r, r);
+                }
+                this.ctx.closePath();
+            };
 
             // 如果被選中，先繪製高亮外框
             if (isSelected) {
                 this.ctx.save();
                 this.ctx.setLineDash([]);
-                this.ctx.lineWidth = 5;
+                this.ctx.lineWidth = 6;
                 this.ctx.strokeStyle = '#4a90d9';
-                this.ctx.globalAlpha = 0.5;
-                const radius = 30;
-                this.ctx.beginPath();
-                this.ctx.moveTo(minX + radius - 2, minY - 2);
-                this.ctx.lineTo(maxX - radius + 2, minY - 2);
-                this.ctx.quadraticCurveTo(maxX + 2, minY - 2, maxX + 2, minY + radius - 2);
-                this.ctx.lineTo(maxX + 2, maxY - radius + 2);
-                this.ctx.quadraticCurveTo(maxX + 2, maxY + 2, maxX - radius + 2, maxY + 2);
-                this.ctx.lineTo(minX + radius - 2, maxY + 2);
-                this.ctx.quadraticCurveTo(minX - 2, maxY + 2, minX - 2, maxY - radius + 2);
-                this.ctx.lineTo(minX - 2, minY + radius - 2);
-                this.ctx.quadraticCurveTo(minX - 2, minY - 2, minX + radius - 2, minY - 2);
-                this.ctx.closePath();
+                this.ctx.globalAlpha = 0.3;
+                drawHull();
                 this.ctx.stroke();
                 this.ctx.restore();
             }
 
             // 繪製實際的圈選框
-            this.ctx.strokeStyle = isSelected ? '#4a90d9' : '#333'; // 選中時用藍色
-            const radius = 30;
-            this.ctx.beginPath();
-            this.ctx.moveTo(minX + radius, minY);
-            this.ctx.lineTo(maxX - radius, minY);
-            this.ctx.quadraticCurveTo(maxX, minY, maxX, minY + radius);
-            this.ctx.lineTo(maxX, maxY - radius);
-            this.ctx.quadraticCurveTo(maxX, maxY, maxX - radius, maxY);
-            this.ctx.lineTo(minX + radius, maxY);
-            this.ctx.quadraticCurveTo(minX, maxY, minX, maxY - radius);
-            this.ctx.lineTo(minX, minY + radius);
-            this.ctx.quadraticCurveTo(minX, minY, minX + radius, minY);
-            this.ctx.closePath();
+            this.ctx.strokeStyle = isSelected ? '#4a90d9' : '#333';
+            drawHull();
             this.ctx.stroke();
         });
 
@@ -2068,38 +2134,218 @@ class GenogramCanvas {
     }
 
     /**
-     * 計算圈選框的邊界
+     * 計算圈選框的邊界與凸包頂點
      * @param {Object} household - 圈選框對象
      * @param {Array} persons - 人員列表
-     * @returns {Object|null} - {minX, minY, maxX, maxY, width, height} 或 null
+     * @returns {Object|null} - {points, hullPoints, minX, minY, maxX, maxY} 或 null
      */
-    getHouseholdBounds(household, persons) {
+    getHouseholdBounds(household, persons, relationships = []) {
         const members = household.ids.map(id => persons.find(p => p.id === id)).filter(p => p);
         if (members.length === 0) return null;
 
-        const padding = 40;
+        const padding = 25; // 恢復較顯眼的邊距 (User 要求大一點)
         const nameHeight = 20;
+        const personRadius = this.personSize / 2;
 
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        // 收集所有成員的影響點（圓形的邊界 + 關係連線點）
+        const points = [];
 
+        // 1. 每位成員周圍取點 (泡泡基礎)
         members.forEach(m => {
-            const halfSize = this.personSize / 2;
-            minX = Math.min(minX, m.x - halfSize);
-            maxX = Math.max(maxX, m.x + halfSize);
-            minY = Math.min(minY, m.y - halfSize);
-            maxY = Math.max(maxY, m.y + halfSize + (m.name ? nameHeight : 0));
+            if (!m || typeof m.x !== 'number' || typeof m.y !== 'number') return;
+
+            const bottomExtra = m.name ? nameHeight : 0;
+            const r = personRadius + padding;
+
+            for (let i = 0; i < 16; i++) {
+                const angle = (i * Math.PI * 2) / 16;
+                let px = m.x + Math.cos(angle) * r;
+                let py = m.y + Math.sin(angle) * r;
+
+                if (angle > 0 && angle < Math.PI) {
+                    py += bottomExtra;
+                }
+
+                if (!isNaN(px) && !isNaN(py)) {
+                    points.push({ x: px, y: py });
+                }
+            }
         });
 
-        minX -= padding;
-        minY -= padding;
-        maxX += padding;
-        maxY += padding;
+        // 2. 加入成員間的連接線點 (User Request: 泡泡要包住連接線)
+        relationships.forEach(rel => {
+            const p1 = members.find(m => m.id === rel.fromPersonId);
+            const p2 = members.find(m => m.id === rel.toPersonId);
+
+            // 只有當雙方都在同一個同住框內時，才把線段包進去
+            if (p1 && p2) {
+                // 在線段上取取樣點 (中間 3 個點)
+                const samples = 3;
+                for (let i = 1; i <= samples; i++) {
+                    const ratio = i / (samples + 1);
+                    const sx = p1.x + (p2.x - p1.x) * ratio;
+                    const sy = p1.y + (p2.y - p1.y) * ratio;
+
+                    // 考慮 padding 影響，在線段兩側微調點位確保包絡
+                    const r = padding * 0.7;
+                    points.push({ x: sx + r, y: sy });
+                    points.push({ x: sx - r, y: sy });
+                    points.push({ x: sx, y: sy + r });
+                    points.push({ x: sx, y: sy - r });
+                }
+            }
+        });
+
+        if (points.length === 0) return null;
+
+        // 計算凹包 (Concave Hull) 產生「縮腰」效果
+        const hullPoints = this.getConcaveHull(points, 100);
+
+        // 計算外接矩形 (用於相容性或快速檢測)
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            maxX = Math.max(maxX, p.x);
+            minY = Math.min(minY, p.y);
+            maxY = Math.max(maxY, p.y);
+        });
 
         return {
+            points,
+            hullPoints,
             minX, minY, maxX, maxY,
             width: maxX - minX,
             height: maxY - minY
         };
+    }
+
+    /**
+     * 凸包演算法 (Monotone Chain)
+     */
+    getConvexHull(points) {
+        if (points.length <= 2) return points;
+
+        // 按 X 排序，X 相同按 Y 排序
+        const sorted = [...points].sort((a, b) => a.x !== b.x ? a.x - b.x : a.y - b.y);
+
+        const crossProduct = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+        // 下半部
+        const lower = [];
+        for (const p of sorted) {
+            while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+                lower.pop();
+            }
+            lower.push(p);
+        }
+
+        // 上半部
+        const upper = [];
+        for (let i = sorted.length - 1; i >= 0; i--) {
+            const p = sorted[i];
+            while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+                upper.pop();
+            }
+            upper.push(p);
+        }
+
+        lower.pop();
+        upper.pop();
+        return lower.concat(upper);
+    }
+
+    /**
+     * 凹包演算法 (簡化版：基於凸包邊緣細分)
+     * @param {Array} points - 所有原始點
+     * @param {number} concavity - 凹陷閾值 (數字越大越凹，預設 80px)
+     */
+    getConcaveHull(points, concavity = 80) {
+        if (points.length < 4) return this.getConvexHull(points);
+
+        let hull = this.getConvexHull(points);
+        const unused = points.filter(p => !hull.some(hp => Math.abs(hp.x - p.x) < 0.1 && Math.abs(hp.y - p.y) < 0.1));
+
+        let changed = true;
+        let iterations = 0;
+        while (changed && iterations < 200) {
+            iterations++;
+            changed = false;
+            for (let i = 0; i < hull.length; i++) {
+                const p1 = hull[i];
+                const p2 = hull[(i + 1) % hull.length];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const distSq = dx * dx + dy * dy;
+                const edgeLen = Math.sqrt(distSq);
+
+                // 如果邊緣太長，尋找最近的內部點來打破它
+                if (distSq > concavity * concavity) {
+                    let bestPoint = null;
+                    let bestIdx = -1;
+                    let minDistSum = Infinity;
+
+                    for (let j = 0; j < unused.length; j++) {
+                        const p = unused[j];
+                        const d1 = Math.sqrt((p.x - p1.x) ** 2 + (p.y - p1.y) ** 2);
+                        const d2 = Math.sqrt((p.x - p2.x) ** 2 + (p.y - p2.y) ** 2);
+                        const distSum = d1 + d2;
+
+                        if (distSum < minDistSum) {
+                            minDistSum = distSum;
+                            bestPoint = p;
+                            bestIdx = j;
+                        }
+                    }
+
+                    // 橡皮筋收縮邏輯：新增點後的總長度增長不能超過 1.4 倍
+                    if (bestPoint && minDistSum < edgeLen * 1.4) {
+                        // 防止自相交：檢查新邊緣是否與現有邊緣相交
+                        let selfIntersects = false;
+                        for (let k = 0; k < hull.length; k++) {
+                            const e1 = hull[k];
+                            const e2 = hull[(k + 1) % hull.length];
+
+                            // 跳過相鄰邊緣
+                            const isAdjacent = (k === i || k === (i + 1) % hull.length || (k + 1) % hull.length === i);
+                            if (isAdjacent) continue;
+
+                            if (this.segmentsIntersect(p1, bestPoint, e1, e2) ||
+                                this.segmentsIntersect(bestPoint, p2, e1, e2)) {
+                                selfIntersects = true;
+                                break;
+                            }
+                        }
+
+                        if (!selfIntersects) {
+                            hull.splice(i + 1, 0, bestPoint);
+                            unused.splice(bestIdx, 1);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return hull;
+    }
+
+    /**
+     * 檢查線段 (p1, p2) 與 (p3, p4) 是否相交 (不計端點)
+     */
+    segmentsIntersect(p1, p2, p3, p4) {
+        const dx12 = p2.x - p1.x;
+        const dy12 = p2.y - p1.y;
+        const dx34 = p4.x - p3.x;
+        const dy34 = p4.y - p3.y;
+
+        const denominator = (dy34 * dx12) - (dx34 * dy12);
+        if (Math.abs(denominator) < 0.0001) return false;
+
+        const ua = ((dx34 * (p1.y - p3.y)) - (dy34 * (p1.x - p3.x))) / denominator;
+        const ub = ((dx12 * (p1.y - p3.y)) - (dy12 * (p1.x - p3.x))) / denominator;
+
+        // 參數範圍 (0.01 ~ 0.99) 用於判定真正交叉，而非共享端點
+        return (ua > 0.01 && ua < 0.99) && (ub > 0.01 && ub < 0.99);
     }
 
     /**
@@ -2111,18 +2357,38 @@ class GenogramCanvas {
      * @param {number} tolerance - 容差距離（預設 20，用於點擊邊界）
      * @returns {boolean}
      */
-    isPointOnHouseholdBoundary(px, py, household, persons, tolerance = 20) {
-        const bounds = this.getHouseholdBounds(household, persons);
-        if (!bounds) return false;
+    isPointOnHouseholdBoundary(px, py, household, persons, relationships = [], tolerance = 20) {
+        const bounds = this.getHouseholdBounds(household, persons, relationships);
+        if (!bounds || !bounds.hullPoints) return false;
 
-        const { minX, minY, maxX, maxY } = bounds;
-        const lineWidth = 3; // 邊界線寬度
-        const totalTolerance = tolerance + lineWidth / 2;
+        const { hullPoints, minX, minY, maxX, maxY } = bounds;
 
-        // 檢查點是否在矩形範圍內（包含內部區域，讓使用者更容易選取和拖曳）
-        if (px >= minX - totalTolerance && px <= maxX + totalTolerance &&
-            py >= minY - totalTolerance && py <= maxY + totalTolerance) {
-            return true;
+        // 1. 快速過濾：如果連外接矩形都沒進去，直接回傳 false
+        if (px < minX - tolerance || px > maxX + tolerance ||
+            py < minY - tolerance || py > maxY + tolerance) {
+            return false;
+        }
+
+        // 2. 精確判定：射線法 (Ray Casting) 判定點是否在多邊形內
+        let inside = false;
+        for (let i = 0, j = hullPoints.length - 1; i < hullPoints.length; j = i++) {
+            const xi = hullPoints[i].x, yi = hullPoints[i].y;
+            const xj = hullPoints[j].x, yj = hullPoints[j].y;
+
+            const intersect = ((yi > py) !== (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+
+        if (inside) return true;
+
+        // 3. 邊界線段判定 (考慮容差)
+        for (let i = 0; i < hullPoints.length; i++) {
+            const p1 = hullPoints[i];
+            const p2 = hullPoints[(i + 1) % hullPoints.length];
+            if (this.distanceToLineSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= tolerance) {
+                return true;
+            }
         }
 
         return false;

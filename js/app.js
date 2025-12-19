@@ -186,6 +186,12 @@ class GenogramApp {
      */
     setTool(tool) {
         this.currentTool = tool;
+
+        // 切換工具時清空連線暫存，避免出現「跟隨滑鼠的線」
+        if (tool !== 'connect') {
+            this.connectingFrom = null;
+        }
+
         this.updateToolbar();
         this.updateCursor();
 
@@ -209,12 +215,15 @@ class GenogramApp {
                 break;
             case 'household':
                 if (this.selectedPersonIds.length > 0) {
-                    // 如果已經有多選人物，直接建立
+                    // 如果已經有選定多個人物，直接建立
                     this.householdSelection = [...this.selectedPersonIds];
                     this.createHousehold();
-                    statusText = '已建立同住圈選';
+                } else if (this.selectedPersonId) {
+                    // 如果只選了一個人，也視為要建立同住框
+                    this.householdSelection = [this.selectedPersonId];
+                    this.createHousehold();
                 } else {
-                    statusText = '同住圈選：請先使用「範圍圈選」選取多個人物，或切換至選取工具按 Shift 多選，再點擊此按鈕';
+                    statusText = '同住圈選：請直接在畫布上「拖曳滑鼠」圈選成員，放開後將自動建立';
                 }
                 break;
         }
@@ -312,7 +321,7 @@ class GenogramApp {
             return;
         }
 
-        if (this.currentTool === 'boxSelect') {
+        if (this.currentTool === 'boxSelect' || this.currentTool === 'household') {
             this.isBoxSelecting = true;
             this.boxSelectStart = point;
             this.boxSelectEnd = point;
@@ -482,14 +491,22 @@ class GenogramApp {
                 this.updatePropertyPanel();
                 this.updateStatus('正在進行範圍圈選...', 'info');
             } else {
-                // 普通點擊空白處 -> 拖曳畫布 (Pan)
-                this.selectedPersonId = null;
-                this.selectedPersonIds = [];
-                this.selectedRelationshipId = null;
-                this.selectedHouseholdId = null;
-                this.updatePropertyPanel();
-                this.canvas.isPanning = true;
-                this.canvas.panStart = { x: e.clientX, y: e.clientY };
+                // 檢查是否在多選範圍內，如果是，則開始拖曳整組
+                if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
+                    this.canvas.isDragging = true;
+                    this.canvas.dragStart = point;
+                    this.canvas.draggedPerson = this.persons.find(p => p.id === this.selectedPersonIds[0]);
+                    this.updateStatus('正在移動選取對象...', 'info');
+                } else {
+                    // 普通點擊空白處 -> 拖曳畫布 (Pan)
+                    this.selectedPersonId = null;
+                    this.selectedPersonIds = [];
+                    this.selectedRelationshipId = null;
+                    this.selectedHouseholdId = null;
+                    this.updatePropertyPanel();
+                    this.canvas.isPanning = true;
+                    this.canvas.panStart = { x: e.clientX, y: e.clientY };
+                }
             }
             this.render();
         }
@@ -505,40 +522,200 @@ class GenogramApp {
 
         if (this.isBoxSelecting) {
             this.boxSelectEnd = point;
+
+            // 即時更新選取結果，這會讓人物在拖曳過程中就顯示綠色高亮 (Highlighted)
+            if (typeof this.updateBoxSelection === 'function') {
+                this.updateBoxSelection();
+            }
+
             this.render();
             return;
         }
 
         if (this.canvas.isDragging) {
-            const dx = point.x - this.canvas.dragStart.x;
-            const dy = point.y - this.canvas.dragStart.y;
+            let dx = point.x - this.canvas.dragStart.x;
+            let dy = point.y - this.canvas.dragStart.y;
 
-            if (this.canvas.draggedPerson) {
-                // 拖曳單人或多選群組
-                if (this.selectedPersonIds.includes(this.canvas.draggedPerson.id)) {
-                    // 如果拖曳的人物在多選列表中，則移動所有選中的人
-                    this.selectedPersonIds.forEach(id => {
-                        const person = this.persons.find(p => p.id === id);
-                        if (person) {
-                            person.x += dx;
-                            person.y += dy;
+            if (this.canvas.draggedPerson || this.canvas.draggedHousehold) {
+                // 取得正在拖曳的人員列表
+                let movingPersonIds = [];
+                if (this.canvas.draggedPerson) {
+                    movingPersonIds = this.selectedPersonIds.includes(this.canvas.draggedPerson.id)
+                        ? this.selectedPersonIds
+                        : [this.canvas.draggedPerson.id];
+                } else if (this.canvas.draggedHousehold) {
+                    movingPersonIds = this.canvas.draggedHousehold.ids;
+                }
+
+                const movingPersons = movingPersonIds.map(id => this.persons.find(p => p.id === id)).filter(p => p);
+
+                // 1. 垂直層級限制 (父在上、子在下)
+                const minVerticalGap = 40;
+                let allowedDyUp = -Infinity;
+                let allowedDyDown = Infinity;
+
+                movingPersons.forEach(person => {
+                    const familyRels = this.relationships.filter(rel =>
+                        rel.type === 'parent-child' && (rel.fromPersonId === person.id || rel.toPersonId === person.id)
+                    );
+
+                    familyRels.forEach(rel => {
+                        const isParent = rel.fromPersonId === person.id;
+                        const otherId = isParent ? rel.toPersonId : rel.fromPersonId;
+                        if (movingPersonIds.includes(otherId)) return;
+
+                        const otherPerson = this.persons.find(p => p.id === otherId);
+                        if (!otherPerson) return;
+
+                        if (isParent) {
+                            const limitY = otherPerson.y - minVerticalGap;
+                            const maxDy = limitY - person.y;
+                            if (maxDy < allowedDyDown) allowedDyDown = maxDy;
+                        } else {
+                            const limitY = otherPerson.y + minVerticalGap;
+                            const maxDy = limitY - person.y;
+                            if (maxDy > allowedDyUp) allowedDyUp = maxDy;
                         }
                     });
-                } else {
-                    // 只移動當前拖曳的人 (原本邏輯)
-                    this.canvas.draggedPerson.x += dx;
-                    this.canvas.draggedPerson.y += dy;
-                }
-            } else if (this.canvas.draggedHousehold) {
-                // 拖曳整戶 (新增功能)
-                const household = this.canvas.draggedHousehold;
-                // 移動家庭內的所有成員
-                household.ids.forEach(pid => {
-                    const person = this.persons.find(p => p.id === pid);
-                    if (person) {
-                        person.x += dx;
-                        person.y += dy;
+                });
+
+                if (dy < allowedDyUp) dy = allowedDyUp;
+                if (dy > allowedDyDown) dy = allowedDyDown;
+
+                // [NEW] 1.5 水平排序限制 (男左女右、長左幼右)
+                const horizontalSpacing = 60;
+                let allowedDxLeft = -Infinity;
+                let allowedDxRight = Infinity;
+
+                // 輔助函數：找父母
+                const getPersonParents = (pid) => this.relationships
+                    .filter(rel => rel.type === 'parent-child' && rel.toPersonId === pid)
+                    .map(rel => rel.fromPersonId);
+
+                movingPersons.forEach(person => {
+                    const personParents = getPersonParents(person.id);
+
+                    // 找出「同輩分」的人
+                    // 修改：除了 Y 軸接近，更應該基於「家族關係」判定為 Peer (配偶、手足)
+                    const sameGenPeers = this.persons.filter(p => {
+                        if (movingPersonIds.includes(p.id)) return false;
+
+                        // 1. 配偶
+                        const isSpouse = this.relationships.some(rel =>
+                            rel.type === 'marriage' &&
+                            ((rel.fromPersonId === person.id && rel.toPersonId === p.id) ||
+                                (rel.toPersonId === person.id && rel.fromPersonId === p.id))
+                        );
+                        if (isSpouse) return true;
+
+                        // 2. 手足 (同父母)
+                        const peerParents = getPersonParents(p.id);
+                        const isSibling = personParents.length > 0 && peerParents.length > 0 &&
+                            personParents.some(parentId => peerParents.includes(parentId));
+                        if (isSibling) return true;
+
+                        // 3. 備用：若無明確關係，但 Y 軸極近 (判定為同輩)
+                        return Math.abs(p.y - person.y) < 20;
+                    });
+
+                    sameGenPeers.forEach(peer => {
+                        // 判斷應該在左還在右
+                        let shouldBeOnLeft = false;
+
+                        // 規則 A: 年齡 (大左小右)
+                        const personAge = typeof person.age === 'number' ? person.age : -1;
+                        const peerAge = typeof peer.age === 'number' ? peer.age : -1;
+
+                        if (personAge !== peerAge) {
+                            if (personAge > peerAge) shouldBeOnLeft = true;
+                            else if (personAge < peerAge) shouldBeOnLeft = false;
+                        } else {
+                            // 規則 B: 性別 (男左女右)
+                            if (person.gender === 'male' && peer.gender === 'female') shouldBeOnLeft = true;
+                            else if (person.gender === 'female' && peer.gender === 'male') shouldBeOnLeft = false;
+                            else {
+                                // 同性別且同年齡，不限制（保持原位）
+                                return;
+                            }
+                        }
+
+                        if (shouldBeOnLeft) {
+                            // 我應該在對方的左邊 (x 不能大於 peer.x - gap)
+                            const limitX = peer.x - horizontalSpacing;
+                            const maxDx = limitX - person.x;
+                            if (maxDx < allowedDxRight) allowedDxRight = maxDx;
+                        } else {
+                            // 我應該在對方的右邊 (x 不能小於 peer.x + gap)
+                            const limitX = peer.x + horizontalSpacing;
+                            const maxDx = limitX - person.x;
+                            if (maxDx > allowedDxLeft) allowedDxLeft = maxDx;
+                        }
+                    });
+                });
+
+                if (dx < allowedDxLeft) dx = allowedDxLeft;
+                if (dx > allowedDxRight) dx = allowedDxRight;
+
+                // 2. 個人空間限制 (防止重疊)
+                // 3. 同住邊界限制 (防止穿過)
+                const personalSpace = 60; // 最小間隔
+
+                // 預先計算如果不被阻擋時，其中一個人的新位置 (用來測試 X 方向或 Y 方向是否被擋)
+                // 為了效能與平滑感，我們分別測試 X 和 Y 方向
+                let finalDx = dx;
+                let finalDy = dy;
+
+                const checkCollisions = (testDx, testDy) => {
+                    for (const person of movingPersons) {
+                        const nx = person.x + testDx;
+                        const ny = person.y + testDy;
+
+                        // A. 檢查是否與其他人物衝突
+                        for (const other of this.persons) {
+                            if (movingPersonIds.includes(other.id)) continue;
+                            const dist = Math.sqrt(Math.pow(nx - other.x, 2) + Math.pow(ny - other.y, 2));
+                            if (dist < personalSpace) return true;
+                        }
+
+                        // B. 檢查是否穿過「非我所屬」的同住邊界
+                        for (const h of this.households) {
+                            if (h.ids.includes(person.id)) continue; // 這是我的家，可以進出或在內移動
+
+                            // 檢查新位置是否在該同住框內
+                            if (this.canvas.isPointOnHouseholdBoundary(nx, ny, h, this.persons, this.relationships, 10)) {
+                                return true;
+                            }
+                        }
                     }
+                    return false;
+                };
+
+                // 分別嘗試 X 和 Y 的移動，實現「滑行」效果
+                if (checkCollisions(finalDx, finalDy)) {
+                    // 全動會撞，試著至少保住一個軸的移動
+                    const canMoveX = !checkCollisions(finalDx, 0);
+                    const canMoveY = !checkCollisions(0, finalDy);
+
+                    if (canMoveX && !canMoveY) {
+                        // 僅 X 可以
+                        finalDy = 0;
+                    } else if (!canMoveX && canMoveY) {
+                        // 僅 Y 可以
+                        finalDx = 0;
+                    } else if (canMoveX && canMoveY) {
+                        // 兩者單獨都可以，但合起來撞（如角邊），擇一（優先 X）
+                        finalDy = 0;
+                    } else {
+                        // 都撞 -> 停止移動
+                        finalDx = 0;
+                        finalDy = 0;
+                    }
+                }
+
+                // 執行移動
+                movingPersons.forEach(person => {
+                    person.x += finalDx;
+                    person.y += finalDy;
                 });
             }
 
@@ -571,6 +748,8 @@ class GenogramApp {
                 this.canvas.canvas.style.cursor = 'pointer';
             } else if (household) {
                 this.canvas.canvas.style.cursor = 'move'; // 顯示可移動游標
+            } else if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
+                this.canvas.canvas.style.cursor = 'move'; // 多選區域移動
             } else {
                 this.canvas.canvas.style.cursor = 'default';
             }
@@ -584,6 +763,20 @@ class GenogramApp {
         if (this.isBoxSelecting) {
             this.isBoxSelecting = false;
             this.updateBoxSelection(); // 計算選取了哪些人
+
+            // 如果是在「同住工具」模式下，圈選完直接建立
+            if (this.currentTool === 'household' && this.selectedPersonIds.length > 0) {
+                this.householdSelection = [...this.selectedPersonIds];
+                this.createHousehold();
+                // createHousehold 內部已經呼叫了 render()，所以這裡直接 return
+                return;
+            }
+
+            // 如果是「範圍圈選」工具，完成後自動切換回選取工具，方便立即移動
+            if (this.currentTool === 'boxSelect') {
+                this.setTool('select');
+            }
+
             this.render();
         }
 
@@ -637,9 +830,6 @@ class GenogramApp {
             content.innerHTML = `<div class="panel-content"><p>已選取 ${this.selectedPersonIds.length} 位成員</p></div>`;
             this.updateStatus(`已選取 ${this.selectedPersonIds.length} 位成員`, 'info');
         }
-
-        // 如果選了人，自動切換回選取工具
-        this.setTool('select');
     }
 
     /**
@@ -752,6 +942,43 @@ class GenogramApp {
     }
 
     /**
+     * 取得多選人物的邊界矩形
+     */
+    getMultiSelectionBounds() {
+        if (this.selectedPersonIds.length < 2) return null;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const radius = 25;
+
+        this.selectedPersonIds.forEach(id => {
+            const p = this.persons.find(per => per.id === id);
+            if (p) {
+                minX = Math.min(minX, p.x - radius);
+                maxX = Math.max(maxX, p.x + radius);
+                minY = Math.min(minY, p.y - radius);
+                maxY = Math.max(maxY, p.y + radius);
+            }
+        });
+
+        const padding = 10;
+        return {
+            x1: minX - padding,
+            y1: minY - padding,
+            x2: maxX + padding,
+            y2: maxY + padding
+        };
+    }
+
+    /**
+     * 檢查點是否在多選邊界內
+     */
+    isPointInsideMultiSelection(x, y) {
+        const bounds = this.getMultiSelectionBounds();
+        if (!bounds) return false;
+        return x >= bounds.x1 && x <= bounds.x2 && y >= bounds.y1 && y <= bounds.y2;
+    }
+
+    /**
      * 取得指定座標的關係線
      */
     getRelationshipAt(x, y) {
@@ -776,7 +1003,7 @@ class GenogramApp {
         // 從後往前檢查（後建立的在上層）
         for (let i = this.households.length - 1; i >= 0; i--) {
             const household = this.households[i];
-            if (this.canvas.isPointOnHouseholdBoundary(x, y, household, this.persons, 15)) {
+            if (this.canvas.isPointOnHouseholdBoundary(x, y, household, this.persons, this.relationships, 15)) {
                 return household;
             }
         }
@@ -986,6 +1213,12 @@ class GenogramApp {
             return;
         }
 
+        // 如果成員原本就屬於其他同住框，將舊的刪除 (避免人屬於多個同住框)
+        this.households = this.households.filter(h => {
+            const hasOverlap = h.ids.some(id => this.householdSelection.includes(id));
+            return !hasOverlap;
+        });
+
         const newHousehold = {
             id: 'house_' + Date.now(),
             ids: [...this.householdSelection],
@@ -993,11 +1226,17 @@ class GenogramApp {
         };
 
         this.households.push(newHousehold);
-        // 清空選取並切回選取工具
+
+        // 選取剛建立的家庭，以便使用者立即看到屬性面板並確認建立成功
+        this.selectedHouseholdId = newHousehold.id;
+        this.selectedPersonId = null;
+        this.selectedPersonIds = [];
         this.householdSelection = [];
+
         this.setTool('select');
         this.updateStatus('同住圈選已建立', 'success');
         this.saveState();
+        this.autoSave();
         this.render();
     }
 
@@ -1156,21 +1395,26 @@ class GenogramApp {
      * 刪除選取的項目
      */
     deleteSelected() {
-        if (this.selectedHouseholdId) {
-            this.saveState();
-            this.households = this.households.filter(h => h.id !== this.selectedHouseholdId);
-            this.selectedHouseholdId = null;
-            this.updatePropertyPanel();
-            this.autoSave();
-            this.render();
-        } else if (this.selectedRelationshipId) {
+        // 優先權 1: 優先刪除「關係線」 (User Request: 避免被同住框攔截)
+        if (this.selectedRelationshipId) {
             this.saveState();
             this.relationships = this.relationships.filter(r => r.id !== this.selectedRelationshipId);
             this.selectedRelationshipId = null;
             this.updatePropertyPanel();
             this.autoSave();
             this.render();
-        } else if (this.selectedPersonIds.length > 0) {
+        }
+        // 優先權 2: 刪除「同住圈選框」
+        else if (this.selectedHouseholdId) {
+            this.saveState();
+            this.households = this.households.filter(h => h.id !== this.selectedHouseholdId);
+            this.selectedHouseholdId = null;
+            this.updatePropertyPanel();
+            this.autoSave();
+            this.render();
+        }
+        // 優先權 3: 刪除多選人物
+        else if (this.selectedPersonIds.length > 0) {
             // 刪除多選的人物
             this.saveState();
             this.persons = this.persons.filter(p => !this.selectedPersonIds.includes(p.id));
@@ -1218,12 +1462,10 @@ class GenogramApp {
             this.connectingFrom,
             this.selectedPersonIds, // 多選的人物 ID 列表
             this.isBoxSelecting ? this.boxSelectStart : null, // 選擇框起始點
-            this.isBoxSelecting ? this.boxSelectEnd : null // 選擇框結束點
+            this.isBoxSelecting ? this.boxSelectEnd : null, // 選擇框結束點
+            this.households, // 同住家庭列表
+            this.selectedHouseholdId // 選中的家庭 ID
         );
-
-        if (this.canvas.drawHouseholds && this.households) {
-            this.canvas.drawHouseholds(this.households, this.persons, true, this.selectedHouseholdId);
-        }
     }
 
     /**
@@ -1421,6 +1663,8 @@ class GenogramApp {
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
         }
     }
+
+
 
     /**
      * 自動儲存
@@ -2065,7 +2309,6 @@ class GenogramApp {
                 // ===== 優先序 0: 家族側別 (Family Side) =====
                 // spouse 側在左 (-1), neutral 在中 (0), ip 側在右 (1)
                 const getSideOrder = (unit) => {
-                    // 對於多人單位，取多數決
                     const sideCounts = { 'spouse': 0, 'neutral': 0, 'ip': 0 };
                     unit.members.forEach(m => {
                         sideCounts[familySide[m]]++;
@@ -2087,10 +2330,35 @@ class GenogramApp {
                 const scoreDiff = a.score - b.score;
                 if (Math.abs(scoreDiff) > 0.5) return scoreDiff;
 
-                // 優先序 3: 家庭引力 (Household Gravity)
+                // [NEW] 優先序 3: 年齡與出生順序 (長輩在左)
+                const getUnitMaxAge = (unit) => {
+                    let maxAge = -1;
+                    unit.members.forEach(mid => {
+                        const p = personMap[mid];
+                        if (p && typeof p.age === 'number') maxAge = Math.max(maxAge, p.age);
+                    });
+                    return maxAge;
+                };
+                const ageA = getUnitMaxAge(a);
+                const ageB = getUnitMaxAge(b);
+                if (ageA !== ageB) return ageB - ageA; // 年紀大在左 (由大到小)
+
+                // [NEW] 優先序 4: 性別 (男左女右)
+                const getUnitGenderScore = (unit) => {
+                    // 男: -1, 女: 1
+                    if (unit.members.length === 1) {
+                        return personMap[unit.members[0]]?.gender === 'female' ? 1 : -1;
+                    }
+                    return 0;
+                };
+                const genA = getUnitGenderScore(a);
+                const genB = getUnitGenderScore(b);
+                if (genA !== genB) return genA - genB;
+
+                // 優先序 5: 家庭引力 (Household Gravity)
                 if (a.householdBias !== b.householdBias) return a.householdBias - b.householdBias;
 
-                // 優先序 4: 家庭 ID 分組
+                // 優先序 6: 家庭 ID 分組
                 const hIdA = a.householdId ? a.householdId.toString() : '';
                 const hIdB = b.householdId ? b.householdId.toString() : '';
                 if (hIdA !== hIdB) {
@@ -2099,7 +2367,7 @@ class GenogramApp {
                     if (hIdB) return 1;
                 }
 
-                // 優先序 5: 外部連結 (Edge Bias)
+                // 優先序 7: 外部連結 (Edge Bias)
                 return a.edgeBias - b.edgeBias;
             });
 
@@ -2109,7 +2377,7 @@ class GenogramApp {
                     const members = [...unit.members];
 
                     members.sort((a, b) => {
-                        // 家庭內部：先按 familySide，再按 edgeBias
+                        // 家庭內部：先按 familySide，再按 age (長左幼右)，最後按 gender (男左女右)
                         const sideA = familySide[a];
                         const sideB = familySide[b];
                         const sideOrder = { 'spouse': -1, 'neutral': 0, 'ip': 1 };
@@ -2117,6 +2385,18 @@ class GenogramApp {
                         if (sideOrder[sideA] !== sideOrder[sideB]) {
                             return sideOrder[sideA] - sideOrder[sideB];
                         }
+
+                        // [NEW] 年齡排序
+                        const pA = personMap[a];
+                        const pB = personMap[b];
+                        const ageA = (pA && typeof pA.age === 'number') ? pA.age : -1;
+                        const ageB = (pB && typeof pB.age === 'number') ? pB.age : -1;
+                        if (ageA !== ageB) return ageB - ageA;
+
+                        // [NEW] 性別排序
+                        const genA = pA?.gender === 'female' ? 1 : -1;
+                        const genB = pB?.gender === 'female' ? 1 : -1;
+                        if (genA !== genB) return genA - genB;
 
                         const biasA = getEdgeBias(a);
                         const biasB = getEdgeBias(b);
@@ -2189,14 +2469,14 @@ class GenogramApp {
             byGeneration[genStr] = sortedIds;
         });
 
-        // 7. 計算佈局參數
-        const baseY = 150;
-        const generationSpacing = 200;
-        const personSpacing = 180;
+        // 7. 計算佈局參數 (中度壓縮版 - 兼顧情感線空間)
+        const baseY = 120;
+        const generationSpacing = 140;
+        const personSpacing = 120;
         const householdMargin = 100;
         const personSize = 50;
         const nameHeight = 20;
-        const householdPadding = 40;
+        const householdPadding = 25; // 恢復較寬大的邊距，避免太擠
 
         const canvasContainer = this.elements.canvasContainer;
         const canvasWidth = canvasContainer ? canvasContainer.clientWidth : 1200;
@@ -2285,14 +2565,14 @@ class GenogramApp {
                     const prevH = this.households ? this.households.find(h => h.ids.some(hid => hid.toString() === prevPid.toString())) : null;
                     if (prevH) prevHouseholdId = prevH.id;
 
-                    // Component 分離
+                    // Component 分離 (恢復中度間距，避免情感線過短)
                     if (componentMap[pid] !== componentMap[prevPid]) {
-                        gap += 200;
+                        gap += 100;
                     }
 
-                    // ===== 新增：Family Side 分離 =====
+                    // ===== 新增：Family Side 分離 (恢復中度間距) =====
                     if (familySide[pid] !== familySide[prevPid]) {
-                        gap += 150; // 不同家族側之間增加間距
+                        gap += 80; // 不同家族側之間保留足夠空間畫情感線
                     }
                 }
 
