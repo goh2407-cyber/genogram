@@ -28,14 +28,22 @@
                 <h1 class="app-title">家系圖生成器</h1>
             </div>
             <div class="toolbar-center">
-                <div class="tool-group">
-                    <button class="tool-btn" id="addMale" title="新增男性 (M)">
-                        <span class="icon male-icon"></span>
-                        <span class="tool-label">男性 (M)</span>
+                <div class="tool-group generation-group">
+                    <button class="tool-btn" id="addGrandparent" title="新增祖父輩 (1)">
+                        <span class="icon">👴</span>
+                        <span class="tool-label">祖父輩 (1)</span>
                     </button>
-                    <button class="tool-btn" id="addFemale" title="新增女性 (F)">
-                        <span class="icon female-icon"></span>
-                        <span class="tool-label">女性 (F)</span>
+                    <button class="tool-btn" id="addParent" title="新增父母輩 (2)">
+                        <span class="icon">👨</span>
+                        <span class="tool-label">父母輩 (2)</span>
+                    </button>
+                    <button class="tool-btn" id="addChild" title="新增子女輩 (3)">
+                        <span class="icon">🧒</span>
+                        <span class="tool-label">子女輩 (3)</span>
+                    </button>
+                    <button class="tool-btn" id="addGrandchild" title="新增孫輩 (4)">
+                        <span class="icon">👶</span>
+                        <span class="tool-label">孫輩 (4)</span>
                     </button>
                 </div>
                 <div class="tool-divider"></div>
@@ -238,6 +246,28 @@
             </aside>
         </main>
 
+        <!-- 性別選擇對話框 -->
+        <div class="modal-overlay" id="genderModal">
+            <div class="modal">
+                <h3 class="modal-title">選擇性別</h3>
+                <div class="modal-content">
+                    <div class="gender-selection">
+                        <button class="gender-btn" data-gender="male">
+                            <span class="icon male-icon"></span>
+                            <span>男性</span>
+                        </button>
+                        <button class="gender-btn" data-gender="female">
+                            <span class="icon female-icon"></span>
+                            <span>女性</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" id="cancelGender">取消</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 關係選擇對話框 -->
         <div class="modal-overlay" id="relationshipModal">
             <div class="modal">
@@ -308,6 +338,23 @@
                 </div>
             </div>
         </div>
+
+        <!-- 選擇子女對話框 -->
+        <div class="modal-overlay" id="childrenModal">
+            <div class="modal">
+                <h3 class="modal-title">選擇共同子女</h3>
+                <div class="modal-content">
+                    <p style="color: #666; margin-bottom: 1rem;">點選要設為這對父母的子女（可多選）</p>
+                    <div id="childrenList" class="children-selection">
+                        <!-- 子女列表會動態生成 -->
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" id="skipChildren">跳過</button>
+                    <button class="btn-primary" id="confirmChildren">確認建立親子關係</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 使用說明對話框 -->
@@ -327,7 +374,7 @@
                 <div class="help-section">
                     <h4>基本操作</h4>
                     <ul>
-                        <li><strong>新增人物：</strong>點擊「男(M)」或「女(F)」，然後點擊畫布任何位置。</li>
+                        <li><strong>新增人物：</strong>點擊輩分按鈕（祖父輩/父母輩/子女輩/孫輩），選擇性別後自動放置。</li>
                         <li><strong>修改內容：</strong>使用「選取(V)」工具點擊人物或關係線。</li>
                         <li><strong>編輯人物：</strong>選取後在右側面板修改姓名、備註、是否死亡。</li>
                         <li><strong>建立關係：</strong>使用「連接(C)」工具，先點擊第一個人，再點擊第二個。</li>
@@ -344,9 +391,10 @@
                 <div class="help-section">
                     <h4>快速鍵</h4>
                     <div class="shortcut-grid">
-                        <span>V: 選取</span> <span>M: 男性</span> <span>F: 女性</span>
-                        <span>C: 連接</span> <span>B: 範圍圈選</span> <span>H: 同住圈選</span>
-                        <span>Del: 刪除</span> <span>Ctrl+Z: 復原</span> <span>Ctrl+S: 儲存</span>
+                        <span>V: 選取</span> <span>1: 祖父輩</span> <span>2: 父母輩</span>
+                        <span>3: 子女輩</span> <span>4: 孫輩</span> <span>C: 連接</span>
+                        <span>B: 範圍圈選</span> <span>H: 同住圈選</span> <span>Del: 刪除</span>
+                        <span>Ctrl+Z: 復原</span> <span>Ctrl+S: 儲存</span>
                     </div>
                 </div>
             </div>

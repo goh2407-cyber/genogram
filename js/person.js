@@ -30,6 +30,7 @@ class Person {
         this.x = data.x || 100;
         this.y = data.y || 100;
         this.notes = data.notes || '';
+        this.generation = data.generation || null; // 'grandparent', 'parent', 'child', 'grandchild'
     }
 
     /**
@@ -115,7 +116,8 @@ class Person {
             medical: this.medical,
             x: this.x,
             y: this.y,
-            notes: this.notes
+            notes: this.notes,
+            generation: this.generation
         };
     }
 

@@ -550,10 +550,33 @@ class GenogramCanvas {
         if (isSelected) {
             this.ctx.save();
             this.ctx.strokeStyle = '#4a90d9';
-            this.ctx.lineWidth = style.width + 4;
-            this.ctx.globalAlpha = 0.3;
-            if (category === 'marriage') {
-                // 選取高亮：直接連結中點（左右）
+
+            if (category === 'family') {
+                // 親子關係高亮：使用加強效果
+                this.ctx.lineWidth = style.width + 10;
+                this.ctx.globalAlpha = 0.8;
+                this.ctx.shadowColor = '#4a90d9';
+                this.ctx.shadowBlur = 12;
+
+                let fromPoint, toPoint;
+                if (fromPerson.y < toPerson.y) {
+                    fromPoint = fromPerson.getConnectionPoint('bottom');
+                    toPoint = toPerson.getConnectionPoint('top');
+                } else {
+                    fromPoint = fromPerson.getConnectionPoint('top');
+                    toPoint = toPerson.getConnectionPoint('bottom');
+                }
+                const midY = (fromPoint.y + toPoint.y) / 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(fromPoint.x, fromPoint.y);
+                this.ctx.lineTo(fromPoint.x, midY);
+                this.ctx.lineTo(toPoint.x, midY);
+                this.ctx.lineTo(toPoint.x, toPoint.y);
+                this.ctx.stroke();
+            } else if (category === 'marriage') {
+                // 婚姻關係：使用原本較細的高亮
+                this.ctx.lineWidth = style.width + 4;
+                this.ctx.globalAlpha = 0.3;
                 const fromPoint = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
                 const toPoint = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
                 this.ctx.beginPath();
@@ -561,7 +584,9 @@ class GenogramCanvas {
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else {
-                // 情感關係高亮也需要遵循避讓路徑
+                // 情感關係：使用原本較細的高亮
+                this.ctx.lineWidth = style.width + 4;
+                this.ctx.globalAlpha = 0.3;
                 const path = this.getSmartPath(fromPerson, toPerson, persons);
                 this.ctx.beginPath();
 
