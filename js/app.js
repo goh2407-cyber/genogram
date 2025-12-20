@@ -3313,3 +3313,4 @@ class GenogramApp {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new GenogramApp();
 });
+
