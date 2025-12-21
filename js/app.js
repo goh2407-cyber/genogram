@@ -2840,6 +2840,10 @@ class GenogramApp {
             });
 
             units.sort((a, b) => {
+                // 優先序 0: Component ID (確保不同家族分開) [moved to top]
+                // 這是為了回應使用者需求：不同家族的人不應該混再次排序
+                if (a.componentId !== b.componentId) return a.componentId - b.componentId;
+
                 // 優先序 1: 父母位置 (Alignment - 讓子女跟隨父母)
                 // 這是最高優先級，確保樹狀結構垂直對齊
                 if (a.parentCenter !== null && b.parentCenter !== null) {
@@ -2875,10 +2879,6 @@ class GenogramApp {
                 }
                 if (ageA !== -1 && ageB === -1) return -1;
                 if (ageA === -1 && ageB !== -1) return 1;
-
-                // 優先序 4: Component ID (確保不同家族分開)
-                // 降級：只有在以上條件都相同時，才用家族 ID 來分
-                if (a.componentId !== b.componentId) return a.componentId - b.componentId;
 
                 // 優先序 5: 家庭引力 (Household Gravity)
                 if (a.householdBias !== b.householdBias) return a.householdBias - b.householdBias;
