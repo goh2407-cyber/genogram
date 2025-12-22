@@ -11,13 +11,13 @@ class GenogramApp {
     };
 
     // 水平間距設定
-    static HORIZONTAL_SPACING = 100;
+    static HORIZONTAL_SPACING = 140; // 從 100 調大到 140
     static HORIZONTAL_START = 150;
 
     // 格子系統設定 (Grid System)
     static GRID = {
-        CELL_WIDTH: 100,      // 水平格子寬度 (人物間距)
-        CELL_HEIGHT: 120,     // 垂直格子高度 (輩分間距)
+        CELL_WIDTH: 160,      // 水平格子寬度 (人物間距) - 從 120 調大到 160
+        CELL_HEIGHT: 150,     // 垂直格子高度 (輩分間距) - 從 120 調大到 150
         MIN_DISTANCE: 50,     // 人物最小間距
         MAX_DISTANCE: 200,    // 人物最大間距 (2 格寬度)
         ORIGIN_X: 50,         // 格子起點 X (半格偏移，讓人物置中)
@@ -48,6 +48,12 @@ class GenogramApp {
         this.householdSelection = []; // 用於建立同住家庭的暫存選取列表
         this.pendingGeneration = null; // 等待選擇性別的輩分
 
+        // 拖曳 History 合併：記錄拖曳開始時的狀態快照
+        this.dragStartSnapshot = null;
+
+        // Pointer capture ID (for touch/stylus support)
+        this.activePointerId = null;
+
         // 初始化模組
         this.history = new HistoryManager();
         this.storage = new StorageManager();
@@ -55,6 +61,11 @@ class GenogramApp {
 
         // UI 元素
         this.elements = {};
+
+        // [Bug Fix #7] 加載中狀態，避免競態
+        this.isLoading = false;
+        this.autoSaveTimer = null;
+        this.lastAutoSaveTime = 0;
 
         // 初始化
         this.init();
@@ -65,7 +76,8 @@ class GenogramApp {
      */
     init() {
         this.cacheElements();
-        this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer');
+        // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
+        this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
         this.setupEventListeners();
 
         // 延遲載入自動儲存，確保 canvas 和 ResizeObserver 都已完成初始化
@@ -178,11 +190,12 @@ class GenogramApp {
             this.elements.autoLayoutBtn.addEventListener('click', () => this.autoLayoutByGeneration());
         }
 
-        // 畫布事件
+        // 畫布事件 (使用 Pointer Events 統一滑鼠與觸控)
         const canvas = this.canvas.canvas;
-        canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-        window.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        window.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+        window.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+        window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+        window.addEventListener('pointercancel', (e) => this.handlePointerUp(e)); // 觸控中斷時也要清理狀態
         canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         canvas.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
 
@@ -240,6 +253,14 @@ class GenogramApp {
             this.canvas.resize();
             this.render();
         });
+
+        // [Bug Fix #2] 視窗失焦/隱藏時清理互動狀態，避免拖曳/框選/連線卡住
+        window.addEventListener('blur', () => this.cancelInteraction());
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.cancelInteraction();
+            }
+        });
     }
 
     /**
@@ -269,20 +290,59 @@ class GenogramApp {
                 this.connectingFrom = null;
                 break;
             case 'household':
-                if (this.selectedPersonIds.length > 0) {
-                    // 如果已經有選定多個人物，直接建立
-                    this.householdSelection = [...this.selectedPersonIds];
-                    this.createHousehold();
-                } else if (this.selectedPersonId) {
-                    // 如果只選了一個人，也視為要建立同住框
-                    this.householdSelection = [this.selectedPersonId];
-                    this.createHousehold();
+                // [UX Fix] 不自動建立，讓使用者明確操作
+                if (this.selectedPersonIds.length > 0 || this.selectedPersonId) {
+                    statusText = '已選取成員，按 Enter 建立同住框，或拖曳圈選更多';
                 } else {
-                    statusText = '同住圈選：請直接在畫布上「拖曳滑鼠」圈選成員，放開後將自動建立';
+                    statusText = '同住圈選：拖曳圈選成員，放開後自動建立';
                 }
                 break;
         }
         this.updateStatus(statusText);
+    }
+
+    /**
+     * 清除所有選取狀態 (選取互斥規則)
+     */
+    clearAllSelections() {
+        this.selectedPersonId = null;
+        this.selectedPersonIds = [];
+        this.selectedRelationshipId = null;
+        this.selectedHouseholdId = null;
+    }
+
+    /**
+     * [Bug Fix #2] 取消所有進行中的互動操作
+     * 用於視窗失焦、tab 切換、觸控中斷等情況
+     */
+    cancelInteraction() {
+        // 清理拖曳狀態
+        if (this.canvas) {
+            this.canvas.isDragging = false;
+            this.canvas.isPanning = false;
+            this.canvas.draggedPerson = null;
+            this.canvas.draggedHousehold = null;
+        }
+
+        // 清理框選狀態
+        this.isBoxSelecting = false;
+
+        // 清理連線狀態
+        this.connectingFrom = null;
+        this.connectingTo = null;
+
+        // 清理 Pointer capture
+        if (this.activePointerId !== null && this.canvas?.canvas) {
+            try {
+                this.canvas.canvas.releasePointerCapture(this.activePointerId);
+            } catch (e) { /* 忽略已釋放的情況 */ }
+        }
+        this.activePointerId = null;
+
+        // 清理拖曳快照 (避免遺留)
+        this.dragStartSnapshot = null;
+
+        this.render();
     }
 
     /**
@@ -351,9 +411,15 @@ class GenogramApp {
     }
 
     /**
-     * 處理滑鼠按下
+     * 處理指標按下 (Pointer Events 統一滑鼠與觸控)
      */
-    handleMouseDown(e) {
+    handlePointerDown(e) {
+        // Pointer capture for robust drag handling
+        if (e.target === this.canvas.canvas) {
+            this.activePointerId = e.pointerId;
+            this.canvas.canvas.setPointerCapture(e.pointerId);
+        }
+
         const point = this.canvas.getMousePos(e);
 
         if (this.currentTool === 'boxSelect' || this.currentTool === 'household') {
@@ -429,8 +495,9 @@ class GenogramApp {
                 // 2. 如果此人已經在「多選名單」中，則優先保留多選狀態，不進入家庭拖曳模式
                 // 這是為了讓使用者可以移動「家庭內的子集」
                 if (this.selectedPersonIds.includes(clickedPerson.id)) {
-                    // 讓他進入普通的拖曳邏輯 (會由 handleMouseMove 處理多選移動)
-                    this.saveState(); // 拖曳開始前保存狀態
+                    // 讓他進入普通的拖曳邏輯 (Pointer Events 版)
+                    // [UX Fix] 拖曳 History 合併：記錄起始狀態，不立即 push
+                    this.dragStartSnapshot = this.getState();
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedPerson = clickedPerson;
@@ -520,8 +587,9 @@ class GenogramApp {
 
             // 4. 點擊空白處 (或 Shift+點擊家庭內部)，開始拖曳畫布或範圍圈選
             if (e.shiftKey) {
-                // Shift + 點擊空白處 -> 開始範圍圈選
+                // Shift + 點擊空白處 -> 準備開始範圍圈選 (在 move 中判斷位移)
                 this.isBoxSelecting = true;
+                this.boxSelectInitialPoint = point; // 記錄原始點
                 this.boxSelectStart = point;
                 this.boxSelectEnd = point;
                 this.selectedPersonIds = []; // 清空舊選取
@@ -550,9 +618,9 @@ class GenogramApp {
     }
 
     /**
-     * 處理滑鼠移動
+     * 處理指標移動 (Pointer Events 統一滑鼠與觸控)
      */
-    handleMouseMove(e) {
+    handlePointerMove(e) {
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
@@ -560,9 +628,16 @@ class GenogramApp {
         if (this.isBoxSelecting) {
             this.boxSelectEnd = point;
 
-            // 即時更新選取結果，這會讓人物在拖曳過程中就顯示綠色高亮 (Highlighted)
-            if (typeof this.updateBoxSelection === 'function') {
-                this.updateBoxSelection();
+            // [UX Fix] 選取衝突：位移超過閾值才視為有效的圈選範圍
+            const threshold = 5;
+            const dx = Math.abs(this.boxSelectEnd.x - this.boxSelectInitialPoint.x);
+            const dy = Math.abs(this.boxSelectEnd.y - this.boxSelectInitialPoint.y);
+
+            if (dx > threshold || dy > threshold) {
+                // 即時更新選取結果，這會讓人物在拖曳過程中就顯示綠色高亮 (Highlighted)
+                if (typeof this.updateBoxSelection === 'function') {
+                    this.updateBoxSelection();
+                }
             }
 
             this.render();
@@ -588,7 +663,7 @@ class GenogramApp {
 
                 // 簡化移動邏輯：只進行基本的重疊防止
                 // 移除垂直層級限制和水平排序限制，讓使用者可以自由移動
-                const personalSpace = 60; // Increased from 40 to 60 for better spacing
+                const personalSpace = 80; // 從 60 調大到 80，確保人物間距更寬鬆
                 let finalDx = dx;
                 let finalDy = dy;
 
@@ -683,9 +758,15 @@ class GenogramApp {
     }
 
     /**
-     * 處理滑鼠放開
+     * 處理指標放開 (Pointer Events 統一滑鼠與觸控)
      */
-    handleMouseUp(e) {
+    handlePointerUp(e) {
+        // 釋放 pointer capture
+        if (this.activePointerId !== null && this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
+            this.canvas.canvas.releasePointerCapture(this.activePointerId);
+        }
+        this.activePointerId = null;
+
         if (this.isBoxSelecting) {
             this.isBoxSelecting = false;
             this.updateBoxSelection(); // 計算選取了哪些人
@@ -769,8 +850,8 @@ class GenogramApp {
                         p.x = targetX;
                         p.y = targetY;
 
-                        // [NEW] 拖曳後強制執行局部規則
-                        this.enforceLocalRules(p);
+                        // [Disabled] 拖曳後不再強制執行局部規則，讓使用者可以自由手動微調間距
+                        // this.enforceLocalRules(p);
                     }
                 });
                 this.render(); // Snap 後重繪
@@ -779,7 +860,25 @@ class GenogramApp {
             this.canvas.isDragging = false;
             this.canvas.draggedPerson = null;
             this.canvas.draggedHousehold = null; // 清除家庭拖曳狀態
+
+            // [Bug Fix #3] 拖曳 History 合併：拖曳結束時才 push 一筆
+            // 加入位移閾值檢查，避免記錄意外點擊或極小位移
+            if (this.dragStartSnapshot) {
+                const currentState = this.getState();
+                const hasSignificantChange = this.hasSignificantPositionChange(
+                    this.dragStartSnapshot,
+                    currentState,
+                    2  // 閾值: 至少 2px 位移才記錄
+                );
+
+                if (hasSignificantChange) {
+                    this.history.pushState(this.dragStartSnapshot);
+                }
+                this.dragStartSnapshot = null;
+            }
+
             this.autoSave(); // 移動結束儲存
+
         }
 
         if (this.canvas.isPanning) {
@@ -864,7 +963,12 @@ class GenogramApp {
      */
     handleKeyDown(e) {
         // 如果正在輸入，忽略快捷鍵
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        const activeElem = document.activeElement;
+        const isTyping = e.target.tagName === 'INPUT' ||
+            e.target.tagName === 'TEXTAREA' ||
+            (activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA'));
+
+        if (isTyping) {
             return;
         }
 
@@ -927,9 +1031,29 @@ class GenogramApp {
                 this.deleteSelected();
                 break;
             case 'Escape':
-                this.connectingFrom = null;
-                this.closeGenderModal();
-                this.setTool('select');
+                // [UX Fix] 改進 Esc 處理，顯示明確的狀態訊息
+                if (this.connectingFrom) {
+                    this.connectingFrom = null;
+                    this.updateStatus('連接已取消', 'info');
+                } else {
+                    this.closeGenderModal();
+                    this.setTool('select');
+                }
+                this.render();
+                break;
+            case 'Enter':
+                // [UX Fix] Enter 鍵建立同住框 (避免自動建立)
+                if (this.currentTool === 'household') {
+                    if (this.selectedPersonIds.length > 0) {
+                        this.householdSelection = [...this.selectedPersonIds];
+                        this.createHousehold();
+                    } else if (this.selectedPersonId) {
+                        this.householdSelection = [this.selectedPersonId];
+                        this.createHousehold();
+                    } else {
+                        this.updateStatus('請先選取成員再按 Enter', 'warning');
+                    }
+                }
                 break;
         }
     }
@@ -1040,7 +1164,8 @@ class GenogramApp {
     showGenderModal(generation) {
         this.pendingGeneration = generation;
         const level = GenogramApp.GENERATION_LEVELS[generation];
-        this.updateStatus(`選擇 ${level.label} 的性別`, 'info');
+        const label = level ? level.label : (generation || '外部');
+        this.updateStatus(`選擇 ${label} 的性別`, 'info');
         this.elements.genderModal.classList.add('active');
     }
 
@@ -1054,7 +1179,7 @@ class GenogramApp {
     }
 
     /**
-     * 使用輩分和性別建立人物 (自動計算座標)
+     * 使用輩分和性別建立人物 (自動計算座標 並支援自動連線與防交織排列)
      * @param {string} gender - 性別 ('male', 'female')
      */
     createPersonWithGeneration(gender) {
@@ -1069,22 +1194,97 @@ class GenogramApp {
         const genIndex = (genMap[this.pendingGeneration] !== undefined) ? genMap[this.pendingGeneration] : 0;
         const grid = GenogramApp.GRID;
 
-        // 計算 Y 座標並對齊格子 (直接公式計算，不依賴舊的 GENERATION_LEVELS)
+        // 計算 Y 座標並對齊格子
         const y = grid.ORIGIN_Y + genIndex * grid.CELL_HEIGHT;
-        const generation = genIndex; // 儲存為數值
+        const generation = genIndex;
 
-        // 計算該層現有人物数量，用於決定 X 座標
-        // [Modified] 搜尋第一個可用的空位，而不是直接往後加
+        // 偵測選取的物件作為連線對象
+        const selectedIds = this.selectedPersonIds.length > 0 ? this.selectedPersonIds : (this.selectedPersonId ? [this.selectedPersonId] : []);
+        const selectedPersons = selectedIds.map(id => this.persons.find(p => p.id === id)).filter(p => p);
+
+        // [Smart Positioning] 計算理想 X 座標
+        let idealX = null;
+        if (selectedPersons.length > 0) {
+            if (['child', 'grandchild'].includes(this.pendingGeneration)) {
+                // 新增子女：優先尋找現有手足
+                const parentIds = selectedPersons.map(p => p.id);
+                const siblings = this.persons.filter(p => {
+                    if (Math.abs(p.y - y) > grid.CELL_HEIGHT * 0.5) return false;
+                    const myParents = this.relationships
+                        .filter(r => r.type === 'parent-child' && r.toPersonId === p.id)
+                        .map(r => r.fromPersonId);
+                    return myParents.some(pid => parentIds.includes(pid));
+                });
+
+                if (siblings.length > 0) {
+                    // 強制放在最右邊手足的右側
+                    const rightmostX = Math.max(...siblings.map(s => s.x));
+                    idealX = rightmostX + grid.CELL_WIDTH;
+                } else {
+                    // 無手足：對齊父母中點
+                    idealX = selectedPersons.reduce((acc, p) => acc + p.x, 0) / selectedPersons.length;
+                    // 如果有兩位以上選取者 (夫妻)，稍微往右排開，避開可能的婚姻線中點
+                    if (selectedPersons.length >= 2) idealX += grid.CELL_WIDTH * 0.5;
+                }
+            } else {
+                // 新增父母：檢查是否已有父母
+                const childrenIds = selectedPersons.map(p => p.id);
+                const existingParents = this.persons.filter(p => {
+                    if (Math.abs(p.y - y) > grid.CELL_HEIGHT * 0.5) return false;
+                    const myChildren = this.relationships
+                        .filter(r => r.type === 'parent-child' && r.fromPersonId === p.id)
+                        .map(r => r.toPersonId);
+                    return myChildren.some(cid => childrenIds.includes(cid));
+                });
+
+                if (existingParents.length > 0) {
+                    // 排在最右邊父母的右側
+                    const rightmostX = Math.max(...existingParents.map(p => p.x));
+                    idealX = rightmostX + grid.CELL_WIDTH;
+                } else {
+                    // 對齊子女中點
+                    idealX = selectedPersons.reduce((acc, p) => acc + p.x, 0) / selectedPersons.length;
+                }
+            }
+        } else if (this.persons.length > 0) {
+            // [UX Fix] 根據使用者需求：避免「階梯式」偏移。
+            // 邏輯：找到「已有關係連線」的核心家族最右側 X，作為列隊起點。
+            // 所有未連線的角色都從這個基準點開始往右找第一個空位，這樣不同輩分會自然對齊成垂直列。
+            const linkedPersons = this.persons.filter(p =>
+                this.relationships.some(r => r.fromPersonId === p.id || r.toPersonId === p.id)
+            );
+            if (linkedPersons.length > 0) {
+                const familyMaxX = Math.max(...linkedPersons.map(p => p.x));
+                idealX = familyMaxX + grid.CELL_WIDTH;
+            } else {
+                // 若全圖均無關係，則從左側起始座標開始推
+                idealX = grid.ORIGIN_X;
+            }
+        } else {
+            idealX = grid.ORIGIN_X;
+        }
+
+        // 計算空位
         let gridIndex = 0;
         let foundSpot = false;
         let finalX = 0;
+        let startXCenter = idealX !== null ? idealX : grid.ORIGIN_X;
 
         while (!foundSpot) {
-            const testX = grid.ORIGIN_X + gridIndex * grid.CELL_WIDTH;
-            // 檢查這個位置是否有人
+            // 嚴格【優先往右】搜尋
+            let offsetMultiplier;
+            if (gridIndex <= 50) {
+                offsetMultiplier = gridIndex;
+            } else {
+                offsetMultiplier = (gridIndex - 50) * -1;
+            }
+
+            const testX = this.snapToGrid(startXCenter + offsetMultiplier * grid.CELL_WIDTH, 'x');
+
+            // 加大碰撞偵測半徑，保護名字標籤
             const isOccupied = this.persons.some(p =>
                 Math.abs(p.y - y) < grid.CELL_HEIGHT * 0.5 &&
-                Math.abs(p.x - testX) < grid.CELL_WIDTH * 0.5
+                Math.abs(p.x - testX) < grid.CELL_WIDTH * 0.9
             );
 
             if (!isOccupied) {
@@ -1092,39 +1292,67 @@ class GenogramApp {
                 foundSpot = true;
             } else {
                 gridIndex++;
+                if (gridIndex > 100) break;
             }
         }
 
         const x = this.snapToGrid(finalX, 'x');
-
-        const person = new Person({
-            x: x,
-            y: y,
-            gender: gender,
-            generation: generation
-        });
-
+        const person = new Person({ x, y, gender, generation });
         this.persons.push(person);
+
+        // 自動建立關係
+        let relCount = 0;
+        if (selectedPersons.length > 0) {
+            this.saveState();
+            selectedPersons.forEach(selected => {
+                let fromId, toId;
+                if (['child', 'grandchild'].includes(this.pendingGeneration)) {
+                    fromId = selected.id;
+                    toId = person.id;
+                } else {
+                    fromId = person.id;
+                    toId = selected.id;
+                }
+
+                const relationship = new Relationship({
+                    fromPersonId: fromId,
+                    toPersonId: toId,
+                    type: 'parent-child'
+                });
+                this.relationships.push(relationship);
+                relCount++;
+            });
+        }
+
         this.closeGenderModal();
-        // 不自動選取新建立的人物，讓使用者可以繼續建立其他角色
-        // 使用者若要編輯可以點擊該人物
-        this.selectedPersonId = null;
-        this.selectedPersonIds = [];
+
+        // 維持選取以便連加
+        if (relCount === 0) {
+            this.selectedPersonId = null;
+            this.selectedPersonIds = [];
+        }
+
         this.autoSave();
         this.setTool('select');
         this.updatePropertyPanel();
         this.render();
 
-        // 顯示提示訊息
-        this.updateStatus(`已建立 ${GenogramApp.GENERATION_LEVELS[generation].label}，點擊人物可編輯`, 'success');
+        let msg = `已建立人物`;
+        if (relCount > 0) {
+            msg += `，並自動建立 ${relCount} 條親子連線。您可以繼續點擊右側選單新增更多成員。`;
+        }
+        this.updateStatus(msg, (relCount > 0 ? 'success' : 'info'));
     }
 
     /**
      * 選取人物
      */
     selectPerson(id) {
-        this.selectedPersonId = id;
+        // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedRelationshipId = null;
+        this.selectedHouseholdId = null;
+        // 保留 selectedPersonIds 多選狀態（如果是 Shift+點擊）
+        this.selectedPersonId = id;
         this.updatePropertyPanel();
         this.render();
     }
@@ -1133,8 +1361,11 @@ class GenogramApp {
      * 選取關係線
      */
     selectRelationship(id) {
-        this.selectedRelationshipId = id;
+        // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedPersonId = null;
+        this.selectedPersonIds = [];
+        this.selectedHouseholdId = null;
+        this.selectedRelationshipId = id;
         this.updatePropertyPanel();
         this.render();
     }
@@ -1456,19 +1687,42 @@ class GenogramApp {
 
         const fromId = this.connectingFrom.person.id;
         const toId = this.connectingTo.id;
+        const category = Relationship.getCategory(type);
 
-        // 檢查是否已存在相同的關係（防止重複）
-        const existingRelationship = this.relationships.find(r =>
-            (r.fromPersonId === fromId && r.toPersonId === toId) ||
-            (r.fromPersonId === toId && r.toPersonId === fromId)
+        // 檢查是否已存在「完全相同」的關係（防止完全重複）
+        const exactDuplicate = this.relationships.find(r =>
+            ((r.fromPersonId === fromId && r.toPersonId === toId) ||
+                (r.fromPersonId === toId && r.toPersonId === fromId)) &&
+            r.type === type
         );
 
-        if (existingRelationship) {
-            // 如果已存在關係，更新類型而非新增
+        if (exactDuplicate) {
+            this.updateStatus('此關係已存在', 'info');
+            this.closeRelationshipModal();
+            return;
+        }
+
+        // [New Logic] 允許不同類型的關係並存 (例如：婚姻 + 衝突)
+        // 只有在特定情況下才「取代」舊關係：
+        // 1. 同屬婚姻類 (Marriage Category) 的關係互斥（例如結婚 vs 離婚）
+        // 2. 親子關係 (Parent-Child) 是唯一的
+        // 情感類 (Emotional) 則允許並列
+        let relationshipToReplace = null;
+
+        if (category === 'marriage' || category === 'family') {
+            relationshipToReplace = this.relationships.find(r =>
+                ((r.fromPersonId === fromId && r.toPersonId === toId) ||
+                    (r.fromPersonId === toId && r.toPersonId === fromId)) &&
+                r.getCategory() === category
+            );
+        }
+
+        if (relationshipToReplace) {
+            // 如果已存在同類別的結構化關係，更新它
             this.saveState();
-            existingRelationship.type = type;
+            relationshipToReplace.type = type;
         } else {
-            // 新增關係
+            // 新增為獨立的關係
             this.saveState();
             const relationship = new Relationship({
                 fromPersonId: fromId,
@@ -1743,12 +1997,19 @@ class GenogramApp {
         } else if (this.selectedPersonId) {
             this.saveState();
 
-            // 刪除相關的關係
+            // [Bug Fix #8] 刪除單一人物時，也要清理相關引用
+            // 1. 刪除相關的關係
             this.relationships = this.relationships.filter(
                 r => !r.involvesPerson(this.selectedPersonId)
             );
 
-            // 刪除人物
+            // 2. 從圈選框中移除 (不論是多選還是單選都該做)
+            this.households = this.households.map(h => ({
+                ...h,
+                ids: h.ids.filter(id => id !== this.selectedPersonId)
+            })).filter(h => h.ids.length > 0);
+
+            // 3. 刪除人物
             this.persons = this.persons.filter(p => p.id !== this.selectedPersonId);
             this.selectedPersonId = null;
             this.updatePropertyPanel();
@@ -2031,7 +2292,51 @@ class GenogramApp {
     }
 
     /**
+     * [Bug Fix #3] 取得當前狀態快照 (用於拖曳 History 比對)
+     */
+    getState() {
+        return {
+            persons: this.persons.map(p => p.toJSON()),
+            relationships: this.relationships.map(r => r.toJSON()),
+            households: this.households || []
+        };
+    }
+
+    /**
+     * [Bug Fix #3] 檢查兩個狀態之間是否有顯著的位置變化
+     * @param {Object} oldState - 舊狀態
+     * @param {Object} newState - 新狀態
+     * @param {number} threshold - 位移閾值 (px)
+     * @returns {boolean} - 是否有顯著變化
+     */
+    hasSignificantPositionChange(oldState, newState, threshold = 2) {
+        if (!oldState || !oldState.persons || !newState || !newState.persons) {
+            return false;
+        }
+
+        const oldPositions = {};
+        oldState.persons.forEach(p => {
+            oldPositions[p.id] = { x: p.x, y: p.y };
+        });
+
+        for (const p of newState.persons) {
+            const oldPos = oldPositions[p.id];
+            if (!oldPos) continue;
+
+            const dx = Math.abs(p.x - oldPos.x);
+            const dy = Math.abs(p.y - oldPos.y);
+
+            if (dx >= threshold || dy >= threshold) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * 儲存到檔案
+
      */
     async saveToFile() {
         // 1. 永遠先執行一次自動儲存 (LocalStorage)，確保瀏覽器狀態最新
@@ -2142,20 +2447,35 @@ class GenogramApp {
 
 
     /**
-     * 自動儲存
+     * 自動儲存 (含防抖與競態保護)
      */
     autoSave() {
-        this.storage.autoSave(this.persons, this.relationships, this.households || [], {
-            scale: this.scale,
-            offsetX: this.offsetX,
-            offsetY: this.offsetY
-        });
+        if (this.isLoading) return;
+
+        if (this.autoSaveTimer) {
+            clearTimeout(this.autoSaveTimer);
+        }
+
+        this.autoSaveTimer = setTimeout(() => {
+            const now = Date.now();
+            // 避免頻繁重複寫入
+            if (now - this.lastAutoSaveTime < 1000) return;
+
+            this.storage.autoSave(this.persons, this.relationships, this.households || [], {
+                scale: this.scale,
+                offsetX: this.offsetX,
+                offsetY: this.offsetY
+            });
+            this.lastAutoSaveTime = now;
+            this.autoSaveTimer = null;
+        }, 1000); // 1秒防抖
     }
 
     /**
      * 載入自動儲存
      */
     loadAutoSave() {
+        this.isLoading = true; // 暫停 autosave
         const saved = this.storage.loadAutoSave();
         if (saved) {
             this.persons = saved.persons;
@@ -2173,6 +2493,7 @@ class GenogramApp {
             // 延遲渲染，確保 canvas 尺寸已正確初始化
             requestAnimationFrame(() => {
                 this.render();
+                this.isLoading = false; // 恢復 autosave
             });
 
             const fileName = this.storage.getOpenFileName();
@@ -2218,68 +2539,52 @@ class GenogramApp {
         const familySide = {}; // personId -> 'ip' | 'spouse' | 'neutral'
         this.persons.forEach(p => familySide[p.id] = 'neutral');
 
+        // ===== 輔助函數 (不論是否有案主均可用) =====
+
+        // 找某人的所有配偶
+        const getSpouses = (personId) => {
+            const spouses = [];
+            marriageRels.forEach(r => {
+                if (r.fromPersonId === personId) spouses.push(r.toPersonId);
+                else if (r.toPersonId === personId) spouses.push(r.fromPersonId);
+            });
+            return spouses;
+        };
+
+        // 找某人的父母
+        const getParents = (personId) => {
+            const parents = [];
+            familyRels.forEach(r => {
+                if (r.toPersonId === personId) parents.push(r.fromPersonId);
+            });
+            return parents;
+        };
+
+        // 找某人的子女
+        const getChildren = (personId) => {
+            const children = [];
+            familyRels.forEach(r => {
+                if (r.fromPersonId === personId) children.push(r.toPersonId);
+            });
+            return children;
+        };
+
+        // 找某人的手足（同父或同母）
+        const getSiblings = (personId) => {
+            const parents = getParents(personId);
+            const siblings = new Set();
+            parents.forEach(parentId => {
+                getChildren(parentId).forEach(childId => {
+                    if (childId !== personId) siblings.add(childId);
+                });
+            });
+            return Array.from(siblings);
+        };
+
         if (identifiedPatient) {
 
             console.log('[DEBUG] ========== 開始家族分類 ==========');
             console.log('[DEBUG] 案主:', identifiedPatient.id, identifiedPatient.name);
-
-            // 列出所有婚姻關係
-            console.log('[DEBUG] 所有婚姻關係:');
-            marriageRels.forEach(r => {
-                const p1 = personMap[r.fromPersonId];
-                const p2 = personMap[r.toPersonId];
-                console.log(`  ${p1?.name || r.fromPersonId} <-> ${p2?.name || r.toPersonId} (type: ${r.type})`);
-            });
-
-            // 列出所有親子關係
-            console.log('[DEBUG] 所有親子關係:');
-            familyRels.forEach(r => {
-                const p1 = personMap[r.fromPersonId];
-                const p2 = personMap[r.toPersonId];
-                console.log(`  ${p1?.name || r.fromPersonId} -> ${p2?.name || r.toPersonId} (type: ${r.type})`);
-            });
-
-            // ===== 輔助函數 =====
-
-            // 找某人的所有配偶
-            const getSpouses = (personId) => {
-                const spouses = [];
-                marriageRels.forEach(r => {
-                    if (r.fromPersonId === personId) spouses.push(r.toPersonId);
-                    else if (r.toPersonId === personId) spouses.push(r.fromPersonId);
-                });
-                return spouses;
-            };
-
-            // 找某人的父母
-            const getParents = (personId) => {
-                const parents = [];
-                familyRels.forEach(r => {
-                    if (r.toPersonId === personId) parents.push(r.fromPersonId);
-                });
-                return parents;
-            };
-
-            // 找某人的子女
-            const getChildren = (personId) => {
-                const children = [];
-                familyRels.forEach(r => {
-                    if (r.fromPersonId === personId) children.push(r.toPersonId);
-                });
-                return children;
-            };
-
-            // 找某人的手足（同父或同母）
-            const getSiblings = (personId) => {
-                const parents = getParents(personId);
-                const siblings = new Set();
-                parents.forEach(parentId => {
-                    getChildren(parentId).forEach(childId => {
-                        if (childId !== personId) siblings.add(childId);
-                    });
-                });
-                return Array.from(siblings);
-            };
 
             // ===== 核心函數：只透過血親追蹤 =====
             const markBloodOnly = (startId, side, blocked = new Set()) => {
@@ -2449,52 +2754,115 @@ class GenogramApp {
             }
         });
 
-        // 4. 計算每個人的輩份 (使用迭代約束求解器)
+        // 4. 計算每個人的輩份 (使用結構深度優先，視覺 Y 軸為輔)
         const generation = {}; // personId -> generation number
 
-        // 初始化：優先使用 p.generation，如果沒有則根據 Y 座標分群推算 (Smart Visual Inference)
-        const initGrid = GenogramApp.GRID || { CELL_HEIGHT: 100, ORIGIN_Y: 100 };
+        // 初始化：優先使用 p.generation，如果沒有則根據結構推算
+        this.persons.forEach(p => {
+            if (typeof p.generation === 'number') generation[p.id] = p.generation;
+        });
 
-        // 1. 收集並排序所有人的 Y 座標
-        const yMap = this.persons.map(p => ({ id: p.id, y: p.y, gen: (typeof p.generation === 'number') ? p.generation : null }));
+        // 如果有案主，以案主為中心（輩份 2，對應 child 輩）進行擴散
+        if (identifiedPatient) {
+            const queue = [{ id: identifiedPatient.id, gen: generation[identifiedPatient.id] ?? 2 }];
+            if (generation[identifiedPatient.id] === undefined) generation[identifiedPatient.id] = 2;
 
-        // 如果大家都有明確 generation，直接用
-        const allHaveGen = yMap.every(item => item.gen !== null);
+            const visited = new Set([identifiedPatient.id]);
 
-        if (allHaveGen) {
-            yMap.forEach(item => generation[item.id] = item.gen);
-        } else {
-            // 混合模式：對沒有 generation 的人進行 Y 軸分群
-            // 簡單分群演算法：排序 Y，如果 Gap > CELL_HEIGHT * 0.5 則視為新的一行
-            const sortedByY = [...yMap].sort((a, b) => a.y - b.y);
-            let currentGen = 0;
-            let lastY = sortedByY.length > 0 ? sortedByY[0].y : 0;
-            const groups = {}; // id -> groupIndex
+            while (queue.length > 0) {
+                const { id, gen } = queue.shift();
 
-            sortedByY.forEach((item, index) => {
-                if (index > 0) {
-                    if (item.y - lastY > initGrid.CELL_HEIGHT * 0.5) {
-                        currentGen++;
+                // 往下：子女 (gen + 1)
+                getChildren(id).forEach(cid => {
+                    if (!visited.has(cid)) {
+                        generation[cid] = (generation[cid] !== undefined) ? generation[cid] : gen + 1;
+                        visited.add(cid);
+                        queue.push({ id: cid, gen: generation[cid] });
                     }
-                }
-                groups[item.id] = currentGen;
-                lastY = item.y;
-            });
+                });
 
-            // 將分群結果映射回 generation
-            this.persons.forEach(p => {
-                if (typeof p.generation === 'number') {
-                    generation[p.id] = p.generation;
-                } else {
-                    generation[p.id] = groups[p.id] || 0;
+                // 往上：父母 (gen - 1)
+                getParents(id).forEach(pid => {
+                    if (!visited.has(pid)) {
+                        generation[pid] = (generation[pid] !== undefined) ? generation[pid] : gen - 1;
+                        visited.add(pid);
+                        queue.push({ id: pid, gen: generation[pid] });
+                    }
+                });
+
+                // 平行：配偶 (gen)
+                getSpouses(id).forEach(sid => {
+                    if (!visited.has(sid)) {
+                        generation[sid] = (generation[sid] !== undefined) ? generation[sid] : gen;
+                        visited.add(sid);
+                        queue.push({ id: sid, gen: generation[sid] });
+                    }
+                });
+
+                // 平行：手足 (gen)
+                getSiblings(id).forEach(sid => {
+                    if (!visited.has(sid)) {
+                        generation[sid] = (generation[sid] !== undefined) ? generation[sid] : gen;
+                        visited.add(sid);
+                        queue.push({ id: sid, gen: generation[sid] });
+                    }
+                });
+            }
+        }
+
+        // 剩餘沒被結構連接到的人，使用原有的 Y 軸分群 (Visual Inference)
+        const initGrid = GenogramApp.GRID || { CELL_HEIGHT: 150 };
+        const unassigned = this.persons.filter(p => generation[p.id] === undefined);
+
+        if (unassigned.length > 0) {
+            const sortedByY = unassigned.sort((a, b) => a.y - b.y);
+            let lastY = sortedByY[0].y;
+            let currentGen = 0;
+
+            // 嘗試從已分配的人中找基準點
+            const assigned = this.persons.filter(p => generation[p.id] !== undefined);
+            if (assigned.length > 0) {
+                const avgY = assigned.reduce((acc, p) => acc + p.y, 0) / assigned.length;
+                const avgGen = assigned.reduce((acc, p) => acc + generation[p.id], 0) / assigned.length;
+                currentGen = Math.round(avgGen + (sortedByY[0].y - avgY) / initGrid.CELL_HEIGHT);
+            }
+
+            sortedByY.forEach((p, index) => {
+                if (index > 0 && p.y - lastY > initGrid.CELL_HEIGHT * 0.5) {
+                    currentGen++;
                 }
+                generation[p.id] = currentGen;
+                lastY = p.y;
             });
         }
 
-        // 迭代優化 (Relaxation)
+        // 整理：確保沒有負數輩份，並統一平移
+        const genValues = Object.values(generation);
+        if (genValues.length > 0) {
+            const minGen = Math.min(...genValues);
+            if (minGen < 0) {
+                const shift = Math.abs(minGen);
+                Object.keys(generation).forEach(id => generation[id] += shift);
+            }
+        }
+
+        // 迭代優化 (Relaxation) - 確保極端情況下的約束
         let changed = true;
         let iterations = 0;
-        const maxIterations = 100;
+        const maxIterations = 50;
+
+        // 預先取得手足關係，加速約束求解
+        const siblingGroups = []; // [[id1, id2, ...], ...]
+        const siblingProcessed = new Set();
+        this.persons.forEach(p => {
+            if (siblingProcessed.has(p.id)) return;
+            const siblings = getSiblings(p.id);
+            if (siblings.length > 0) {
+                const group = [p.id, ...siblings];
+                siblingGroups.push(group);
+                group.forEach(id => siblingProcessed.add(id));
+            }
+        });
 
         while (changed && iterations < maxIterations) {
             changed = false;
@@ -2504,8 +2872,7 @@ class GenogramApp {
             familyRels.forEach(rel => {
                 const pGen = generation[rel.fromPersonId];
                 const cGen = generation[rel.toPersonId];
-
-                if (cGen <= pGen) {
+                if (pGen !== undefined && cGen !== undefined && cGen <= pGen) {
                     generation[rel.toPersonId] = pGen + 1;
                     changed = true;
                 }
@@ -2515,12 +2882,28 @@ class GenogramApp {
             marriageRels.forEach(rel => {
                 const g1 = generation[rel.fromPersonId];
                 const g2 = generation[rel.toPersonId];
-
-                if (g1 !== g2) {
+                if (g1 !== undefined && g2 !== undefined && g1 !== g2) {
                     const maxGen = Math.max(g1, g2);
                     generation[rel.fromPersonId] = maxGen;
                     generation[rel.toPersonId] = maxGen;
                     changed = true;
+                }
+            });
+
+            // 規則 3: 手足必須在同一代
+            siblingGroups.forEach(group => {
+                let maxGen = -1;
+                group.forEach(id => {
+                    if (generation[id] !== undefined) maxGen = Math.max(maxGen, generation[id]);
+                });
+
+                if (maxGen !== -1) {
+                    group.forEach(id => {
+                        if (generation[id] !== maxGen) {
+                            generation[id] = maxGen;
+                            changed = true;
+                        }
+                    });
                 }
             });
         }
@@ -2652,6 +3035,10 @@ class GenogramApp {
 
         // 6. 在每個輩份內進行排序
         const sortedGens = Object.keys(byGeneration).map(g => parseInt(g)).sort((a, b) => a - b);
+
+        // [Fix] 預先初始化 nodePositions，避免在排序階段存取未定義變數
+        // 這個物件會在第 8 步驟被正式填充，但在排序時也會被參照
+        const nodePositions = {};
 
         sortedGens.forEach((genStr, genIndex) => {
             let personIds = byGeneration[genStr];
@@ -2813,6 +3200,11 @@ class GenogramApp {
                 let totalEdgeBias = 0;
                 unit.members.forEach(m => totalEdgeBias += getEdgeBias(m));
                 unit.edgeBias = totalEdgeBias;
+
+                // [Fix] 標記單位是否有任何連線 (用於將未連線角色排到最右邊)
+                unit.hasRelationships = unit.members.some(mid =>
+                    this.relationships.some(r => r.fromPersonId === mid || r.toPersonId === mid)
+                );
             });
 
             // [Modified] 嚴格陣列排序 (Strict Array Sort) + [Parent Alignment]
@@ -2839,183 +3231,74 @@ class GenogramApp {
                 }
             });
 
+            // [REFINED] 單位排序邏輯 (Unit Sorting)
             units.sort((a, b) => {
-                // 優先序 0: Component ID (確保不同家族分開) [moved to top]
-                // 這是為了回應使用者需求：不同家族的人不應該混再次排序
+                // 0. 未連線角色強制排在最後面 (Keep unlinked nodes on the far right)
+                if (a.hasRelationships !== b.hasRelationships) {
+                    return a.hasRelationships ? -1 : 1;
+                }
+
+                // 1. 家族分支 (Component) 必須保持絕對分離
                 if (a.componentId !== b.componentId) return a.componentId - b.componentId;
 
-                // 優先序 1: 父母位置 (Alignment - 讓子女跟隨父母)
-                // 這是最高優先級，確保樹狀結構垂直對齊
+                // 2. 垂直對齊優先 (Parental Alignment)
+                // 讓子女儘可能排在父母下方的位置，這是維持樹狀結構不亂掉的核心
                 if (a.parentCenter !== null && b.parentCenter !== null) {
-                    if (Math.abs(a.parentCenter - b.parentCenter) > 1) {
+                    if (Math.abs(a.parentCenter - b.parentCenter) > 5) {
                         return a.parentCenter - b.parentCenter;
                     }
                 }
 
-                // 優先序 2: 性別 (男左女右)
-                // 提到 Component ID 之前，讓不同家族的男性也能排在一起 (滿足使用者 "男男男 女女女" 需求)
-                const getUnitGenderScore = (unit) => {
-                    const hasMale = unit.members.some(mid => personMap[mid]?.gender === 'male');
-                    return hasMale ? -1 : 1;
-                };
-                const genA = getUnitGenderScore(a);
-                const genB = getUnitGenderScore(b);
-                if (genA !== genB) return genA - genB;
+                // 3. 家族側別 (IP vs Spouse Side)
+                const sideA = familySide[a.members[0]] || 'neutral';
+                const sideB = familySide[b.members[0]] || 'neutral';
+                const sideOrder = { 'spouse': -1, 'neutral': 0, 'ip': 1 };
+                if (sideOrder[sideA] !== sideOrder[sideB]) return sideOrder[sideA] - sideOrder[sideB];
 
-                // 優先序 3: 年齡與出生順序 (長輩在左)
-                const getUnitMaxAge = (unit) => {
-                    let maxAge = -1;
-                    unit.members.forEach(mid => {
-                        const p = personMap[mid];
-                        if (p && typeof p.age === 'number') maxAge = Math.max(maxAge, p.age);
+                // 4. 年齡 (長輩在左) - 僅作為低優先級參考
+                const getAge = (u) => {
+                    let max = -1;
+                    u.members.forEach(m => {
+                        const p = personMap[m];
+                        if (p && typeof p.age === 'number') max = Math.max(max, p.age);
                     });
-                    return maxAge;
+                    return max;
                 };
-                const ageA = getUnitMaxAge(a);
-                const ageB = getUnitMaxAge(b);
+                const ageA = getAge(a);
+                const ageB = getAge(b);
+                if (ageA !== -1 && ageB !== -1 && ageA !== ageB) return ageB - ageA;
 
-                if (ageA !== -1 && ageB !== -1) {
-                    if (ageA !== ageB) return ageB - ageA;
-                }
-                if (ageA !== -1 && ageB === -1) return -1;
-                if (ageA === -1 && ageB !== -1) return 1;
-
-                // 優先序 5: 家庭引力 (Household Gravity)
-                if (a.householdBias !== b.householdBias) return a.householdBias - b.householdBias;
-
-                // 優先序 6: 家庭 ID 分組
-                const hIdA = a.householdId ? a.householdId.toString() : '';
-                const hIdB = b.householdId ? b.householdId.toString() : '';
-                if (hIdA !== hIdB) {
-                    if (hIdA && hIdB) return hIdA.localeCompare(hIdB);
-                    if (hIdA) return -1;
-                    if (hIdB) return 1;
-                }
-
-                // 優先序 7: 外部連結 (Edge Bias)
-                return a.edgeBias - b.edgeBias;
+                return 0;
             });
 
             // 5. 展開單位並處理內部排序
             units.forEach(unit => {
                 if (unit.type === 'household') {
                     const members = [...unit.members];
-
                     members.sort((a, b) => {
-                        // 家庭內部：先按 familySide，再按 age (長左幼右)，最後按 gender (男左女右)
-                        const sideA = familySide[a];
-                        const sideB = familySide[b];
-                        const sideOrder = { 'spouse': -1, 'neutral': 0, 'ip': 1 };
+                        // 家庭內部：側別 > 年齡 > 性別
+                        const sA = familySide[a];
+                        const sB = familySide[b];
+                        const sOrder = { 'spouse': -1, 'neutral': 0, 'ip': 1 };
+                        if (sOrder[sA] !== sOrder[sB]) return sOrder[sA] - sOrder[sB];
 
-                        if (sideOrder[sideA] !== sideOrder[sideB]) {
-                            return sideOrder[sideA] - sideOrder[sideB];
-                        }
+                        const pA = personMap[a], pB = personMap[b];
+                        const ageA = pA?.age ?? -1, ageB = pB?.age ?? -1;
+                        if (ageA !== ageB && ageA !== -1 && ageB !== -1) return ageB - ageA;
 
-                        // [NEW] 年齡排序 (Older Left)
-                        const pA = personMap[a];
-                        const pB = personMap[b];
-                        const ageA = (pA && typeof pA.age === 'number') ? pA.age : -1;
-                        const ageB = (pB && typeof pB.age === 'number') ? pB.age : -1;
-
-                        // 兩者都有年齡才比，年紀大在左
-                        if (ageA !== -1 && ageB !== -1 && ageA !== ageB) {
-                            return ageB - ageA;
-                        }
-
-                        // [NEW] 性別排序 (Male Left)
                         const genA = pA?.gender === 'female' ? 1 : -1;
                         const genB = pB?.gender === 'female' ? 1 : -1;
-                        if (genA !== genB) return genA - genB;
-
-                        const biasA = getEdgeBias(a);
-                        const biasB = getEdgeBias(b);
-                        if (biasA !== biasB) return biasA - biasB;
-
-                        const scoreA = getPersonParentScore(a);
-                        const scoreB = getPersonParentScore(b);
-                        return scoreA - scoreB;
+                        return genA - genB;
                     });
-
-                    const houseSorted = [];
-                    const houseUsed = new Set();
-
-                    members.forEach(m => {
-                        if (houseUsed.has(m)) return;
-                        houseSorted.push(m);
-                        houseUsed.add(m);
-
-                        const spouseRel = genMarriageRels.find(r =>
-                            (r.fromPersonId === m && members.includes(r.toPersonId) && !houseUsed.has(r.toPersonId)) ||
-                            (r.toPersonId === m && members.includes(r.fromPersonId) && !houseUsed.has(r.fromPersonId))
-                        );
-
-                        if (spouseRel) {
-                            const spouseId = spouseRel.fromPersonId === m ? spouseRel.toPersonId : spouseRel.fromPersonId;
-                            const biasM = getEdgeBias(m);
-                            if (biasM > 0) {
-                                houseSorted.pop();
-                                houseSorted.push(spouseId);
-                                houseSorted.push(m);
-                            } else {
-                                houseSorted.push(spouseId);
-                            }
-                            houseUsed.add(spouseId);
-                        }
-                    });
-
-                    sortedIds.push(...houseSorted);
-
+                    sortedIds.push(...members);
                 } else if (unit.type === 'couple') {
-                    const p1 = unit.members[0];
-                    const p2 = unit.members[1];
-                    const person1 = personMap[p1];
-                    const person2 = personMap[p2];
-
-                    // 配偶對內部排序：
-                    // 1. 家族側別 priority (Family Side)
-                    const side1 = familySide[p1];
-                    const side2 = familySide[p2];
-                    const sideOrder = { 'spouse': -1, 'neutral': 0, 'ip': 1 };
-
-                    if (sideOrder[side1] !== sideOrder[side2]) {
-                        if (sideOrder[side1] < sideOrder[side2]) {
-                            sortedIds.push(p1, p2);
-                        } else {
-                            sortedIds.push(p2, p1);
-                        }
+                    const [p1, p2] = unit.members;
+                    const per1 = personMap[p1], per2 = personMap[p2];
+                    // 男左女右
+                    if (per1?.gender === 'female' && per2?.gender === 'male') {
+                        sortedIds.push(p2, p1);
                     } else {
-                        // 2. [NEW] 性別排序 (男左女右 - Traditional Genogram Rule)
-                        // Male (left) - Female (right)
-                        const isMale1 = person1 && person1.gender === 'male';
-                        const isMale2 = person2 && person2.gender === 'male';
-                        const isFemale1 = person1 && person1.gender === 'female';
-                        const isFemale2 = person2 && person2.gender === 'female';
-
-                        if (isMale1 && !isMale2) {
-                            sortedIds.push(p1, p2);
-                        } else if (!isMale1 && isMale2) {
-                            sortedIds.push(p2, p1);
-                        }
-                        // If same gender or mixed with others, check Age
-                        else {
-                            // 3. [NEW] 年齡排序 (Older Left)
-                            const age1 = (person1 && typeof person1.age === 'number') ? person1.age : -1;
-                            const age2 = (person2 && typeof person2.age === 'number') ? person2.age : -1;
-
-                            if (age1 !== age2 && age1 !== -1 && age2 !== -1) {
-                                if (age1 > age2) sortedIds.push(p1, p2);
-                                else sortedIds.push(p2, p1);
-                            } else {
-                                // 4. Fallback to Edge Bias
-                                const bias1 = getEdgeBias(p1);
-                                const bias2 = getEdgeBias(p2);
-                                if (bias1 > bias2) {
-                                    sortedIds.push(p2, p1);
-                                } else {
-                                    sortedIds.push(p1, p2);
-                                }
-                            }
-                        }
+                        sortedIds.push(p1, p2);
                     }
                 } else {
                     sortedIds.push(...unit.members);
@@ -3025,278 +3308,109 @@ class GenogramApp {
             byGeneration[genStr] = sortedIds;
         });
 
-        // 7. 計算佈局參數 (使用格子系統)
+        // 7. 計算佈局座標
         const grid = GenogramApp.GRID;
         const baseY = grid.ORIGIN_Y;
         const generationSpacing = grid.CELL_HEIGHT;
         const personSpacing = grid.CELL_WIDTH;
-        const householdMargin = 30; // Reduced from 100 to 30
+        const groupGap = 80; // 從 40 調大到 80，讓不同家族分離更明顯
         const personSize = 50;
-        const nameHeight = 20;
-        const householdPadding = 25; // 恢復較寬大的邊距，避免太擠
+        // 8. 逐代排列 (X-座標計算)
+        // 分為兩次排列：Pass 1 排列核心家族，Pass 2 將未連線角色垂直對齊於最右側。
 
-        const canvasContainer = this.elements.canvasContainer;
-        const canvasWidth = canvasContainer ? canvasContainer.clientWidth : 1200;
-        const centerX = canvasWidth / 2;
-
-        // 7.5 預先計算家庭寬度
-        const householdStats = {};
-        if (this.households) {
-            this.households.forEach(h => {
-                householdStats[h.id] = { maxGenWidth: 0, genWidths: {} };
-
-                sortedGens.forEach(gen => {
-                    const personIds = byGeneration[gen];
-                    const members = personIds.filter(pid => h.ids.some(hid => hid.toString() === pid.toString()));
-                    if (members.length > 0) {
-                        const width = members.length * personSpacing;
-                        householdStats[h.id].genWidths[gen] = width;
-                        if (width > householdStats[h.id].maxGenWidth) {
-                            householdStats[h.id].maxGenWidth = width;
-                        }
-                    } else {
-                        householdStats[h.id].genWidths[gen] = 0;
-                    }
-                });
-            });
-        }
-
-        // 8. 垂直對齊排列
-        const generationLayouts = {};
-        const nodePositions = {};
-        const genBounds = {};
+        // 【Pass 1】核心家族成員排列
+        let globalMaxFamilyX = grid.ORIGIN_X;
 
         sortedGens.forEach((gen, genIndex) => {
-            const personIds = byGeneration[gen];
-            const y = baseY + genIndex * generationSpacing;
+            const genLevel = parseInt(gen);
+            const allIds = byGeneration[gen];
+            // 只篩選出有關係的角色
+            const linkedIds = allIds.filter(pid =>
+                this.relationships.some(r => r.fromPersonId === pid || r.toPersonId === pid)
+            );
 
-            const currentGenPositions = [];
-            let prevRight = -Infinity;
+            if (linkedIds.length === 0) return;
 
-            personIds.forEach((pid, idx) => {
-                const person = personMap[pid];
-                let idealX = null;
+            const y = baseY + genLevel * generationSpacing;
 
-                // 策略 A: 根據父母位置
-                const parents = [];
-                familyRels.forEach(r => {
-                    if (r.toPersonId === pid) {
-                        if (generation[r.fromPersonId] < gen) {
-                            parents.push(r.fromPersonId);
-                        }
-                    }
-                });
-
+            // 計算此代家族部分的錨點 (重心對齊)
+            let anchorX = 0;
+            const parentContext = [];
+            linkedIds.forEach(pid => {
+                const parents = familyRels.filter(r => r.toPersonId === pid && nodePositions[r.fromPersonId])
+                    .map(r => nodePositions[r.fromPersonId].x);
                 if (parents.length > 0) {
-                    const parentXs = parents.map(ptid => nodePositions[ptid] ? nodePositions[ptid].x : null).filter(x => x !== null);
-                    if (parentXs.length > 0) {
-                        idealX = parentXs.reduce((a, b) => a + b, 0) / parentXs.length;
-                    }
-                }
-
-                // 策略 B: 根據配偶位置
-                if (idealX === null) {
-                    const spouseRel = marriageRels.find(r =>
-                        (r.fromPersonId === pid || r.toPersonId === pid) &&
-                        personIds.includes(r.fromPersonId === pid ? r.toPersonId : r.fromPersonId)
-                    );
-                    if (spouseRel) {
-                        const spouseId = spouseRel.fromPersonId === pid ? spouseRel.toPersonId : spouseRel.fromPersonId;
-                        const spousePos = currentGenPositions.find(p => p.id === spouseId);
-                        if (spousePos) {
-                            idealX = spousePos.x + personSpacing;
-                        }
-                    }
-                }
-
-                // 計算間距
-                let gap = personSpacing;
-
-                let currHouseholdId = null;
-                const h = this.households ? this.households.find(h => h.ids.some(hid => hid.toString() === pid.toString())) : null;
-                if (h) currHouseholdId = h.id;
-
-                let prevHouseholdId = null;
-                if (idx > 0) {
-                    const prevPid = personIds[idx - 1];
-                    const prevH = this.households ? this.households.find(h => h.ids.some(hid => hid.toString() === prevPid.toString())) : null;
-                    if (prevH) prevHouseholdId = prevH.id;
-
-                    // Component 分離 (恢復中度間距，避免情感線過短)
-                    if (componentMap[pid] !== componentMap[prevPid]) {
-                        gap += 40; // Reduced from 100 to 40
-                    }
-
-                    // ===== 新增：Family Side 分離 (恢復中度間距) =====
-                    if (familySide[pid] !== familySide[prevPid]) {
-                        gap += 30; // Reduced from 80 to 30
-                    }
-                }
-
-                if (idx > 0 && currHouseholdId !== prevHouseholdId) {
-                    gap += householdMargin;
-
-                    if (prevHouseholdId) {
-                        const stats = householdStats[prevHouseholdId];
-                        if (stats && stats.maxGenWidth > (stats.genWidths[gen] || 0)) {
-                            gap += (stats.maxGenWidth - (stats.genWidths[gen] || 0)) / 2;
-                        }
-                    }
-                    if (currHouseholdId) {
-                        const stats = householdStats[currHouseholdId];
-                        if (stats && stats.maxGenWidth > (stats.genWidths[gen] || 0)) {
-                            gap += (stats.maxGenWidth - (stats.genWidths[gen] || 0)) / 2;
-                        }
-                    }
-                }
-
-                // 決定最終 X
-                let x;
-
-                if (idx === 0) {
-                    // [Modified] 強制左對齊：每代的第一個人都從 0 開始
-                    // 這是為了滿足使用者「上下陣列 [0] 對齊」的需求
-                    x = 0;
-                } else {
-                    const minX = prevRight + gap;
-                    const isSameHousehold = currHouseholdId !== null && currHouseholdId === prevHouseholdId;
-
-                    if (isSameHousehold) {
-                        x = minX;
-                    } else if (idealX !== null) {
-                        x = Math.max(minX, idealX);
-                    } else {
-                        x = minX;
-                    }
-                }
-
-                nodePositions[pid] = { x, y, width: personSize };
-                currentGenPositions.push({ id: pid, x, y });
-                prevRight = x;
-            });
-
-            // 8.2 [Disabled] 該代置中校正 - 改為維持左對齊
-            // if (genIndex === 0 && currentGenPositions.length > 0) { ... }
-
-            personIds.forEach(pid => {
-                if (personMap[pid]) {
-                    // 直接套用計算出的 x (已相對 0 對齊)，並加上 Grid Origin
-                    personMap[pid].x = this.snapToGrid(nodePositions[pid].x + grid.ORIGIN_X, 'x');
-                    personMap[pid].y = this.snapToGrid(y, 'y');
-                }
-            });
-        });
-
-        // ===== 8.3 [Disabled] 以案主為中心重新置中 =====
-        // (已移除以滿足左對齊需求)
-
-        // 9. 重建 generationLayouts 結構
-        sortedGens.forEach((gen, index) => {
-            const personIds = byGeneration[gen];
-            const y = baseY + index * generationSpacing;
-
-            if (personIds.length === 0) return;
-
-            const xs = personIds.map(pid => personMap[pid].x);
-            const minX = Math.min(...xs) - personSize / 2 - 10;
-            const maxX = Math.max(...xs) + personSize / 2 + 10;
-            const minY = y - personSize / 2 - 20;
-            const maxY = y + personSize / 2 + 20;
-
-            const startX = minX;
-            const personPositions = personIds.map(pid => personMap[pid].x - startX);
-
-            generationLayouts[gen] = {
-                y, startX, personPositions, personIds,
-                bounds: {
-                    minX, maxX, minY, maxY,
-                    width: maxX - minX,
-                    height: maxY - minY,
-                    centerX: (minX + maxX) / 2,
-                    centerY: (minY + maxY) / 2
-                }
-            };
-        });
-
-        // 10. 計算圈選框邊界
-        const householdBounds = [];
-        if (this.households && this.households.length > 0) {
-            this.households.forEach(household => {
-                const memberPersons = household.ids
-                    .map(id => personMap[id])
-                    .filter(p => p !== undefined);
-
-                if (memberPersons.length > 0) {
-                    const xs = memberPersons.map(p => p.x);
-                    const ys = memberPersons.map(p => p.y);
-
-                    const minX = Math.min(...xs) - personSize / 2 - householdPadding;
-                    const maxX = Math.max(...xs) + personSize / 2 + householdPadding;
-                    const minY = Math.min(...ys) - personSize / 2 - nameHeight - householdPadding;
-                    const maxY = Math.max(...ys) + personSize / 2 + householdPadding;
-
-                    householdBounds.push({
-                        minX, maxX, minY, maxY,
-                        width: maxX - minX,
-                        height: maxY - minY,
-                        centerX: (minX + maxX) / 2,
-                        centerY: (minY + maxY) / 2,
-                        memberIds: household.ids
-                    });
-                }
-            });
-        }
-
-        // 11. 檢查並調整位置以避免與圈選框重疊
-        sortedGens.forEach(gen => {
-            const layout = generationLayouts[gen];
-            if (!layout) return;
-
-            const genBoundsLocal = layout.bounds;
-
-            let adjustedY = layout.y;
-            let adjustedStartX = layout.startX;
-            let needsAdjustment = false;
-
-            householdBounds.forEach(hb => {
-                const verticalOverlap = !(genBoundsLocal.maxY < hb.minY - householdMargin ||
-                    genBoundsLocal.minY > hb.maxY + householdMargin);
-
-                const horizontalOverlap = !(genBoundsLocal.maxX < hb.minX - householdMargin ||
-                    genBoundsLocal.minX > hb.maxX + householdMargin);
-
-                if (verticalOverlap && horizontalOverlap) {
-                    if (hb.memberIds && hb.memberIds.some(id => layout.personIds.includes(id))) {
-                        return;
-                    }
-
-                    needsAdjustment = true;
-
-                    const newY = hb.maxY + householdMargin + genBoundsLocal.height / 2;
-                    if (newY > adjustedY) {
-                        adjustedY = newY;
-                    }
-
-                    if (Math.abs(genBoundsLocal.centerX - hb.centerX) < (genBoundsLocal.width + hb.width) / 2 + householdMargin) {
-                        if (genBoundsLocal.centerX < hb.centerX) {
-                            adjustedStartX = hb.minX - householdMargin - genBoundsLocal.width / 2;
-                        } else {
-                            adjustedStartX = hb.maxX + householdMargin + genBoundsLocal.width / 2;
-                        }
-                    }
+                    parentContext.push(parents.reduce((a, b) => a + b, 0) / parents.length);
                 }
             });
 
-            if (needsAdjustment) {
-                layout.personIds.forEach((personId, index) => {
-                    const person = personMap[personId];
-                    if (person) {
-                        person.x = adjustedStartX + index * personSpacing;
-                        person.y = adjustedY;
-                    }
-                });
+            if (parentContext.length > 0) {
+                const avgParentX = parentContext.reduce((a, b) => a + b, 0) / parentContext.length;
+                const genWidth = (linkedIds.length - 1) * personSpacing;
+                anchorX = avgParentX - genWidth / 2;
+            } else if (genLevel > 0) {
+                // 參考最近的一個上方輩分的最左邊界
+                const prevLevel = genLevel - 1;
+                const prevGenIds = byGeneration[prevLevel];
+                const prevLinked = (prevGenIds || []).filter(pid => nodePositions[pid]);
+                if (prevLinked.length > 0) {
+                    anchorX = Math.min(...prevLinked.map(id => nodePositions[id].x));
+                }
             }
+
+            let currentX = anchorX;
+            linkedIds.forEach((pid, idx) => {
+                const person = personMap[pid];
+                if (!person) return;
+
+                if (idx > 0) {
+                    const prevId = linkedIds[idx - 1];
+                    let gap = personSpacing;
+                    if (componentMap[pid] !== componentMap[prevId]) gap += groupGap;
+                    else if (familySide[pid] !== familySide[prevId]) gap += groupGap / 2;
+                    currentX += gap;
+                }
+
+                nodePositions[pid] = { x: currentX, y };
+                person.x = this.snapToGrid(currentX + grid.ORIGIN_X, 'x');
+                person.y = this.snapToGrid(y, 'y');
+
+                globalMaxFamilyX = Math.max(globalMaxFamilyX, currentX);
+            });
         });
+
+        // 【Pass 2】未連線角色排列 (垂直對齊於核心家族右側)
+        sortedGens.forEach((gen, genIndex) => {
+            const genLevel = parseInt(gen);
+            const allIds = byGeneration[gen];
+            // 篩選出無任何關係的角色
+            const unlinkedIds = allIds.filter(pid =>
+                !this.relationships.some(r => r.fromPersonId === pid || r.toPersonId === pid)
+            );
+
+            if (unlinkedIds.length === 0) return;
+
+            const y = baseY + genLevel * generationSpacing;
+            // 起點設為全圖家族最右側 + 一個間隔
+            let currentX = globalMaxFamilyX + personSpacing;
+
+            unlinkedIds.forEach((pid, idx) => {
+                const person = personMap[pid];
+                if (!person) return;
+
+                if (idx > 0) {
+                    // 同一代內有多個未連線角色時，橫向排開
+                    currentX += personSpacing;
+                }
+
+                nodePositions[pid] = { x: currentX, y };
+                person.x = this.snapToGrid(currentX + grid.ORIGIN_X, 'x');
+                person.y = this.snapToGrid(y, 'y');
+            });
+        });
+
+        // 9. [Removed] 移除步驟 11 的強烈平移邏輯，改由上面的 anchorX 自動處理對齊。
+        // 原本的 Step 11 會因為單個 household 的碰撞而平移整個 Generation，是造成畫面混亂的主因。
 
         this.autoSave();
         this.render();

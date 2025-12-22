@@ -102,12 +102,39 @@ class StorageManager {
     }
 
     /**
-     * 從檔案載入（傳統方式，不記住 handle）
-     * @param {File} file
-     * @returns {Promise<{persons: Array, relationships: Array, households: Array}>}
+     * [Bug Fix #9] 資料遷移與相容性處理
+     * @param {Object} data 原始 JSON 數據
+     * @returns {Object} 遷移後的標準數據
+     */
+    migrate(data) {
+        if (!data) return null;
+
+        // 確保基本結構存在
+        const result = {
+            version: data.version || '0.1', // 預設舊版本
+            persons: Array.isArray(data.persons) ? data.persons : [],
+            relationships: Array.isArray(data.relationships) ? data.relationships : [],
+            households: Array.isArray(data.households) ? data.households : []
+        };
+
+        // 這裡可以根據版本進行具體欄位轉換
+        // 例如：0.1 -> 1.0 的轉換邏輯
+        if (result.version === '0.1') {
+            console.log('正在從版本 0.1 遷移數據...');
+            // 補齊缺失的預設值 (例如：medical)
+            result.persons.forEach(p => {
+                if (!p.medical) p.medical = {};
+            });
+            result.version = '1.0';
+        }
+
+        return result;
+    }
+
+    /**
+     * 從檔案載入 (傳統方式)
      */
     loadFromFile(file) {
-        // 清除之前的 handle（因為是用傳統方式開啟）
         this.currentFileHandle = null;
         this.currentFileName = file.name;
 
@@ -116,10 +143,14 @@ class StorageManager {
 
             reader.onload = (e) => {
                 try {
-                    const data = JSON.parse(e.target.result);
+                    let data = JSON.parse(e.target.result);
 
-                    if (!data.persons || !data.relationships) {
-                        throw new Error('無效的檔案格式');
+                    // 執行遷移邏輯
+                    data = this.migrate(data);
+
+                    if (!data || data.persons.length === 0) {
+                        // 如果完全空的，也算成功但給警告
+                        console.warn('載入的檔案不含有效人物數據');
                     }
 
                     const persons = data.persons.map(p => Person.fromJSON(p));
@@ -128,14 +159,11 @@ class StorageManager {
 
                     resolve({ persons, relationships, households });
                 } catch (err) {
-                    reject(new Error('無法解析檔案: ' + err.message));
+                    reject(new Error('檔案解析失敗，請確認檔案格式是否正確: ' + err.message));
                 }
             };
 
-            reader.onerror = () => {
-                reject(new Error('讀取檔案失敗'));
-            };
-
+            reader.onerror = () => reject(new Error('讀取檔案過程中發生錯誤'));
             reader.readAsText(file);
         });
     }
@@ -146,7 +174,6 @@ class StorageManager {
      */
     async openFileWithPicker() {
         if (!window.showOpenFilePicker) {
-            // 瀏覽器不支援，返回 null 讓呼叫者使用傳統方式
             return null;
         }
 
@@ -161,9 +188,12 @@ class StorageManager {
 
             const file = await handle.getFile();
             const content = await file.text();
-            const data = JSON.parse(content);
+            let data = JSON.parse(content);
 
-            if (!data.persons || !data.relationships) {
+            // [Bug Fix #9] 執行遷移邏輯
+            data = this.migrate(data);
+
+            if (!data) {
                 throw new Error('無效的檔案格式');
             }
 

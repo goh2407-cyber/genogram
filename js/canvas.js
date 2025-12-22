@@ -2,11 +2,14 @@
  * GenogramCanvas 類別 - 管理畫布繪製
  */
 class GenogramCanvas {
-    constructor(canvasId, containerId) {
+    constructor(canvasId, containerId, onResize = null) {
         this.canvas = document.getElementById(canvasId);
         this.container = document.getElementById(containerId);
         this.ctx = this.canvas.getContext('2d');
         this.dpr = window.devicePixelRatio || 1;
+
+        // Resize callback (用於通知 App 重新 render)
+        this.onResize = onResize;
 
         // 縮放與平移
         this.scale = 1;
@@ -45,11 +48,38 @@ class GenogramCanvas {
      * 監聽容器尺寸變化
      */
     setupResizeObserver() {
-        const resizeObserver = new ResizeObserver(() => {
-            this.resize();
+        let resizeRafId = null;
+        let lastWidth = this.container.clientWidth;
+        let lastHeight = this.container.clientHeight;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            // [Bug Fix #1] 檢查尺寸是否真的有變化
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) {
+                    continue;
+                }
+
+                lastWidth = width;
+                lastHeight = height;
+
+                this.resize();
+
+                // 使用 requestAnimationFrame 節流
+                if (this.onResize) {
+                    if (resizeRafId) {
+                        cancelAnimationFrame(resizeRafId);
+                    }
+                    resizeRafId = requestAnimationFrame(() => {
+                        this.onResize();
+                        resizeRafId = null;
+                    });
+                }
+            }
         });
         resizeObserver.observe(this.container);
     }
+
 
     /**
      * 清除畫布
@@ -89,6 +119,7 @@ class GenogramCanvas {
      */
     screenToCanvas(screenX, screenY) {
         const rect = this.canvas.getBoundingClientRect();
+        // [Bug Fix #5] 確保座標轉換精確考慮 DPR 與實體尺寸
         const x = (screenX - rect.left - this.offsetX) / this.scale;
         const y = (screenY - rect.top - this.offsetY) / this.scale;
         return { x, y };
@@ -147,7 +178,8 @@ class GenogramCanvas {
             const toPerson = persons.find(p => p.id === rel.toPersonId);
             if (fromPerson && toPerson) {
                 const isSelected = selectedRelationshipId === rel.id;
-                this.drawRelationship(fromPerson, toPerson, rel, isSelected, persons);
+                // 傳入所有關係以便計算並行位移
+                this.drawRelationship(fromPerson, toPerson, rel, isSelected, persons, relationships);
             }
         });
 
@@ -534,15 +566,38 @@ class GenogramCanvas {
     /**
      * 繪製關係線
      */
-    /**
-     * 繪製關係線
-     */
-    /**
-     * 繪製關係線
-     */
-    drawRelationship(fromPerson, toPerson, relationship, isSelected = false, persons = []) {
+    drawRelationship(fromPerson, toPerson, relationship, isSelected = false, persons = [], allRelationships = []) {
         const style = relationship.getLineStyle();
         const category = relationship.getCategory();
+
+        // [New] 計算多重關係位移 (Parallel Lines)
+        let offset = 0;
+        if (allRelationships.length > 0) {
+            const samePairRels = allRelationships.filter(r =>
+                (r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id) ||
+                (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)
+            );
+
+            if (samePairRels.length > 1) {
+                // 分類排序：結構類(Marriage/Family)居中，情感類(Emotional)位移
+                const structuralRel = samePairRels.find(r => ['marriage', 'family'].includes(r.getCategory()));
+                const emotionalRels = samePairRels.filter(r => r.getCategory() === 'emotional');
+
+                if (category === 'emotional') {
+                    const myIdx = emotionalRels.findIndex(r => r.id === relationship.id);
+                    if (structuralRel) {
+                        // 結構線在 0，情感線在兩側交替分佈
+                        const gap = 18;
+                        offset = (myIdx % 2 === 0) ? (Math.floor(myIdx / 2) + 1) * gap : -(Math.floor(myIdx / 2) + 1) * gap;
+                    } else {
+                        // 如果沒有結構線，則情感線對齊中央分佈
+                        const gap = 18;
+                        const total = emotionalRels.length;
+                        offset = (myIdx - (total - 1) / 2) * gap;
+                    }
+                }
+            }
+        }
 
         this.ctx.save();
 
@@ -552,12 +607,9 @@ class GenogramCanvas {
             this.ctx.strokeStyle = '#4a90d9';
 
             if (category === 'family') {
-                // 親子關係高亮：使用加強效果
+                // 親子關係高亮
                 this.ctx.lineWidth = style.width + 10;
                 this.ctx.globalAlpha = 0.8;
-                this.ctx.shadowColor = '#4a90d9';
-                this.ctx.shadowBlur = 12;
-
                 let fromPoint, toPoint;
                 if (fromPerson.y < toPerson.y) {
                     fromPoint = fromPerson.getConnectionPoint('bottom');
@@ -574,29 +626,53 @@ class GenogramCanvas {
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else if (category === 'marriage') {
-                // 婚姻關係：使用原本較細的高亮
+                // 婚姻關係高亮
                 this.ctx.lineWidth = style.width + 4;
                 this.ctx.globalAlpha = 0.3;
                 const fromPoint = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
                 const toPoint = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
+
+                // 套用位移
+                if (offset !== 0) {
+                    const dy = toPoint.y - fromPoint.y;
+                    const dx = toPoint.x - fromPoint.x;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const ux = dx / len;
+                    const uy = dy / len;
+                    fromPoint.x += -uy * offset; fromPoint.y += ux * offset;
+                    toPoint.x += -uy * offset; toPoint.y += ux * offset;
+                }
+
                 this.ctx.beginPath();
                 this.ctx.moveTo(fromPoint.x, fromPoint.y);
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else {
-                // 情感關係：使用原本較細的高亮
+                // 情感關係高亮
                 this.ctx.lineWidth = style.width + 4;
                 this.ctx.globalAlpha = 0.3;
-                const path = this.getSmartPath(fromPerson, toPerson, persons);
-                this.ctx.beginPath();
+                let path = this.getSmartPath(fromPerson, toPerson, persons);
 
+                // 套用位移到路徑中的所有點
+                if (offset !== 0 && path.length >= 2) {
+                    const dx = path[path.length - 1].x - path[0].x;
+                    const dy = path[path.length - 1].y - path[0].y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const ux = dx / len;
+                    const uy = dy / len;
+                    path = path.map(pt => ({
+                        x: pt.x + (-uy * offset),
+                        y: pt.y + (ux * offset)
+                    }));
+                }
+
+                this.ctx.beginPath();
                 if (path.length > 0) {
                     this.ctx.moveTo(path[0].x, path[0].y);
                     for (let i = 1; i < path.length; i++) {
                         this.ctx.lineTo(path[i].x, path[i].y);
                     }
                 }
-
                 this.ctx.stroke();
             }
             this.ctx.restore();
@@ -605,11 +681,11 @@ class GenogramCanvas {
         this.ctx.strokeStyle = style.color;
         this.ctx.lineWidth = style.width;
 
-        // 計算連接點
+        // 計算實際繪製點
         let fromPoint, toPoint;
 
         if (category === 'family') {
-            // 親子關係：上下連接
+            // 親子關係：上下連接 (不位移，通常只有一條親子線)
             if (fromPerson.y < toPerson.y) {
                 fromPoint = fromPerson.getConnectionPoint('bottom');
                 toPoint = toPerson.getConnectionPoint('top');
@@ -619,7 +695,7 @@ class GenogramCanvas {
             }
             this.drawStandardLine(fromPoint, toPoint, style);
         } else if (category === 'marriage') {
-            // 婚姻關係：從側面連接 (呈現左右直線)
+            // 婚姻關係
             if (fromPerson.x < toPerson.x) {
                 fromPoint = fromPerson.getConnectionPoint('right');
                 toPoint = toPerson.getConnectionPoint('left');
@@ -627,10 +703,40 @@ class GenogramCanvas {
                 fromPoint = fromPerson.getConnectionPoint('left');
                 toPoint = toPerson.getConnectionPoint('right');
             }
+
+            // 套用位移
+            if (offset !== 0) {
+                const dx = toPoint.x - fromPoint.x;
+                const dy = toPoint.y - fromPoint.y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const ux = dx / len;
+                const uy = dy / len;
+                fromPoint.x += -uy * offset; fromPoint.y += ux * offset;
+                toPoint.x += -uy * offset; toPoint.y += ux * offset;
+            }
             this.drawMarriageLine(fromPoint, toPoint, style);
         } else {
-            // 情感關係：使用智慧路徑
-            this.drawEmotionalLine(fromPerson, toPerson, style, persons);
+            // 情感關係：手動套用位移到路徑
+            let path = this.getSmartPath(fromPerson, toPerson, persons);
+            if (offset !== 0 && path.length >= 2) {
+                const dx = path[path.length - 1].x - path[0].x;
+                const dy = path[path.length - 1].y - path[0].y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const ux = dx / len;
+                const uy = dy / len;
+                path = path.map(pt => ({
+                    x: pt.x + (-uy * offset),
+                    y: pt.y + (ux * offset)
+                }));
+            }
+            // 這裡不能直接呼叫 drawEmotionalLine，因為它內部會重新取得 SmartPath
+            // 我們直接使用已位移的路徑點繪製
+            this.ctx.setLineDash(this.getLineDash(style.pattern));
+            this.drawPatternOnPath(path, style);
+            this.ctx.setLineDash([]);
+
+            // 繪製裝飾 (邏輯同 drawEmotionalLine 但使用位移後的 path)
+            this.drawEmotionalDecorations(path, style);
         }
 
         this.ctx.restore();
@@ -722,7 +828,7 @@ class GenogramCanvas {
     }
 
     /**
-     * 計算避開障礙物的路徑 (使用二次貝茲曲線)
+     * [Refined] 取得關係路徑 - 預設回傳直線以保持畫面整潔
      */
     getSmartPath(fromPerson, toPerson, persons) {
         // 設定起點和終點（考慮圓半徑，讓線條從圓周出發）
@@ -738,64 +844,8 @@ class GenogramCanvas {
             y: toPerson.y - Math.sin(angle) * radius
         };
 
-        const defaultPath = [start, end];
-
-        // 簡單檢查：如果沒有傳入 persons，直接返回直線
-        if (!persons || persons.length === 0) return defaultPath;
-
-        const collisions = [];
-        const padding = this.personSize / 2 + 15; // 人物半徑 + 緩衝
-
-        // 檢查所有其他人物是否在直線路徑上 (使用較寬的檢測範圍)
-        persons.forEach(p => {
-            if (p.id === fromPerson.id || p.id === toPerson.id) return;
-            // 跳過已經死亡的人? 不，死亡的人也是障礙物
-
-            const dist = this.distanceToSegment(p, start, end);
-            if (dist < padding) {
-                collisions.push(p);
-            }
-        });
-
-        if (collisions.length === 0) return defaultPath;
-
-        // 有碰撞，計算貝茲曲線控制點
-        // 找出碰撞者中最低的 Y 座標
-        let maxObstacleY = -Infinity;
-        collisions.forEach(p => {
-            maxObstacleY = Math.max(maxObstacleY, p.y + this.personSize / 2);
-        });
-
-        const safeY = maxObstacleY + 40; // 安全高度
-        const midX = (start.x + end.x) / 2;
-
-        // 二次貝茲曲線公式: B(t) = (1-t)^2 P0 + 2(1-t)t P1 + t^2 P2
-        // 在 t=0.5 時，曲線最低點 B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
-        // 我們希望 B(0.5).y = safeY
-        // 所以: safeY = 0.25*start.y + 0.5*ctrl.y + 0.25*end.y
-        // 0.5*ctrl.y = safeY - 0.25*(start.y + end.y)
-        // ctrl.y = 2*safeY - 0.5*(start.y + end.y)
-
-        const ctrlY = 2 * safeY - 0.5 * (start.y + end.y);
-
-        // 為了避免曲線太過尖銳，如果 ctrlY 太遠，我們可以調整 X 讓它變寬? 
-        // 暫時保持 midX，通常夠用。
-
-        const control = { x: midX, y: ctrlY };
-
-        // 生成曲線點 (細分 30 段)
-        const curvePoints = [];
-        const segments = 30;
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            const t1 = 1 - t;
-            // B(t) = t1^2 * P0 + 2 * t1 * t * P1 + t^2 * P2
-            const x = t1 * t1 * start.x + 2 * t1 * t * control.x + t * t * end.x;
-            const y = t1 * t1 * start.y + 2 * t1 * t * control.y + t * t * end.y;
-            curvePoints.push({ x, y });
-        }
-
-        return curvePoints;
+        // 直接返回直線路徑，不再進行複雜的避讓運算
+        return [start, end];
     }
 
     /**
@@ -829,96 +879,96 @@ class GenogramCanvas {
         this.ctx.setLineDash([]);
 
         // 3. 繪製裝飾 (在路徑中點)
-        if (style.decoration) {
-            // 計算總長度與中點
-            const totalLen = this.getPathLength(path);
-            const midDist = totalLen / 2;
+        this.drawEmotionalDecorations(path, style);
+    }
 
-            // 取得中點座標與切向量 (用於旋轉裝飾)
-            const midInfo = this.getPointInfoAtDistance(path, midDist);
-            const midPt = midInfo.point;
-            const tangent = midInfo.tangent; // {x, y} normalized
+    /**
+     * 繪製情感關係的裝飾 (箭頭、叉號、平行線等)
+     */
+    drawEmotionalDecorations(path, style) {
+        if (!style.decoration) return;
 
-            // 計算一個小片段的方向來畫箭頭或符號
-            const decorSize = 10;
-            const sx = midPt.x - tangent.x * decorSize;
-            const sy = midPt.y - tangent.y * decorSize;
-            const ex = midPt.x + tangent.x * decorSize;
-            const ey = midPt.y + tangent.y * decorSize;
+        // 計算總長度與中點
+        const totalLen = this.getPathLength(path);
+        if (totalLen < 5) return;
+        const midDist = totalLen / 2;
 
-            if (style.decoration === 'bars') {
-                this.drawBars(sx, sy, ex, ey);
-            } else if (style.decoration === 'arrow') {
-                // 箭頭畫在終點前一點
-                const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
-                const endPt = endInfo.point;
-                const endTan = endInfo.tangent;
-                this.drawArrow(
-                    endPt.x - endTan.x * 10,
-                    endPt.y - endTan.y * 10,
-                    endPt.x + endTan.x * 10,
-                    endPt.y + endTan.y * 10,
-                    true
-                );
-            } else if (style.decoration === 'box-arrow') {
-                // 控制 (Controlling): 帶實心三角形的線
-                const endInfo = this.getPointInfoAtDistance(path, totalLen - 10);
-                const endPt = endInfo.point;
-                const endTan = endInfo.tangent;
-                this.drawBoxArrow(
-                    endPt.x - endTan.x * 12,
-                    endPt.y - endTan.y * 12,
-                    endPt.x,
-                    endPt.y
-                );
-            } else if (style.decoration === 'circle-arrow') {
-                // 崇拜 (Admiration): 帶圓圈的線 (修正為空心圓圈以增加辨識度)
-                const midDist = totalLen / 2;
-                const midPtInfo = this.getPointInfoAtDistance(path, midDist);
-                const midPt = midPtInfo.point;
-                this.ctx.save();
-                this.ctx.fillStyle = 'white';
-                this.ctx.strokeStyle = style.color;
-                this.ctx.lineWidth = 2;
-                this.ctx.beginPath();
-                this.ctx.arc(midPt.x, midPt.y, 6, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.stroke();
-                this.ctx.restore();
+        // 取得中點座標與切向量 (用於旋轉裝飾)
+        const midInfo = this.getPointInfoAtDistance(path, midDist);
+        const midPt = midInfo.point;
+        const tangent = midInfo.tangent; // {x, y} normalized
 
-                // 箭頭
-                const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
-                const endPt = endInfo.point;
-                const endTan = endInfo.tangent;
-                this.drawArrow(
-                    endPt.x - endTan.x * 10,
-                    endPt.y - endTan.y * 10,
-                    endPt.x + endTan.x * 10,
-                    endPt.y + endTan.y * 10,
-                    true
-                );
-            } else if (style.decoration === 'solid-above') {
-                // 特殊：沿著整條路徑畫一條平行線
-                this.drawParallelPath(path, -6); // 上方 6px
-            } else if (style.decoration === 'close-parallel') {
-                // 衝突又親密：上下各一條平行綠線
-                this.ctx.save();
-                this.ctx.strokeStyle = style.decorationColor || '#4caf50';
-                this.drawParallelPath(path, -6);
-                this.drawParallelPath(path, 6);
-                this.ctx.restore();
-            } else if (style.decoration === 'diagonal-bars') {
-                this.drawDiagonalBars(sx, sy, ex, ey);
-            } else if (style.decoration === 'cross-bars') {
-                // 敵對 (Hostile): 實線加兩個叉號
-                const p1 = this.getPointInfoAtDistance(path, totalLen * 0.35);
-                const p2 = this.getPointInfoAtDistance(path, totalLen * 0.65);
-                this.drawCrossBar(p1.point.x, p1.point.y);
-                this.drawCrossBar(p2.point.x, p2.point.y);
-            } else if (style.decoration === 'vertical-bar') {
-                // 斷絕 (Cutoff): 改用 drawGapBarLine
-                this.drawGapBarLine(sx, sy, ex, ey);
-            }
+        // 計算一個小片段的方向來畫箭頭或符號
+        const decorSize = 10;
+        const sx = midPt.x - tangent.x * decorSize;
+        const sy = midPt.y - tangent.y * decorSize;
+        const ex = midPt.x + tangent.x * decorSize;
+        const ey = midPt.y + tangent.y * decorSize;
+
+        if (style.decoration === 'bars') {
+            this.drawBars(sx, sy, ex, ey);
+        } else if (style.decoration === 'arrow') {
+            // 箭頭畫在終點前一點
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            const endPt = endInfo.point;
+            const endTan = endInfo.tangent;
+            this.drawArrow(
+                endPt.x - endTan.x * 10,
+                endPt.y - endTan.y * 10,
+                endPt.x + endTan.x * 10,
+                endPt.y + endTan.y * 10,
+                true
+            );
+        } else if (style.decoration === 'box-arrow') {
+            // 控制 (Controlling)
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 10);
+            const endPt = endInfo.point;
+            const endTan = endInfo.tangent;
+            this.drawBoxArrow(
+                endPt.x - endTan.x * 12,
+                endPt.y - endTan.y * 12,
+                endPt.x,
+                endPt.y
+            );
+        } else if (style.decoration === 'circle-arrow') {
+            // 崇拜 (Admiration)
+            this.ctx.save();
+            this.ctx.fillStyle = 'white';
+            this.ctx.strokeStyle = style.color;
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.arc(midPt.x, midPt.y, 6, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.restore();
+
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            const endPt = endInfo.point;
+            const endTan = endInfo.tangent;
+            this.drawArrow(
+                endPt.x - endTan.x * 10,
+                endPt.y - endTan.y * 10,
+                endPt.x + endTan.x * 10,
+                endPt.y + endTan.y * 10,
+                true
+            );
+        } else if (style.decoration === 'solid-above') {
+            this.drawParallelPath(path, -6);
+        } else if (style.decoration === 'close-parallel') {
+            this.ctx.save();
+            this.ctx.strokeStyle = style.decorationColor || '#4caf50';
+            this.drawParallelPath(path, -6);
+            this.drawParallelPath(path, 6);
+            this.ctx.restore();
+        } else if (style.decoration === 'diagonal-bars') {
+            this.drawDiagonalBars(sx, sy, ex, ey);
+        } else if (style.decoration === 'cross-bars') {
+            const p1 = this.getPointInfoAtDistance(path, totalLen * 0.35);
+            const p2 = this.getPointInfoAtDistance(path, totalLen * 0.65);
+            this.drawCrossBar(p1.point.x, p1.point.y);
+            this.drawCrossBar(p2.point.x, p2.point.y);
+        } else if (style.decoration === 'vertical-bar') {
+            this.drawGapBarLine(sx, sy, ex, ey);
         }
     }
 
@@ -1527,56 +1577,60 @@ class GenogramCanvas {
         }
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        // 1. 每個人物的影響範圍 (包含名字高度)
         persons.forEach(p => {
-            const halfSize = this.personSize / 2 + 30;
+            const halfSize = this.personSize / 2 + 10;
             minX = Math.min(minX, p.x - halfSize);
             minY = Math.min(minY, p.y - halfSize);
             maxX = Math.max(maxX, p.x + halfSize);
-            maxY = Math.max(maxY, p.y + halfSize + 20);
+            maxY = Math.max(maxY, p.y + halfSize + 30); // 留點空間給名字
         });
 
-        // 考慮 households 的範圍
+        // 2. 考慮 households 的實際邊界 (hullPoints)
         if (households && households.length > 0) {
             households.forEach(household => {
-                const members = household.ids.map(id => persons.find(p => p.id === id)).filter(p => p);
-                if (members.length > 0) {
-                    const padding = 40;
-                    const xs = members.map(m => m.x);
-                    const ys = members.map(m => m.y);
-                    const hMinX = Math.min(...xs) - this.personSize / 2 - padding;
-                    const hMaxX = Math.max(...xs) + this.personSize / 2 + padding;
-                    const hMinY = Math.min(...ys) - this.personSize / 2 - padding;
-                    const hMaxY = Math.max(...ys) + this.personSize / 2 + padding;
-                    minX = Math.min(minX, hMinX);
-                    minY = Math.min(minY, hMinY);
-                    maxX = Math.max(maxX, hMaxX);
-                    maxY = Math.max(maxY, hMaxY);
+                const bounds = this.getHouseholdBounds(household, persons, relationships);
+                if (bounds && bounds.hullPoints) {
+                    bounds.hullPoints.forEach(pt => {
+                        minX = Math.min(minX, pt.x);
+                        minY = Math.min(minY, pt.y);
+                        maxX = Math.max(maxX, pt.x);
+                        maxY = Math.max(maxY, pt.y);
+                    });
                 }
             });
         }
 
-        const padding = 40;
-        const contentWidth = maxX - minX + padding * 2;
-        const contentHeight = maxY - minY + padding * 2;
+        // 加上安全邊距
+        const margin = 50;
+        minX -= margin;
+        minY -= margin;
+        maxX += margin;
+        maxY += margin;
 
-        // ===== 圖例設定 (配合目前 20+ 種關係) =====
-        const legendWidth = 220;
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+
+        // ===== 圖例設定 =====
+        const legendWidth = 240;
         const legendPadding = 40;
-        const legendHeight = 800; // 增加高度以容納目前所有 20+ 個項目
+        const legendHeight = 850;
 
-        // 總畫布尺寸（內容 + 圖例）
+        // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
-        const totalHeight = Math.max(contentHeight, legendHeight + padding * 2);
+        const totalHeight = Math.max(contentHeight, legendHeight + margin * 2);
 
-        // 建立臨時畫布
+        // 建立臨時畫布 (提高解析度 3x)
         const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = totalWidth * 2; // 高解析度
-        exportCanvas.height = totalHeight * 2;
+        const exportScale = 3;
+        exportCanvas.width = totalWidth * exportScale;
+        exportCanvas.height = totalHeight * exportScale;
         const exportCtx = exportCanvas.getContext('2d');
-        exportCtx.scale(2, 2);
+        exportCtx.scale(exportScale, exportScale);
 
-        // 白色背景
-        exportCtx.fillStyle = '#fff';
+        // [Bug Fix #6] 強制填充純白背景，不留透明度
+        exportCtx.fillStyle = '#ffffff';
         exportCtx.fillRect(0, 0, totalWidth, totalHeight);
 
         // 暫時切換 context
@@ -1585,48 +1639,38 @@ class GenogramCanvas {
 
         // 平移到內容區域
         this.ctx.save();
-        this.ctx.translate(-minX + padding, -minY + padding);
+        this.ctx.translate(-minX, -minY);
 
-        // 分類關係
-        const familyRels = [];
-        const otherRels = [];
+        // 1. 先繪製同住家庭 (最底層)
+        if (households && households.length > 0) {
+            this.drawHouseholds(households, persons, relationships, false, null);
+        }
 
-        relationships.forEach(rel => {
-            const category = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
-            if (category === 'family') {
-                familyRels.push(rel);
-            } else {
-                otherRels.push(rel);
-            }
-        });
+        // 2. 繪製親子關係
+        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
-        // 1. 先繪製親子關係 (樹狀結構) - 底層
         this.drawFamilies(familyRels, persons, otherRels);
 
-        // 2. 繪製非親子關係 (婚姻、情感) - 表層
+        // 3. 繪製其餘關係
         otherRels.forEach(rel => {
             const fromPerson = persons.find(p => p.id === rel.fromPersonId);
             const toPerson = persons.find(p => p.id === rel.toPersonId);
             if (fromPerson && toPerson) {
-                this.drawRelationship(fromPerson, toPerson, rel, false);
+                this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
             }
         });
 
-        // 3. 繪製人物
+        // 4. 繪製人物
         persons.forEach(person => {
             this.drawPerson(person, false, false, false);
         });
 
-        // 4. 繪製同住家庭圈選
-        if (households && households.length > 0) {
-            this.drawHouseholds(households, persons, false, null);
-        }
-
         this.ctx.restore();
 
-        // ===== 5. 繪製圖例 =====
-        const legendX = contentWidth + legendPadding / 2;
-        const legendY = Math.max(padding, (totalHeight - legendHeight) / 2);
+        // 5. 繪製圖例 (靠右對齊)
+        const legendX = totalWidth - legendWidth - legendPadding / 2;
+        const legendY = (totalHeight - legendHeight) / 2;
         this.drawExportLegend(exportCtx, legendX, legendY);
 
         // 還原 context
