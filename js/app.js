@@ -47,6 +47,8 @@ class GenogramApp {
         this.selectedPersonIds = []; // 多選的人物 ID 列表
         this.householdSelection = []; // 用於建立同住家庭的暫存選取列表
         this.pendingGeneration = null; // 等待選擇性別的輩分
+        this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
+        this.quickAddContext = null; // 快速新增的上下文 {personId, type}
 
         // 拖曳 History 合併：記錄拖曳開始時的狀態快照
         this.dragStartSnapshot = null;
@@ -98,11 +100,8 @@ class GenogramApp {
      */
     cacheElements() {
         this.elements = {
-            // 輩分按鈕
-            addGrandparentBtn: document.getElementById('addGrandparent'),
-            addParentBtn: document.getElementById('addParent'),
-            addChildBtn: document.getElementById('addChild'),
-            addGrandchildBtn: document.getElementById('addGrandchild'),
+            // 新增角色按鈕
+            addPersonBtn: document.getElementById('addPerson'),
 
             // 工具按鈕
             selectToolBtn: document.getElementById('selectTool'),
@@ -152,11 +151,8 @@ class GenogramApp {
      * 設定事件監聽器
      */
     setupEventListeners() {
-        // 輩分按鈕 - 點擊後顯示性別選擇對話框
-        this.elements.addGrandparentBtn.addEventListener('click', () => this.showGenderModal('grandparent'));
-        this.elements.addParentBtn.addEventListener('click', () => this.showGenderModal('parent'));
-        this.elements.addChildBtn.addEventListener('click', () => this.showGenderModal('child'));
-        this.elements.addGrandchildBtn.addEventListener('click', () => this.showGenderModal('grandchild'));
+        // 新增角色按鈕 - 點擊後顯示性別選擇對話框
+        this.elements.addPersonBtn.addEventListener('click', () => this.showGenderModal('parent'));
 
         // 工具列按鈕
         this.elements.selectToolBtn.addEventListener('click', () => this.setTool('select'));
@@ -212,7 +208,12 @@ class GenogramApp {
         document.querySelectorAll('.gender-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const gender = e.currentTarget.dataset.gender;
-                this.createPersonWithGeneration(gender);
+                // 檢查是否為快速新增模式 (手足/伴侶)
+                if (this.quickAddContext) {
+                    this.createQuickPersonWithGender(gender);
+                } else {
+                    this.createPersonWithGeneration(gender);
+                }
             });
         });
 
@@ -421,6 +422,18 @@ class GenogramApp {
         }
 
         const point = this.canvas.getMousePos(e);
+
+        // [NEW] 快速按鈕點擊偵測
+        if (this.hoveredPersonId && this.currentTool === 'select') {
+            const hoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+            if (hoveredPerson) {
+                const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
+                if (buttonType) {
+                    this.handleQuickAddClick(hoveredPerson, buttonType);
+                    return;
+                }
+            }
+        }
 
         if (this.currentTool === 'boxSelect' || this.currentTool === 'household') {
             this.isBoxSelecting = true;
@@ -700,17 +713,8 @@ class GenogramApp {
                     }
                 }
 
-                // [NEW] 鎖定輩份移動 (Lock Generation Movement)
-                // 如果人物有設定 generation，禁止垂直移動，只能水平移動
-                movingPersons.forEach(person => {
-                    if (person.generation) {
-                        // 對於此人物，強制 dy 為 0
-                        // 注意：這裡是簡化處理，因為我們目前的架構是整體移動
-                        // 如果 movingPersons 裡混雜了有輩份和沒輩份的 (不太可能)，
-                        // 統一鎖定會比較安全
-                        finalDy = 0;
-                    }
-                });
+                // [UPDATED] 允許垂直移動以支援輩分切換
+                // 放開後會自動 snap 到最近的輩分
 
                 // 執行移動
                 movingPersons.forEach(person => {
@@ -753,6 +757,34 @@ class GenogramApp {
                 this.canvas.canvas.style.cursor = 'move'; // 多選區域移動
             } else {
                 this.canvas.canvas.style.cursor = 'default';
+            }
+
+            // [NEW] 快速按鈕 hover 追蹤
+            // 修正：使用擴展區域來保持按鈕可見
+            let newHoveredId = person ? person.id : null;
+
+            // 如果目前沒有 hover 到人物，但之前有 hoveredPersonId，
+            // 檢查是否在擴展的按鈕區域內
+            if (!newHoveredId && this.hoveredPersonId) {
+                const prevHoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+                if (prevHoveredPerson && this.canvas.isPointInQuickAddZone(point.x, point.y, prevHoveredPerson)) {
+                    // 滑鼠在擴展區域內，保持 hover 狀態
+                    newHoveredId = this.hoveredPersonId;
+                }
+            }
+
+            if (this.hoveredPersonId !== newHoveredId) {
+                this.hoveredPersonId = newHoveredId;
+                this.render();
+            }
+
+            // 檢查是否 hover 在快速按鈕上
+            if (this.hoveredPersonId) {
+                const hoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+                const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
+                if (buttonType) {
+                    this.canvas.canvas.style.cursor = 'pointer';
+                }
             }
         }
     }
@@ -805,12 +837,27 @@ class GenogramApp {
                         let targetX = this.snapToGrid(p.x, 'x');
                         let targetY = this.snapToGrid(p.y, 'y');
 
-                        // [NEW] 嚴格限制輩份 Y 座標
-                        if (typeof p.generation === 'number') {
-                            const grid = GenogramApp.GRID;
-                            // 直接公式計算該輩分的 Y，確保絕對穩定
-                            targetY = grid.ORIGIN_Y + p.generation * grid.CELL_HEIGHT;
+                        // [UPDATED] 根據拖曳位置自動切換輩分
+                        // 如果拖曳超過上下輩分的中點，自動調整到該輩分
+                        const grid = GenogramApp.GRID;
+
+                        // 根據當前 Y 座標計算應該屬於哪個輩分
+                        const relativeY = p.y - grid.ORIGIN_Y;
+                        const newGeneration = Math.round(relativeY / grid.CELL_HEIGHT);
+
+                        // 限制輩分範圍 (0 = grandparent, 1 = parent, 2 = child, 3 = grandchild)
+                        const clampedGeneration = Math.max(0, Math.min(3, newGeneration));
+
+                        // 更新輩分
+                        if (typeof p.generation === 'number' && p.generation !== clampedGeneration) {
+                            // 輩分發生改變，更新 generation 屬性
+                            const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
+                            p.generation = genNames[clampedGeneration] || 'parent';
+                            this.updateStatus(`已移動到${GenogramApp.GENERATION_LEVELS[p.generation]?.label || '新輩分'}`, 'info');
                         }
+
+                        // 對齊到該輩分的 Y 座標
+                        targetY = grid.ORIGIN_Y + clampedGeneration * grid.CELL_HEIGHT;
 
                         // 檢查目標格子是否被佔用 (不含自己這組人)
                         // 若被佔用，尋找最近的空位
@@ -1002,16 +1049,12 @@ class GenogramApp {
                 this.setTool('select');
                 break;
             case '1':
-                this.showGenderModal('grandparent');
-                break;
             case '2':
-                this.showGenderModal('parent');
-                break;
             case '3':
-                this.showGenderModal('child');
-                break;
             case '4':
-                this.showGenderModal('grandchild');
+            case 'n':
+            case 'N':
+                this.showGenderModal('parent');
                 break;
             case 'c':
             case 'C':
@@ -1037,6 +1080,7 @@ class GenogramApp {
                     this.updateStatus('連接已取消', 'info');
                 } else {
                     this.closeGenderModal();
+                    this.closeRelationshipModal();
                     this.setTool('select');
                 }
                 this.render();
@@ -1118,7 +1162,7 @@ class GenogramApp {
             const fromPerson = this.persons.find(p => p.id === rel.fromPersonId);
             const toPerson = this.persons.find(p => p.id === rel.toPersonId);
             if (fromPerson && toPerson) {
-                if (this.canvas.isPointOnRelationship(x, y, fromPerson, toPerson, rel, 12)) {
+                if (this.canvas.isPointOnRelationship(x, y, fromPerson, toPerson, rel, 12, this.relationships)) {
                     return rel;
                 }
             }
@@ -1174,8 +1218,254 @@ class GenogramApp {
      */
     closeGenderModal() {
         this.pendingGeneration = null;
+        this.quickAddContext = null;
         this.elements.genderModal.classList.remove('active');
         this.updateStatus('就緒');
+    }
+
+    /**
+     * 處理快速新增按鈕點擊
+     * @param {Person} basePerson - 基準角色
+     * @param {string} buttonType - 按鈕類型 ('parent', 'sibling', 'partner', 'son', 'daughter', 'pregnancy')
+     */
+    handleQuickAddClick(basePerson, buttonType) {
+        const grid = GenogramApp.GRID;
+        this.saveState();
+
+        switch (buttonType) {
+            case 'parent':
+                // 一鍵建立父母（父親 + 母親 + 婚姻線 + 2條親子線）
+                this.createParentsForPerson(basePerson);
+                break;
+
+            case 'sibling':
+                // 需要選擇性別
+                this.quickAddContext = { personId: basePerson.id, type: 'sibling' };
+                this.updateStatus('選擇手足的性別', 'info');
+                this.elements.genderModal.classList.add('active');
+                break;
+
+            case 'partner':
+                // 需要選擇性別，預設同居關係
+                this.quickAddContext = { personId: basePerson.id, type: 'partner' };
+                this.updateStatus('選擇伴侶的性別', 'info');
+                this.elements.genderModal.classList.add('active');
+                break;
+
+            case 'son':
+                this.createChildForPerson(basePerson, 'male');
+                break;
+
+            case 'daughter':
+                this.createChildForPerson(basePerson, 'female');
+                break;
+
+            case 'pregnancy':
+                this.createChildForPerson(basePerson, 'pregnancy');
+                break;
+        }
+    }
+
+    /**
+     * 為角色建立父母（父親 + 母親 + 婚姻線）
+     */
+    createParentsForPerson(child) {
+        const grid = GenogramApp.GRID;
+        const parentY = child.y - grid.CELL_HEIGHT;
+
+        // 建立父親（左）
+        const father = new Person({
+            x: child.x - grid.CELL_WIDTH / 2,
+            y: parentY,
+            gender: 'male',
+            generation: this.getGenerationAbove(child.generation)
+        });
+        this.persons.push(father);
+
+        // 建立母親（右）
+        const mother = new Person({
+            x: child.x + grid.CELL_WIDTH / 2,
+            y: parentY,
+            gender: 'female',
+            generation: this.getGenerationAbove(child.generation)
+        });
+        this.persons.push(mother);
+
+        // 建立婚姻關係
+        const marriage = new Relationship({
+            fromPersonId: father.id,
+            toPersonId: mother.id,
+            type: 'married'
+        });
+        this.relationships.push(marriage);
+
+        // 建立親子關係（父親→子女）
+        const fatherChild = new Relationship({
+            fromPersonId: father.id,
+            toPersonId: child.id,
+            type: 'parent-child'
+        });
+        this.relationships.push(fatherChild);
+
+        // 建立親子關係（母親→子女）
+        const motherChild = new Relationship({
+            fromPersonId: mother.id,
+            toPersonId: child.id,
+            type: 'parent-child'
+        });
+        this.relationships.push(motherChild);
+
+        this.autoSave();
+        this.render();
+        this.updateStatus('已建立父母（父親 + 母親 + 婚姻線 + 親子線）', 'success');
+    }
+
+    /**
+     * 為角色建立子女
+     */
+    createChildForPerson(parent, gender) {
+        const grid = GenogramApp.GRID;
+        const childY = parent.y + grid.CELL_HEIGHT;
+
+        // 計算 X 座標（避免重疊）
+        let childX = parent.x;
+        const existingChildren = this.persons.filter(p =>
+            Math.abs(p.y - childY) < grid.CELL_HEIGHT * 0.5
+        );
+        if (existingChildren.length > 0) {
+            const rightmost = Math.max(...existingChildren.map(p => p.x));
+            if (Math.abs(childX - rightmost) < grid.CELL_WIDTH * 0.8) {
+                childX = rightmost + grid.CELL_WIDTH;
+            }
+        }
+
+        const child = new Person({
+            x: childX,
+            y: childY,
+            gender: gender,
+            generation: this.getGenerationBelow(parent.generation)
+        });
+        this.persons.push(child);
+
+        // 建立親子關係（主要父/母）
+        const parentChildRel = new Relationship({
+            fromPersonId: parent.id,
+            toPersonId: child.id,
+            type: 'parent-child'
+        });
+        this.relationships.push(parentChildRel);
+
+        // 尋找配偶（婚姻或同居關係），為配偶也建立親子關係
+        const spouse = this.findSpouse(parent.id);
+        if (spouse) {
+            const spouseChildRel = new Relationship({
+                fromPersonId: spouse.id,
+                toPersonId: child.id,
+                type: 'parent-child'
+            });
+            this.relationships.push(spouseChildRel);
+        }
+
+        this.autoSave();
+        this.render();
+        const genderName = gender === 'male' ? '兒子' : (gender === 'female' ? '女兒' : '懷孕');
+        const spouseNote = spouse ? '（雙親）' : '';
+        this.updateStatus(`已建立${genderName}並建立親子關係${spouseNote}`, 'success');
+    }
+
+    /**
+     * 處理快速新增的性別選擇（手足/伴侶）
+     */
+    createQuickPersonWithGender(gender) {
+        if (!this.quickAddContext) return;
+
+        const { personId, type } = this.quickAddContext;
+        const basePerson = this.persons.find(p => p.id === personId);
+        if (!basePerson) {
+            this.closeGenderModal();
+            return;
+        }
+
+        const grid = GenogramApp.GRID;
+        this.saveState();
+
+        if (type === 'sibling') {
+            // 建立手足
+            let siblingX = basePerson.x + grid.CELL_WIDTH;
+            const sameLevelPersons = this.persons.filter(p =>
+                Math.abs(p.y - basePerson.y) < grid.CELL_HEIGHT * 0.5
+            );
+            if (sameLevelPersons.length > 0) {
+                const rightmost = Math.max(...sameLevelPersons.map(p => p.x));
+                siblingX = rightmost + grid.CELL_WIDTH;
+            }
+
+            const sibling = new Person({
+                x: siblingX,
+                y: basePerson.y,
+                gender: gender,
+                generation: basePerson.generation
+            });
+            this.persons.push(sibling);
+
+            // 找出基準角色的父母，為手足建立親子關係
+            const parentRels = this.relationships.filter(r =>
+                r.type === 'parent-child' && r.toPersonId === basePerson.id
+            );
+            parentRels.forEach(rel => {
+                const siblingParentRel = new Relationship({
+                    fromPersonId: rel.fromPersonId,
+                    toPersonId: sibling.id,
+                    type: 'parent-child'
+                });
+                this.relationships.push(siblingParentRel);
+            });
+
+            this.updateStatus('已建立手足', 'success');
+        } else if (type === 'partner') {
+            // 建立伴侶（同居關係）
+            const partnerX = basePerson.x + grid.CELL_WIDTH;
+
+            const partner = new Person({
+                x: partnerX,
+                y: basePerson.y,
+                gender: gender,
+                generation: basePerson.generation
+            });
+            this.persons.push(partner);
+
+            // 建立同居關係
+            const cohabitRel = new Relationship({
+                fromPersonId: basePerson.id,
+                toPersonId: partner.id,
+                type: 'cohabiting'
+            });
+            this.relationships.push(cohabitRel);
+
+            this.updateStatus('已建立伴侶並建立同居關係', 'success');
+        }
+
+        this.closeGenderModal();
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * 取得上一輩分
+     */
+    getGenerationAbove(generation) {
+        const genOrder = ['grandchild', 'child', 'parent', 'grandparent'];
+        const idx = genOrder.indexOf(generation);
+        return idx >= 0 && idx < genOrder.length - 1 ? genOrder[idx + 1] : null;
+    }
+
+    /**
+     * 取得下一輩分
+     */
+    getGenerationBelow(generation) {
+        const genOrder = ['grandparent', 'parent', 'child', 'grandchild'];
+        const idx = genOrder.indexOf(generation);
+        return idx >= 0 && idx < genOrder.length - 1 ? genOrder[idx + 1] : null;
     }
 
     /**
@@ -1741,35 +2031,7 @@ class GenogramApp {
         this.autoSave();
         this.render();
 
-        // 若是婚姻類關係，詢問是否要選擇共同子女
-        const marriageTypes = ['married', 'engaged', 'cohabiting', 'separated', 'divorced', 'widowed'];
-        if (marriageTypes.includes(type)) {
-            // 暫存父母 ID
-            this.pendingParents = [fromId, toId];
-            // 找出可能的子女（Y 座標比父母高的人物）
-            const parentsPerson = [
-                this.persons.find(p => p.id === fromId),
-                this.persons.find(p => p.id === toId)
-            ];
-            const parentsMaxY = Math.max(parentsPerson[0]?.y || 0, parentsPerson[1]?.y || 0);
 
-            // 找出潛在子女：Y 座標比父母大（在畫布上更下方）且尚未與這對父母有親子關係
-            const potentialChildren = this.persons.filter(p => {
-                if (p.id === fromId || p.id === toId) return false;
-                if (p.y <= parentsMaxY) return false;
-                // 檢查是否已經有親子關係
-                const alreadyChild = this.relationships.some(r =>
-                    r.type === 'parent-child' &&
-                    ((r.fromPersonId === fromId && r.toPersonId === p.id) ||
-                        (r.fromPersonId === toId && r.toPersonId === p.id))
-                );
-                return !alreadyChild;
-            });
-
-            if (potentialChildren.length > 0) {
-                this.showChildrenModal(potentialChildren);
-            }
-        }
     }
 
     /**
@@ -1959,10 +2221,6 @@ class GenogramApp {
             this.relationships = this.relationships.filter(r => r.id !== this.selectedRelationshipId);
             this.selectedRelationshipId = null;
             this.updatePropertyPanel();
-            // 刪除關係後自動對齊
-            if (typeof this.autoLayoutByGeneration === 'function') {
-                this.autoLayoutByGeneration();
-            }
             this.autoSave();
             this.render();
         }
@@ -2033,7 +2291,8 @@ class GenogramApp {
             this.isBoxSelecting ? this.boxSelectStart : null, // 選擇框起始點
             this.isBoxSelecting ? this.boxSelectEnd : null, // 選擇框結束點
             this.households, // 同住家庭列表
-            this.selectedHouseholdId // 選中的家庭 ID
+            this.selectedHouseholdId, // 選中的家庭 ID
+            this.hoveredPersonId // hover 的角色 ID
         );
     }
 

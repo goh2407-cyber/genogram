@@ -145,7 +145,7 @@ class GenogramCanvas {
     /**
      * 繪製整個家系圖
      */
-    render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null, households = [], selectedHouseholdId = null) {
+    render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null, households = [], selectedHouseholdId = null, hoveredPersonId = null) {
         this.clear();
 
         this.ctx.save();
@@ -213,6 +213,14 @@ class GenogramCanvas {
         // 7. 繪製範圍圈選框
         if (boxSelectStart && boxSelectEnd) {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
+        }
+
+        // 8. 繪製快速新增按鈕 (hover 時顯示)
+        if (hoveredPersonId) {
+            const hoveredPerson = persons.find(p => p.id === hoveredPersonId);
+            if (hoveredPerson) {
+                this.drawQuickAddButtons(hoveredPerson);
+            }
         }
 
         this.ctx.restore();
@@ -771,7 +779,15 @@ class GenogramCanvas {
      * 繪製婚姻關係線
      */
     drawMarriageLine(from, to, style) {
+        // 設定虛線樣式
         this.ctx.setLineDash(this.getLineDash(style.pattern));
+
+        // 對於訂婚(dashed)和外遇(dashed)，使用更明顯的虛線
+        if (style.pattern === 'dashed') {
+            this.ctx.setLineDash([8, 6]);
+        } else if (style.pattern === 'dotted') {
+            this.ctx.setLineDash([3, 3]);
+        }
 
         // 繪製主線（左右直線）
         const centerX = (from.x + to.x) / 2;
@@ -785,22 +801,95 @@ class GenogramCanvas {
         this.ctx.setLineDash([]); // 重置虛線以繪製裝飾
 
         // 裝飾
-        // 使用前面計算好的 centerX, centerY
-
-        if (style.decoration === 'slash') {
+        if (style.decoration === 'house') {
+            this.drawHouse(centerX, centerY);
+        } else if (style.decoration === 'single-slash') {
             this.drawSlash(centerX, centerY);
         } else if (style.decoration === 'double-slash') {
-            // 兩條短斜線（根據文檔：離婚和分居）
-            const slashSize = 8;
-            this.ctx.beginPath();
-            this.ctx.moveTo(centerX - slashSize, centerY - slashSize);
-            this.ctx.lineTo(centerX + slashSize, centerY + slashSize);
-            this.ctx.moveTo(centerX + slashSize, centerY - slashSize);
-            this.ctx.lineTo(centerX - slashSize, centerY + slashSize);
-            this.ctx.stroke();
+            // 法律分居: 兩條斜線
+            this.drawDoubleSlash(centerX, centerY);
+        } else if (style.decoration === 'divorce-slash') {
+            // 離婚: 兩條垂直短線(或斜線)加阻斷
+            this.drawDivorceSlash(centerX, centerY);
         } else if (style.decoration === 'x') {
             this.drawX(centerX, centerY);
+        } else if (style.decoration === 'x-double') {
+            this.drawX(centerX, centerY); // 喪偶通常也是打叉，或者雙叉? 參考圖是打叉
         }
+    }
+
+    /**
+     * 繪製小房子 (法律同居)
+     */
+    drawHouse(x, y) {
+        const w = 12;
+        const h = 10;
+        this.ctx.save();
+        this.ctx.fillStyle = '#FFFFFF'; // 填充白色蓋住線條
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - w / 2, y); // 左下
+        this.ctx.lineTo(x - w / 2, y - h / 2); // 左上壁
+        this.ctx.lineTo(x, y - h); // 屋頂頂點
+        this.ctx.lineTo(x + w / 2, y - h / 2); // 右上壁
+        this.ctx.lineTo(x + w / 2, y); // 右下
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * 繪製雙斜線 (法律分居)
+     */
+    drawDoubleSlash(x, y) {
+        const size = 6;
+        const gap = 4;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size - gap, y + size);
+        this.ctx.lineTo(x + size - gap, y - size);
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size + gap, y + size);
+        this.ctx.lineTo(x + size + gap, y - size);
+        this.ctx.stroke();
+    }
+
+    /**
+     * 繪製離婚標記 (兩條斜線 //)
+     */
+    drawDivorceSlash(x, y) {
+        const size = 6;
+        const gap = 4;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size - gap, y + size);
+        this.ctx.lineTo(x + size - gap, y - size);
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size + gap, y + size);
+        this.ctx.lineTo(x + size + gap, y - size);
+        this.ctx.stroke();
+    }
+
+    /**
+     * 繪製小房子裝飾
+     */
+    drawHouse(x, y) {
+        const size = 6;
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size, y + size); // 左下
+        this.ctx.lineTo(x - size, y - size + 2); // 左上
+        this.ctx.lineTo(x, y - size - 2); // 屋頂頂端
+        this.ctx.lineTo(x + size, y - size + 2); // 右上
+        this.ctx.lineTo(x + size, y + size); // 右下
+        this.ctx.lineTo(x - size, y + size); // 閉合
+        this.ctx.fillStyle = '#ffffff'; // 填充白色
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
     }
 
     /**
@@ -900,76 +989,224 @@ class GenogramCanvas {
 
         // 計算一個小片段的方向來畫箭頭或符號
         const decorSize = 10;
-        const sx = midPt.x - tangent.x * decorSize;
-        const sy = midPt.y - tangent.y * decorSize;
-        const ex = midPt.x + tangent.x * decorSize;
-        const ey = midPt.y + tangent.y * decorSize;
 
-        if (style.decoration === 'bars') {
-            this.drawBars(sx, sy, ex, ey);
-        } else if (style.decoration === 'arrow') {
-            // 箭頭畫在終點前一點
+        // 一些裝飾需要在兩端
+
+        if (style.decoration === 'arrow') {
+            // 關注: 箭頭 (末端)
             const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
-            const endPt = endInfo.point;
-            const endTan = endInfo.tangent;
             this.drawArrow(
-                endPt.x - endTan.x * 10,
-                endPt.y - endTan.y * 10,
-                endPt.x + endTan.x * 10,
-                endPt.y + endTan.y * 10,
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10, // 指向終點
+                endInfo.point.y + endInfo.tangent.y * 10,
                 true
             );
-        } else if (style.decoration === 'box-arrow') {
-            // 控制 (Controlling)
-            const endInfo = this.getPointInfoAtDistance(path, totalLen - 10);
-            const endPt = endInfo.point;
-            const endTan = endInfo.tangent;
-            this.drawBoxArrow(
-                endPt.x - endTan.x * 12,
-                endPt.y - endTan.y * 12,
-                endPt.x,
-                endPt.y
-            );
         } else if (style.decoration === 'circle-arrow') {
-            // 崇拜 (Admiration)
+            // 崇拜: 末端圓圈+箭頭
+            // 中點不用畫圓圈，是畫在箭頭尾巴？
+            // 根據圖示，circle是在線的中間，箭頭在末端
             this.ctx.save();
             this.ctx.fillStyle = 'white';
             this.ctx.strokeStyle = style.color;
             this.ctx.lineWidth = 2;
             this.ctx.beginPath();
-            this.ctx.arc(midPt.x, midPt.y, 6, 0, Math.PI * 2);
+            this.ctx.arc(midPt.x, midPt.y, 4, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.stroke();
             this.ctx.restore();
 
             const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
-            const endPt = endInfo.point;
-            const endTan = endInfo.tangent;
             this.drawArrow(
-                endPt.x - endTan.x * 10,
-                endPt.y - endTan.y * 10,
-                endPt.x + endTan.x * 10,
-                endPt.y + endTan.y * 10,
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10,
+                endInfo.point.y + endInfo.tangent.y * 10,
                 true
             );
-        } else if (style.decoration === 'solid-above') {
-            this.drawParallelPath(path, -6);
-        } else if (style.decoration === 'close-parallel') {
+        } else if (style.decoration === 'double-bar') {
+            // 疏離/敵對/斷絕: 雙豎線 (中間)
+            const barSize = 8;
+            const perpX = -tangent.y * barSize;
+            const perpY = tangent.x * barSize;
+
+            // 第一條
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x - tangent.x * 3 + perpX, midPt.y - tangent.y * 3 + perpY);
+            this.ctx.lineTo(midPt.x - tangent.x * 3 - perpX, midPt.y - tangent.y * 3 - perpY);
+            this.ctx.stroke();
+
+            // 第二條
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x + tangent.x * 3 + perpX, midPt.y + tangent.y * 3 + perpY);
+            this.ctx.lineTo(midPt.x + tangent.x * 3 - perpX, midPt.y + tangent.y * 3 - perpY);
+            this.ctx.stroke();
+        } else if (style.decoration === 'double-dash') {
+            // 仇恨: 雙斜線/豎線? 參考圖是 zigzag 加上兩條豎線
+            // 與 double-bar 類似
+            const barSize = 8;
+            const perpX = -tangent.y * barSize;
+            const perpY = tangent.x * barSize;
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x - tangent.x * 3 + perpX, midPt.y - tangent.y * 3 + perpY);
+            this.ctx.lineTo(midPt.x - tangent.x * 3 - perpX, midPt.y - tangent.y * 3 - perpY);
+            this.ctx.stroke();
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x + tangent.x * 3 + perpX, midPt.y + tangent.y * 3 + perpY);
+            this.ctx.lineTo(midPt.x + tangent.x * 3 - perpX, midPt.y + tangent.y * 3 - perpY);
+            this.ctx.stroke();
+        } else if (style.decoration === 'circle') {
+            // 愛: 中間實心圓
             this.ctx.save();
-            this.ctx.strokeStyle = style.decorationColor || '#4caf50';
-            this.drawParallelPath(path, -6);
-            this.drawParallelPath(path, 6);
+            this.ctx.fillStyle = 'white';
+            this.ctx.beginPath();
+            this.ctx.arc(midPt.x, midPt.y, 4, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
             this.ctx.restore();
-        } else if (style.decoration === 'diagonal-bars') {
-            this.drawDiagonalBars(sx, sy, ex, ey);
-        } else if (style.decoration === 'cross-bars') {
-            const p1 = this.getPointInfoAtDistance(path, totalLen * 0.35);
-            const p2 = this.getPointInfoAtDistance(path, totalLen * 0.65);
-            this.drawCrossBar(p1.point.x, p1.point.y);
-            this.drawCrossBar(p2.point.x, p2.point.y);
-        } else if (style.decoration === 'vertical-bar') {
-            this.drawGapBarLine(sx, sy, ex, ey);
+        } else if (style.decoration === 'double-circle') {
+            // 熱戀: 中間兩個圓圈(相交)
+            this.ctx.save();
+            this.ctx.fillStyle = 'white'; // hollow?
+
+            this.ctx.beginPath();
+            this.ctx.arc(midPt.x - 3, midPt.y, 4, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            this.ctx.beginPath();
+            this.ctx.arc(midPt.x + 3, midPt.y, 4, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+        } else if (style.decoration === 'box') {
+            // 身體虐待: 方框 (中間)
+            // 應該是填滿顏色的? 參考圖是白色填充
+            this.ctx.save();
+            this.ctx.fillStyle = 'white';
+            this.ctx.beginPath();
+            this.ctx.rect(midPt.x - 5, midPt.y - 5, 10, 10);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.restore();
+        } else if (style.decoration === 'box-cross-arrow') {
+            // 控制: 中間 Box + Cross, 末端箭頭
+            this.ctx.save();
+            this.ctx.fillStyle = 'white';
+
+            // Box
+            this.ctx.beginPath();
+            this.ctx.rect(midPt.x - 5, midPt.y - 5, 10, 10);
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            // Cross
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x - 5, midPt.y - 5);
+            this.ctx.lineTo(midPt.x + 5, midPt.y + 5);
+            this.ctx.moveTo(midPt.x + 5, midPt.y - 5);
+            this.ctx.lineTo(midPt.x - 5, midPt.y + 5);
+            this.ctx.stroke();
+            this.ctx.restore();
+
+            // Arrow at end
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            this.drawArrow(
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10,
+                endInfo.point.y + endInfo.tangent.y * 10,
+                true
+            );
+        } else if (style.decoration === 'double-arrow-red') {
+            // 操控: 黑色實線 + 紅色箭頭
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            this.ctx.save();
+            this.ctx.strokeStyle = '#E53935'; // Force Red
+            this.drawArrow(
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10,
+                endInfo.point.y + endInfo.tangent.y * 10,
+                true
+            );
+            this.ctx.restore();
+        } else if (style.decoration === 'x-arrow') {
+            // 忽視: 末端箭頭，中間垂直線或是X? 參考圖是中間一條垂直線 (But now Neglect is just Arrow, so this might be unused, but keeping logic safe)
+            const barSize = 8;
+            const perpX = -tangent.y * barSize;
+            const perpY = tangent.x * barSize;
+            this.ctx.beginPath();
+            this.ctx.moveTo(midPt.x + perpX, midPt.y + perpY);
+            this.ctx.lineTo(midPt.x - perpX, midPt.y - perpY);
+            this.ctx.stroke();
+
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            this.drawArrow(
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10,
+                endInfo.point.y + endInfo.tangent.y * 10,
+                true
+            );
+        } else if (style.decoration === 'decoration-line') {
+            // Placeholder if needed
+        } else if (style.decoration === 'x') {
+            // 操控 (Manipulative): 紅色 X (Force Red)
+            this.ctx.save();
+            this.ctx.strokeStyle = '#E53935';
+            this.drawX(midPt.x, midPt.y);
+            this.ctx.restore();
+        } else if (style.decoration === 'arrow-bar') {
+            // 忽視 (Neglect): 藍色箭頭 + 黑色豎線
+            // Arrow (Blue - inherited)
+            const endInfo = this.getPointInfoAtDistance(path, totalLen - 15);
+            this.drawArrow(
+                endInfo.point.x - endInfo.tangent.x * 10,
+                endInfo.point.y - endInfo.tangent.y * 10,
+                endInfo.point.x + endInfo.tangent.x * 10,
+                endInfo.point.y + endInfo.tangent.y * 10,
+                true
+            );
+            // Bar (Black)
+            this.ctx.save();
+            this.ctx.strokeStyle = '#000000';
+            const barDist = totalLen - 25; // Before arrow
+            const barInfo = this.getPointInfoAtDistance(path, barDist);
+            const barSize = 8;
+            const px = -barInfo.tangent.y * barSize;
+            const py = barInfo.tangent.x * barSize;
+            this.ctx.beginPath();
+            this.ctx.moveTo(barInfo.point.x + px, barInfo.point.y + py);
+            this.ctx.lineTo(barInfo.point.x - px, barInfo.point.y - py);
+            this.ctx.stroke();
+            this.ctx.restore();
         }
+    }
+
+    roundRect(ctx, x, y, width, height, radius) {
+        if (typeof radius === 'undefined') {
+            radius = 5;
+        }
+        if (typeof radius === 'number') {
+            radius = { tl: radius, tr: radius, br: radius, bl: radius };
+        } else {
+            var defaultRadius = { tl: 0, tr: 0, br: 0, bl: 0 };
+            for (var side in defaultRadius) {
+                radius[side] = radius[side] || defaultRadius[side];
+            }
+        }
+        ctx.beginPath();
+        ctx.moveTo(x + radius.tl, y);
+        ctx.lineTo(x + width - radius.tr, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+        ctx.lineTo(x + width, y + height - radius.br);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+        ctx.lineTo(x + radius.bl, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+        ctx.lineTo(x, y + radius.tl);
+        ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+        ctx.closePath();
     }
 
     getPathLength(points) {
@@ -1005,7 +1242,7 @@ class GenogramCanvas {
         if (path.length < 2) return;
 
         // 這些樣式需要特殊處理，非單純 stroke
-        const complexPatterns = ['wave', 'zigzag', 'double', 'triple', 'cutoff-line', 'gap-bar'];
+        const complexPatterns = ['wave', 'zigzag', 'zigzag-large', 'sawtooth', 'double', 'triple', 'cutoff-line', 'gap-bar', 'close-hostile', 'fused-hostile', 'conflict-close', 'physical-abuse', 'emotional-abuse', 'sexual-abuse'];
 
         if (!complexPatterns.includes(style.pattern)) {
             // 普通實線、虛線、點線
@@ -1032,6 +1269,80 @@ class GenogramCanvas {
             this.drawWaveOnPath(path, totalLen, lines);
         } else if (style.pattern === 'zigzag') {
             this.drawZigzagOnPath(path, totalLen);
+        } else if (style.pattern === 'zigzag-large') {
+            this.drawZigzagOnPath(path, totalLen, 8, 16);
+        } else if (style.pattern === 'sawtooth') {
+            this.drawZigzagOnPath(path, totalLen, 3, 6);
+        } else if (style.pattern === 'close-hostile') {
+            // 親密敵對: 灰色雙線 + 紅色鋸齒 (Close Hostile)
+            this.ctx.save();
+            this.ctx.strokeStyle = '#757575';
+            this.drawParallelPath(path, 3);
+            this.drawParallelPath(path, -3);
+            this.ctx.restore();
+            // 紅色鋸齒 (原本的 strokeStyle)
+            this.drawZigzagOnPath(path, totalLen);
+        } else if (style.pattern === 'fused-hostile') {
+            // 融合敵對: 灰色雙線(較寬) + 紅色鋸齒
+            this.ctx.save();
+            this.ctx.strokeStyle = '#757575';
+            this.drawParallelPath(path, 4);
+            this.drawParallelPath(path, -4);
+            this.ctx.restore();
+
+            this.drawZigzagOnPath(path, totalLen);
+            this.drawZigzagOnPath(path, totalLen);
+        } else if (style.pattern === 'conflict-close') {
+            // 衝突又親密: 兩條綠線夾紅色鋸齒 (Green Lines + Red Zigzag)
+            // Green Parallel
+            this.ctx.save();
+            this.ctx.strokeStyle = '#4caf50'; // Green
+            this.drawParallelPath(path, 5);
+            this.drawParallelPath(path, -5);
+            this.ctx.restore();
+
+            // Red Zigzag
+            this.ctx.save();
+            this.ctx.strokeStyle = '#E53935'; // Red Conflict
+            this.drawZigzagOnPath(path, totalLen);
+            this.ctx.restore();
+
+        } else if (style.pattern === 'physical-abuse') {
+            // 身體虐待: 藍色波浪 + 黑色直線
+            // Blue Wave (Inherited color assumed Blue)
+            this.drawWaveOnPath(path, totalLen);
+            // Black Line
+            this.ctx.save();
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.setLineDash([]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+            this.ctx.stroke();
+            this.ctx.restore();
+
+        } else if (style.pattern === 'emotional-abuse') {
+            // 情緒虐待: 藍色鋸齒 + 黑色直線
+            // Blue Zigzag (Inherited color assumed Blue)
+            // Use sawtooth-like parameters? Legend looks like standard zigzag.
+            // Or maybe smaller? Let's use standard zigzag first.
+            this.drawZigzagOnPath(path, totalLen);
+            // Black Line
+            this.ctx.save();
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.setLineDash([]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+            this.ctx.stroke();
+            this.ctx.restore();
+
+        } else if (style.pattern === 'sexual-abuse') {
+            // 性虐待: 藍色雙鋸齒 (Double Zigzag)
+            // Amplitude 4, Wavelength 10 (Less dense), Gap 3
+            this.drawZigzagOnPath(path, totalLen, 4, 10, 3);
+            this.drawZigzagOnPath(path, totalLen, 4, 10, -3);
+
         } else if (style.pattern === 'cutoff-line') {
             // 畫兩段，中間斷開，並加上豎線
             // 我們可以畫整條，但用黑色背景遮蓋中間？不行，背景不一定是白的
@@ -1141,9 +1452,7 @@ class GenogramCanvas {
     /**
      * 沿路徑繪製鋸齒
      */
-    drawZigzagOnPath(path, totalLen) {
-        const amplitude = 5;
-        const wavelength = 10;
+    drawZigzagOnPath(path, totalLen, amplitude = 5, wavelength = 10, offsetBase = 0) {
         const step = 2;
 
         this.ctx.beginPath();
@@ -1160,7 +1469,7 @@ class GenogramCanvas {
             else if (phase < 0.75) offsetFactor = 1 - (phase - 0.25) * 4; // 1 -> -1
             else offsetFactor = -1 + (phase - 0.75) * 4; // -1 -> 0
 
-            const offset = offsetFactor * amplitude;
+            const offset = offsetFactor * amplitude + offsetBase;
 
             const nx = -info.tangent.y;
             const ny = info.tangent.x;
@@ -1263,9 +1572,9 @@ class GenogramCanvas {
         const dx = x2 - x1;
         const dy = y2 - y1;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const frequency = 20;
-        const amplitude = 5;
-        const steps = Math.ceil(distance / 2);
+        const frequency = 10; // Tighter wave (was 20)
+        const amplitude = 3;  // Smaller amplitude (was 5)
+        const steps = Math.ceil(distance); // More steps for smoother curve
 
         const angle = Math.atan2(dy, dx);
         const cos = Math.cos(angle);
@@ -1507,9 +1816,9 @@ class GenogramCanvas {
         const dx = x2 - x1;
         const dy = y2 - y1;
         const length = Math.sqrt(dx * dx + dy * dy);
-        const segments = Math.max(4, Math.floor(length / 15));
+        const segments = Math.max(4, Math.floor(length / 5)); // Tighter zigzag (was 15)
         const segmentLength = length / segments;
-        const amplitude = 6;
+        const amplitude = 4; // Smaller amplitude (was 6)
 
         const ux = dx / length;
         const uy = dy / length;
@@ -1613,7 +1922,7 @@ class GenogramCanvas {
         const contentHeight = maxY - minY;
 
         // ===== 圖例設定 =====
-        const legendWidth = 240;
+        const legendWidth = 440; // 180*2 columns + 32 gap + 32 padding + extra
         const legendPadding = 40;
         const legendHeight = 850;
 
@@ -1687,302 +1996,337 @@ class GenogramCanvas {
         const lineHeight = 26;
         const lineWidth = 40;
         const fontSize = 13;
-        const titleFontSize = 15;
+        const titleFontSize = 14;
         const sectionGap = 16;
+        const columnGap = 32; // 欄位間距
 
-        // 圖例資料
-        const legendData = {
-            marriage: {
-                title: '婚姻關係',
+        // 圖例資料 - 分為左右兩欄
+        const legendDataLeft = {
+            family: {
+                title: '家庭關係',
                 items: [
-                    { label: '結婚', style: 'solid', color: '#6699CC' },
-                    { label: '訂婚', style: 'dashed', color: '#6699CC' },
-                    { label: '同居', style: 'dotted', color: '#66AA66' },
-                    { label: '分居', style: 'dashed', color: '#DDAA00' },
-                    { label: '離婚', style: 'solid', color: '#CC4444', marker: 'x' },
-                    { label: '喪偶', style: 'solid', color: '#666666', marker: 'x-double' },
+                    { label: '結婚', style: 'solid', color: '#000000' },
+                    { label: '訂婚', style: 'dashed', color: '#000000', pattern: [6, 4] },
+                    { label: '同居', style: 'dotted', color: '#000000', pattern: [3, 3] },
+                    { label: '法律同居', style: 'dotted', color: '#000000', pattern: [3, 3], decoration: 'house' },
+                    { label: '事實分居', style: 'solid', color: '#000000', decoration: 'single-slash' },
+                    { label: '法律分居', style: 'solid', color: '#000000', decoration: 'double-slash' },
+                    { label: '離婚', style: 'solid', color: '#000000', decoration: 'divorce-slash' },
+                    { label: '喪偶', style: 'solid', color: '#000000', decoration: 'x' },
                     { label: '外遇', style: 'dashed', color: '#E53935' }
                 ]
             },
-            emotional: {
-                title: '情感關係',
+            emotional_pos: {
+                title: '情感關係 (正向)',
                 items: [
-                    { label: '正向關係', style: 'solid', color: '#4caf50', lines: 1 },
-                    { label: '親密', style: 'solid', color: '#4caf50', lines: 2 },
-                    { label: '過度親密', style: 'solid', color: '#4caf50', lines: 3 },
-                    { label: '崇拜', style: 'circle-arrow', color: '#28a745' },
-                    { label: '關注', style: 'arrow', color: '#4a90d9' },
-                    { label: '冷漠', style: 'dashed', color: '#9E9E9E' },
-                    { label: '疏離', style: 'dotted', color: '#666666' },
-                    { label: '衝突', style: 'wave', color: '#E53935' },
-                    { label: '敵對', style: 'cross', color: '#ff9800' },
-                    { label: '暴力', style: 'wave', color: '#E53935', lines: 2 },
-                    { label: '虐待', style: 'wave', color: '#5C6BC0' },
-                    { label: '操控', style: 'arrow-wave', color: '#fd7e14' },
-                    { label: '控制', style: 'box-arrow', color: '#dc3545' },
-                    { label: '斷絕/冷戰', style: 'broken', color: '#333333' },
-                    { label: '衝突又親密', style: 'conflict-close' }
+                    { label: '和諧', style: 'solid', color: '#28a745' },
+                    { label: '愛', style: 'solid', color: '#28a745', decoration: 'circle' },
+                    { label: '熱戀', style: 'solid', color: '#28a745', decoration: 'double-circle' },
+                    { label: '親密/友誼', style: 'double', color: '#28a745' },
+                    { label: '非常親密', style: 'triple', color: '#28a745' },
+                    { label: '崇拜', style: 'solid', color: '#333333', decoration: 'circle-arrow' },
+                    { label: '關注', style: 'solid', color: '#333333', decoration: 'arrow' }
                 ]
             }
         };
 
-        // 計算總高度
-        const totalWidth = 210; // 稍微加寬以容納文字
-        const totalHeight = (legendData.marriage.items.length + legendData.emotional.items.length) * lineHeight +
-            titleFontSize * 2 + sectionGap * 3 + padding * 2;
+        const legendDataRight = {
+            emotional_neg: {
+                title: '情感關係 (負向)',
+                items: [
+                    { label: '冷漠', style: 'dashed', color: '#dc3545' },
+                    { label: '疏離', style: 'dashed', color: '#333333', decoration: 'double-bar' },
+                    { label: '斷絕', style: 'dashed', color: '#E53935', decoration: 'double-bar' }, // 紅色斷絕
+                    { label: '衝突', style: 'double', color: '#E53935' }, // Double Red
+                    { label: '仇恨', style: 'triple', color: '#E53935' }, // Triple Red
+                    { label: '敵對', style: 'wave', color: '#E53935' },
+                    { label: '遠距敵對', style: 'wave', color: '#E53935', decoration: 'arrow' },
+                    { label: '親密敵對', style: 'close-hostile', color: '#E53935' },
 
-        // 繪製背景（圓角矩形）
+                    { label: '衝突又親密', style: 'conflict-close', color: '#E53935' }
+                ]
+            },
+            abuse: {
+                title: '虐待/暴力',
+                items: [
+                    { label: '暴力', style: 'zigzag', color: '#007BFF' },
+                    { label: '虐待', style: 'wave', color: '#007BFF' },
+                    { label: '身體虐待', style: 'physical-abuse', color: '#007BFF' },
+                    { label: '情緒虐待', style: 'emotional-abuse', color: '#007BFF' },
+                    { label: '性虐待', style: 'sexual-abuse', color: '#007BFF' },
+                    { label: '忽視', style: 'solid', color: '#007BFF', decoration: 'arrow-bar' },
+                    { label: '操控', style: 'solid', color: '#000000', decoration: 'x' },
+                    { label: '控制', style: 'solid', color: '#E53935', decoration: 'box-cross-arrow' }
+                ]
+            }
+        };
+
+        // 計算尺寸
+        // 左欄高度
+        const leftItemsCount = legendDataLeft.family.items.length + legendDataLeft.emotional_pos.items.length;
+        const rightItemsCount = legendDataRight.emotional_neg.items.length + legendDataRight.abuse.items.length;
+
+        const maxItemsPerColumn = Math.max(leftItemsCount + 4, rightItemsCount + 4); // +4 for titles
+
+        const columnWidth = 180;
+        const totalWidth = columnWidth * 2 + columnGap + padding * 2;
+        const totalHeight = maxItemsPerColumn * lineHeight + padding * 2;
+
+        // 繪製背景
         ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
         ctx.strokeStyle = '#CCCCCC';
         ctx.lineWidth = 1;
 
-        const radius = 8;
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + totalWidth - radius, y);
-        ctx.quadraticCurveTo(x + totalWidth, y, x + totalWidth, y + radius);
-        ctx.lineTo(x + totalWidth, y + totalHeight - radius);
-        ctx.quadraticCurveTo(x + totalWidth, y + totalHeight, x + totalWidth - radius, y + totalHeight);
-        ctx.lineTo(x + radius, y + totalHeight);
-        ctx.quadraticCurveTo(x, y + totalHeight, x, y + totalHeight - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        this.roundRect(ctx, x, y, totalWidth, totalHeight, 8);
         ctx.fill();
         ctx.stroke();
 
-        let currentY = y + padding;
+        let currentYLeft = y + padding;
+        let currentYRight = y + padding;
+        const rightX = x + padding + columnWidth + columnGap;
 
-        // ===== 繪製婚姻關係 =====
-        ctx.fillStyle = '#333333';
-        ctx.font = `bold ${titleFontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
-        ctx.fillText(legendData.marriage.title, x + padding, currentY + titleFontSize);
-        currentY += titleFontSize + padding;
+        // --- 左欄繪製 ---
+        // 家庭關係
+        this.drawLegendSection(ctx, legendDataLeft.family, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
+        currentYLeft += (legendDataLeft.family.items.length + 1.5) * lineHeight;
 
-        legendData.marriage.items.forEach(item => {
-            this.drawLegendItem(ctx, x + padding, currentY, lineWidth, item);
-            ctx.fillStyle = '#333333';
-            ctx.font = `${fontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
-            ctx.fillText(item.label, x + padding + lineWidth + 12, currentY + 4);
-            currentY += lineHeight;
-        });
+        // 情感正向
+        this.drawLegendSection(ctx, legendDataLeft.emotional_pos, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
 
-        currentY += sectionGap;
+        // --- 右欄繪製 ---
+        // 情感負向
+        this.drawLegendSection(ctx, legendDataRight.emotional_neg, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
+        currentYRight += (legendDataRight.emotional_neg.items.length + 1.5) * lineHeight;
 
-        // ===== 繪製情感關係 =====
-        ctx.fillStyle = '#333333';
-        ctx.font = `bold ${titleFontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
-        ctx.fillText(legendData.emotional.title, x + padding, currentY + titleFontSize);
-        currentY += titleFontSize + padding;
-
-        legendData.emotional.items.forEach(item => {
-            this.drawLegendItem(ctx, x + padding, currentY, lineWidth, item);
-            ctx.fillStyle = '#333333';
-            ctx.font = `${fontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
-            ctx.fillText(item.label, x + padding + lineWidth + 12, currentY + 4);
-            currentY += lineHeight;
-        });
+        // 虐待暴力
+        this.drawLegendSection(ctx, legendDataRight.abuse, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
     }
 
     /**
-     * 繪製單條圖例線
+     * 繪製圖例區塊
      */
-    drawLegendItem(ctx, x, y, width, item) {
-        ctx.save();
-        ctx.strokeStyle = item.color;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
+    drawLegendSection(ctx, sectionData, x, startY, lineWidth, lineHeight, titleFontSize, fontSize) {
+        ctx.fillStyle = '#333333';
+        ctx.font = `bold ${titleFontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
+        ctx.fillText(sectionData.title, x, startY + titleFontSize);
 
-        // 設定線條樣式
-        if (item.style === 'dotted') {
-            ctx.setLineDash([2, 4]);
-        } else if (item.style === 'dashed') {
-            ctx.setLineDash([8, 4]);
-        } else {
-            ctx.setLineDash([]);
-        }
+        let currentY = startY + lineHeight * 1.2;
 
-        const lines = item.lines || 1;
-        const gap = 3;
-        const startY = y - ((lines - 1) * gap) / 2;
+        sectionData.items.forEach(item => {
+            // 呼叫統一的線條繪製函數
+            const startX = x;
+            const endX = x + lineWidth;
+            const lineY = currentY + lineHeight / 2 - 4; // 稍微調整垂直位置
 
-        if (item.style === 'wave' || item.style === 'wave-double') {
-            ctx.setLineDash([]);
-            const lineCount = item.style === 'wave-double' ? 2 : (item.lines || 1);
-            for (let i = 0; i < lineCount; i++) {
-                const offsetY = (i - (lineCount - 1) / 2) * 4; // 間距 4px
-                this.drawLegendWave(ctx, x, startY + offsetY, width);
-            }
-        } else if (item.style === 'conflict-close') {
-            // 衝突又親密：紅色波浪 + 上下各一條綠線
-            ctx.setLineDash([]);
-            // 1. 中間紅色波浪
-            ctx.strokeStyle = '#E53935';
-            this.drawLegendWave(ctx, x, y, width);
-            // 2. 上下綠線
-            ctx.strokeStyle = '#4CAF50';
-            ctx.beginPath();
-            ctx.moveTo(x, y - 5);
-            ctx.lineTo(x + width, y - 5);
-            ctx.moveTo(x, y + 5);
-            ctx.lineTo(x + width, y + 5);
-            ctx.stroke();
-        } else if (item.label === '結婚' || item.label === '同居' || item.label === '訂婚') {
-            // 直線圖例 (配合新的「左右」風格)
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-        } else if (item.style === 'broken') {
-            // 斷絕 (Cutoff): 中間斷開加雙豎線 (||)
-            ctx.setLineDash([]);
-            const gapSize = 16;
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width / 2 - gapSize / 2, y);
-            ctx.moveTo(x + width / 2 + gapSize / 2, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-
-            // 雙豎線
-            const barDist = 3;
-            const barSize = 5;
-            ctx.beginPath();
-            ctx.moveTo(x + width / 2 - barDist, y - barSize);
-            ctx.lineTo(x + width / 2 - barDist, y + barSize);
-            ctx.moveTo(x + width / 2 + barDist, y - barSize);
-            ctx.lineTo(x + width / 2 + barDist, y + barSize);
-            ctx.stroke();
-        } else if (item.style === 'box-arrow') {
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-            this.drawBoxArrow(x + width - 15, y, x + width, y);
-        } else if (item.style === 'circle-arrow') {
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-            // 圓圈 (空心)
+            // 設置樣式
             ctx.save();
-            ctx.fillStyle = 'white';
             ctx.strokeStyle = item.color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(x + width / 2, y, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-            // 箭頭
-            this.drawArrow(x + width - 15, y, x + width, y, true);
-        } else if (item.style === 'arrow') {
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-            this.drawArrow(x + width - 15, y, x + width, y, true);
-        } else if (item.style === 'arrow-wave') {
-            this.drawLegendWave(ctx, x, y, width);
-            this.drawArrow(x + width - 15, y, x + width, y, true);
-        } else if (item.style === 'symbol') {
-            // 帶符號的線 (操控、控制、崇拜、關注)
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
-
             ctx.fillStyle = item.color;
-            ctx.font = 'bold 14px "Segoe UI Symbol", "Apple Color Emoji", "Segoe UI Emoji"';
-            ctx.textAlign = 'center';
-            ctx.fillText(item.symbol, x + width - 5, y + 5);
-        } else if (item.style === 'cross') {
-            // 敵對 (Hostile): 繪製兩個交叉標記
-            ctx.setLineDash([]);
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + width, y);
-            ctx.stroke();
+            ctx.lineWidth = 2;
 
-            const drawInnerCrossAt = (cx) => {
-                const s = 4;
+            if (item.style === 'double') {
+                this.drawDoubleLine(startX, lineY, endX, lineY, 4);
+            } else if (item.style === 'triple') {
+                this.drawTripleLine(startX, lineY, endX, lineY, 3);
+            } else if (item.style === 'zigzag') {
+                this.drawZigzagLine(startX, lineY, endX, lineY);
+            } else if (item.style === 'wave') {
+                this.drawWaveLine(startX, lineY, endX, lineY);
+            } else if (item.style === 'double-wave') {
+                this.drawWaveLine(startX, lineY - 2, endX, lineY - 2);
+                this.drawWaveLine(startX, lineY + 2, endX, lineY + 2);
+            } else if (item.style === 'conflict-close') {
+                // 綠色實線 + 紅色鋸齒
+                ctx.strokeStyle = '#28a745';
                 ctx.beginPath();
-                ctx.moveTo(cx - s, y - s);
-                ctx.lineTo(cx + s, y + s);
-                ctx.moveTo(cx + s, y - s);
-                ctx.lineTo(cx - s, y + s);
+                ctx.moveTo(startX, lineY - 3);
+                ctx.lineTo(endX, lineY - 3);
                 ctx.stroke();
-            };
 
-            drawInnerCrossAt(x + width * 0.35);
-            drawInnerCrossAt(x + width * 0.65);
-        } else {
-            // 普通直線
-            for (let i = 0; i < lines; i++) {
                 ctx.beginPath();
-                ctx.moveTo(x, startY + i * gap);
-                ctx.lineTo(x + width, startY + i * gap);
+                ctx.moveTo(startX, lineY + 3);
+                ctx.lineTo(endX, lineY + 3);
                 ctx.stroke();
+
+                ctx.strokeStyle = '#E53935';
+                this.drawZigzagLine(startX, lineY, endX, lineY);
+            } else if (item.style === 'close-hostile') {
+                // 灰色雙線 + 紅色鋸齒
+                ctx.strokeStyle = '#757575';
+                ctx.beginPath();
+                ctx.moveTo(startX, lineY - 3);
+                ctx.lineTo(endX, lineY - 3);
+                ctx.moveTo(startX, lineY + 3);
+                ctx.lineTo(endX, lineY + 3);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#E53935';
+                this.drawZigzagLine(startX, lineY, endX, lineY);
+            } else if (item.style === 'fused-hostile') {
+                // 灰色雙線 + 紅色鋸齒 (same as close-hostile visually)
+                ctx.strokeStyle = '#757575';
+                ctx.beginPath();
+                ctx.moveTo(startX, lineY - 4);
+                ctx.lineTo(endX, lineY - 4);
+                ctx.moveTo(startX, lineY + 4);
+                ctx.lineTo(endX, lineY + 4);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#E53935';
+                this.drawZigzagLine(startX, lineY, endX, lineY);
+            } else if (item.style === 'physical-abuse') {
+                // 藍色波浪 + 黑色直線
+                ctx.strokeStyle = '#007BFF';
+                this.drawWaveLine(startX, lineY, endX, lineY);
+                ctx.strokeStyle = '#000000';
+                ctx.beginPath();
+                ctx.moveTo(startX, lineY);
+                ctx.lineTo(endX, lineY);
+                ctx.stroke();
+            } else if (item.style === 'emotional-abuse') {
+                // 藍色鋸齒 + 黑色直線
+                ctx.strokeStyle = '#007BFF';
+                this.drawZigzagLine(startX, lineY, endX, lineY);
+                ctx.strokeStyle = '#000000';
+                ctx.beginPath();
+                ctx.moveTo(startX, lineY);
+                ctx.lineTo(endX, lineY);
+                ctx.stroke();
+            } else if (item.style === 'sexual-abuse') {
+                // 藍色雙鋸齒
+                ctx.strokeStyle = '#007BFF';
+                this.drawZigzagLine(startX, lineY - 3, endX, lineY - 3);
+                this.drawZigzagLine(startX, lineY + 3, endX, lineY + 3);
+            } else {
+                // 一般實線或虛線
+                ctx.beginPath();
+                if (item.style === 'dashed') ctx.setLineDash(item.pattern || [5, 5]);
+                if (item.style === 'dotted') ctx.setLineDash(item.pattern || [2, 2]);
+                ctx.moveTo(startX, lineY);
+                ctx.lineTo(endX, lineY);
+                ctx.stroke();
+                ctx.setLineDash([]);
             }
-        }
 
-        // 繪製標記（X）
-        if (item.marker === 'x') {
-            ctx.setLineDash([]);
-            const markerX = x + width / 2;
-            ctx.beginPath();
-            ctx.moveTo(markerX - 5, y - 5);
-            ctx.lineTo(markerX + 5, y + 5);
-            ctx.moveTo(markerX + 5, y - 5);
-            ctx.lineTo(markerX - 5, y + 5);
-            ctx.stroke();
-        } else if (item.marker === 'x-double') {
-            ctx.setLineDash([]);
-            const markerX = x + width / 2 - 6;
-            // 第一個 X
-            ctx.beginPath();
-            ctx.moveTo(markerX - 4, y - 4);
-            ctx.lineTo(markerX + 4, y + 4);
-            ctx.moveTo(markerX + 4, y - 4);
-            ctx.lineTo(markerX - 4, y + 4);
-            ctx.stroke();
-            // 第二個 X
-            ctx.beginPath();
-            ctx.moveTo(markerX + 8, y - 4);
-            ctx.lineTo(markerX + 16, y + 4);
-            ctx.moveTo(markerX + 16, y - 4);
-            ctx.lineTo(markerX + 8, y + 4);
-            ctx.stroke();
-        }
+            // 繪製裝飾
+            const midX = (startX + endX) / 2;
 
-        ctx.restore();
+            if (item.decoration === 'house') {
+                this.drawHouse(midX, lineY + 4); // +4 offset adjustment for house base
+            } else if (item.decoration === 'single-slash') {
+                this.drawSlash(midX, lineY);
+            } else if (item.decoration === 'double-slash') {
+                this.drawDoubleSlash(midX, lineY);
+            } else if (item.decoration === 'divorce-slash') {
+                this.drawDivorceSlash(midX, lineY);
+            } else if (item.decoration === 'x') {
+                // Force Red for X decoration (Manipulative uses black line with red X)
+                ctx.save();
+                if (item.color === '#000000') {
+                    ctx.strokeStyle = '#E53935';
+                }
+                this.drawX(midX, lineY);
+                ctx.restore();
+            } else if (item.decoration === 'circle') {
+                ctx.beginPath();
+                ctx.arc(midX, lineY, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.stroke();
+            } else if (item.decoration === 'double-circle') {
+                ctx.beginPath();
+                ctx.arc(midX - 3, lineY, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff'; // hollow
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(midX + 3, lineY, 3, 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (item.decoration === 'arrow') {
+                // 末端箭頭
+                this.drawArrow(startX, lineY, endX, lineY, true);
+            } else if (item.decoration === 'circle-arrow') {
+                // 崇拜: 末端圓圈+箭頭
+                ctx.beginPath();
+                ctx.arc(midX, lineY, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.stroke();
+                this.drawArrow(startX, lineY, endX, lineY, true);
+            } else if (item.decoration === 'double-bar') {
+                // 疏離/敵對的雙豎線
+                const barSize = 8;
+                ctx.beginPath();
+                ctx.moveTo(midX - 2, lineY - 4);
+                ctx.lineTo(midX - 2, lineY + 4);
+                ctx.moveTo(midX + 2, lineY - 4);
+                ctx.lineTo(midX + 2, lineY + 4);
+                ctx.stroke();
+            } else if (item.decoration === 'box-cross-arrow') {
+                // 控制: 中間Box+Cross, 末端箭頭
+                ctx.beginPath();
+                ctx.rect(midX - 4, lineY - 4, 8, 8);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.stroke();
+                // Cross
+                ctx.beginPath();
+                ctx.moveTo(midX - 4, lineY - 4);
+                ctx.lineTo(midX + 4, lineY + 4);
+                ctx.moveTo(midX + 4, lineY - 4);
+                ctx.lineTo(midX - 4, lineY + 4);
+                ctx.stroke();
+                this.drawArrow(startX, lineY, endX, lineY, true);
+            } else if (item.decoration === 'x-arrow') {
+                // 忽視
+                const barSize = 8;
+                ctx.beginPath();
+                ctx.moveTo(midX, lineY - 4);
+                ctx.lineTo(midX, lineY + 4);
+                ctx.stroke();
+                this.drawArrow(startX, lineY, endX, lineY, true);
+            } else if (item.decoration === 'double-arrow-red') {
+                // 操控
+                this.drawArrow(startX, lineY, endX, lineY, true);
+            } else if (item.decoration === 'box') {
+                // 身體虐待
+                ctx.beginPath();
+                ctx.rect(midX - 4, lineY - 4, 8, 8);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.stroke();
+            } else if (item.decoration === 'wave-decoration') {
+                // 情緒虐待 - wave 已在 line style 處理，這裡可能是額外裝飾？
+                // 暫不處理，或畫個小波浪
+            } else if (item.decoration === 'arrow-bar') {
+                // 忽視 (Neglect): 箭頭 + 豎線
+                // 先畫箭頭
+                this.drawArrow(startX, lineY, endX, lineY, true);
+                // 再畫豎線 (黑色)
+                ctx.save();
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(midX - 5, lineY - 5);
+                ctx.lineTo(midX - 5, lineY + 5);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // 繪製文字
+            ctx.fillStyle = '#333333';
+            ctx.font = `${fontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
+            ctx.fillText(item.label, x + lineWidth + 12, currentY + lineHeight / 2 + fontSize / 2);
+
+            currentY += lineHeight;
+        });
     }
 
     /**
-     * 繪製圖例用波浪線
+     * 繪製箭頭
      */
-    drawLegendWave(ctx, x, y, width) {
-        const amplitude = 3;
-        const wavelength = 10;
-        const waves = Math.floor(width / wavelength);
 
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-
-        for (let i = 0; i < waves; i++) {
-            const startX = x + i * wavelength;
-            ctx.quadraticCurveTo(
-                startX + wavelength * 0.25, y - amplitude,
-                startX + wavelength * 0.5, y
-            );
-            ctx.quadraticCurveTo(
-                startX + wavelength * 0.75, y + amplitude,
-                startX + wavelength, y
-            );
-        }
-
-        ctx.stroke();
-    }
 
 
 
@@ -2505,10 +2849,33 @@ class GenogramCanvas {
      * @param {Relationship} relationship
      * @returns {Array} 路徑點陣列 [{x, y}, ...]
      */
-    getRelationshipPath(fromPerson, toPerson, relationship) {
+    getRelationshipPath(fromPerson, toPerson, relationship, allRelationships = []) {
         const style = relationship.getLineStyle();
         const category = relationship.getCategory();
         const points = [];
+
+        // Calculate offset for multi-relationships (same logic as drawRelationship)
+        let offset = 0;
+        if (allRelationships.length > 0) {
+            const samePairRels = allRelationships.filter(r =>
+                (r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id) ||
+                (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)
+            );
+
+            if (samePairRels.length > 1 && category === 'emotional') {
+                const structuralRel = samePairRels.find(r => ['marriage', 'family'].includes(r.getCategory()));
+                const emotionalRels = samePairRels.filter(r => r.getCategory() === 'emotional');
+                const myIdx = emotionalRels.findIndex(r => r.id === relationship.id);
+                const gap = 18;
+
+                if (structuralRel) {
+                    offset = (myIdx % 2 === 0) ? (Math.floor(myIdx / 2) + 1) * gap : -(Math.floor(myIdx / 2) + 1) * gap;
+                } else {
+                    const total = emotionalRels.length;
+                    offset = (myIdx - (total - 1) / 2) * gap;
+                }
+            }
+        }
 
         if (category === 'family') {
             // 親子關係：L型路徑
@@ -2539,10 +2906,25 @@ class GenogramCanvas {
             // 情感關係：直線路徑
             const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);
             const radius = this.personSize / 2 + 5;
-            const startX = fromPerson.x + Math.cos(angle) * radius;
-            const startY = fromPerson.y + Math.sin(angle) * radius;
-            const endX = toPerson.x - Math.cos(angle) * radius;
-            const endY = toPerson.y - Math.sin(angle) * radius;
+            let startX = fromPerson.x + Math.cos(angle) * radius;
+            let startY = fromPerson.y + Math.sin(angle) * radius;
+            let endX = toPerson.x - Math.cos(angle) * radius;
+            let endY = toPerson.y - Math.sin(angle) * radius;
+
+            // Apply offset for multi-relationships
+            if (offset !== 0) {
+                const dx = endX - startX;
+                const dy = endY - startY;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const ux = dx / len;
+                const uy = dy / len;
+                // Perpendicular offset
+                startX += -uy * offset;
+                startY += ux * offset;
+                endX += -uy * offset;
+                endY += ux * offset;
+            }
+
             points.push({ x: startX, y: startY });
             points.push({ x: endX, y: endY });
         }
@@ -2560,8 +2942,8 @@ class GenogramCanvas {
      * @param {number} tolerance - 容差距離（預設 10）
      * @returns {boolean}
      */
-    isPointOnRelationship(px, py, fromPerson, toPerson, relationship, tolerance = 10) {
-        const path = this.getRelationshipPath(fromPerson, toPerson, relationship);
+    isPointOnRelationship(px, py, fromPerson, toPerson, relationship, tolerance = 10, allRelationships = []) {
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
         const category = relationship.getCategory();
 
         // 針對婚姻線增加一點點點擊範圍 (從 10 改為 15)
@@ -2578,6 +2960,136 @@ class GenogramCanvas {
         }
 
         return false;
+    }
+
+    /**
+     * 快速新增按鈕配置
+     */
+    static QUICK_BUTTONS = {
+        parent: { label: '父母', icon: '👨‍👩', offsetX: 0, offsetY: -75, color: '#4a90d9' },
+        sibling: { label: '手足', icon: '⟷', offsetX: 55, offsetY: -25, color: '#5dae8b' },
+        partner: { label: '伴侶', icon: '❤', offsetX: 55, offsetY: 25, color: '#e85d75' },
+        son: { label: '兒子', icon: '👦', offsetX: -40, offsetY: 75, color: '#e8a849' },
+        daughter: { label: '女兒', icon: '👧', offsetX: 0, offsetY: 75, color: '#e8a849' },
+        pregnancy: { label: '懷孕', icon: '△', offsetX: 40, offsetY: 75, color: '#e8a849' }
+    };
+
+    /**
+     * 繪製快速新增按鈕
+     * @param {Person} person - hover 的角色
+     */
+    drawQuickAddButtons(person) {
+        if (!person) return;
+
+        const { x, y } = person;
+        const btnRadius = 18;
+
+        Object.entries(GenogramCanvas.QUICK_BUTTONS).forEach(([type, btn]) => {
+            // 跳過懷孕按鈕：男性、懷孕、死亡者
+            if (type === 'pregnancy') {
+                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased) {
+                    return; // 跳過不繪製
+                }
+            }
+
+            // 懷孕符號不顯示：伴侶、兒子、女兒
+            if (person.gender === 'pregnancy') {
+                if (type === 'partner' || type === 'son' || type === 'daughter') {
+                    return;
+                }
+            }
+
+            const bx = x + btn.offsetX;
+            const by = y + btn.offsetY;
+
+            // 按鈕背景
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.arc(bx, by, btnRadius, 0, Math.PI * 2);
+            this.ctx.fillStyle = btn.color;
+            this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            this.ctx.shadowBlur = 5;
+            this.ctx.shadowOffsetY = 2;
+            this.ctx.fill();
+            this.ctx.restore();
+
+            // 按鈕圖示
+            this.ctx.font = '14px sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = '#fff';
+            this.ctx.fillText(btn.icon, bx, by);
+
+            // 按鈕標籤（小字說明）
+            this.ctx.save();
+            this.ctx.font = '10px "Noto Sans TC", sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillStyle = '#555';
+            this.ctx.fillText(btn.label, bx, by + btnRadius + 2);
+            this.ctx.restore();
+        });
+    }
+
+    /**
+     * 取得點擊位置對應的快速按鈕類型
+     * @param {number} px - 滑鼠 X
+     * @param {number} py - 滑鼠 Y
+     * @param {Person} person - hover 的角色
+     * @returns {string|null} - 按鈕類型或 null
+     */
+    getQuickButtonAt(px, py, person) {
+        if (!person) return null;
+
+        const { x, y } = person;
+        const btnRadius = 18;
+
+        for (const [type, btn] of Object.entries(GenogramCanvas.QUICK_BUTTONS)) {
+            // 跳過懷孕按鈕：男性、懷孕、死亡者
+            if (type === 'pregnancy') {
+                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased) {
+                    continue;
+                }
+            }
+
+            // 懷孕符號不顯示：伴侶、兒子、女兒
+            if (person.gender === 'pregnancy') {
+                if (type === 'partner' || type === 'son' || type === 'daughter') {
+                    continue;
+                }
+            }
+
+            const bx = x + btn.offsetX;
+            const by = y + btn.offsetY;
+            const dist = Math.sqrt((px - bx) ** 2 + (py - by) ** 2);
+            if (dist <= btnRadius) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 檢查點是否在快速按鈕區域內（包含角色和所有按鈕的擴展區域）
+     * @param {number} px - 滑鼠 X
+     * @param {number} py - 滑鼠 Y
+     * @param {Person} person - 角色
+     * @returns {boolean}
+     */
+    isPointInQuickAddZone(px, py, person) {
+        if (!person) return false;
+
+        const { x, y } = person;
+
+        // 計算擴展區域的邊界 (包含所有按鈕)
+        // 上: -75 (parent), 下: +75 (children), 左/右: ±55 (sibling/partner)
+        const padding = 30; // 額外的容差
+        const minX = x - 55 - padding;
+        const maxX = x + 55 + padding;
+        const minY = y - 75 - padding;
+        const maxY = y + 75 + padding;
+
+        return px >= minX && px <= maxX && py >= minY && py <= maxY;
     }
 }
 

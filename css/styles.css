@@ -466,196 +466,221 @@ body {
     font-size: 13px;
 }
 
+/* ===================================
+   關係圖例線條樣式
+   =================================== */
+
 .legend-line {
     display: inline-block;
     width: 40px;
     height: 2px;
     position: relative;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
 }
 
-/* 婚姻關係線條 */
+/* --- 家庭關係 --- */
 .legend-line.married {
-    background: var(--color-married);
+    background: #000;
+    height: 2px;
 }
 
 .legend-line.parent-child {
-    background: #333333;
+    background: #000;
+    height: 2px;
 }
 
 .legend-line.engaged {
-    background: repeating-linear-gradient(90deg,
-            var(--color-married) 0,
-            var(--color-married) 6px,
-            transparent 6px,
-            transparent 10px);
+    background: repeating-linear-gradient(90deg, #000 0, #000 6px, transparent 6px, transparent 10px);
     height: 2px;
-}
-
-.legend-line.widowed {
-    position: relative;
-    background: #333333;
-}
-
-.legend-line.widowed::after {
-    content: '✕';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: #333333;
-}
-
-.legend-line.affair {
-    background: repeating-linear-gradient(90deg,
-            var(--color-conflict) 0,
-            var(--color-conflict) 6px,
-            transparent 6px,
-            transparent 10px);
-    height: 2px;
-}
-
-.legend-line.harmony {
-    background: var(--color-positive);
-}
-
-.legend-line.indifferent {
-    background: repeating-linear-gradient(90deg,
-            var(--color-indifferent) 0,
-            var(--color-indifferent) 6px,
-            transparent 6px,
-            transparent 12px);
 }
 
 .legend-line.cohabiting {
-    background: repeating-linear-gradient(90deg,
-            var(--color-cohabiting) 0,
-            var(--color-cohabiting) 2px,
-            transparent 2px,
-            transparent 4px);
+    background: repeating-linear-gradient(90deg, #000 0, #000 3px, transparent 3px, transparent 6px);
     height: 2px;
+}
+
+.legend-line.legal-cohabiting {
+    background: repeating-linear-gradient(90deg, #000 0, #000 3px, transparent 3px, transparent 6px);
+    height: 8px;
+    /* 為了容納中間的房屋圖示 */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='6' x2='15' y2='6' stroke='black' stroke-width='2' stroke-dasharray='3,3'/%3E%3Cline x1='25' y1='6' x2='40' y2='6' stroke='black' stroke-width='2' stroke-dasharray='3,3'/%3E%3Cpath d='M16,6 L20,2 L24,6' fill='none' stroke='black' stroke-width='2'/%3E%3Crect x='17' y='6' width='6' height='4' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.separated {
-    background: repeating-linear-gradient(90deg,
-            var(--color-separated) 0,
-            var(--color-separated) 8px,
-            transparent 8px,
-            transparent 12px);
-    height: 2px;
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='18' y1='8' x2='22' y2='2' stroke='black' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.indifferent {
-    background: repeating-linear-gradient(90deg,
-            var(--color-indifferent) 0,
-            var(--color-indifferent) 6px,
-            transparent 6px,
-            transparent 12px);
-    height: 2px;
+.legend-line.legal-separated {
+    height: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='16' y1='8' x2='20' y2='2' stroke='black' stroke-width='2'/%3E%3Cline x1='21' y1='8' x2='25' y2='2' stroke='black' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.divorced {
-    background: var(--color-divorced);
-    position: relative;
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='16' y1='8' x2='20' y2='2' stroke='black' stroke-width='2'/%3E%3Cline x1='21' y1='8' x2='25' y2='2' stroke='black' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.divorced::after {
-    content: '✕';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 14px;
-    font-weight: bold;
-    color: var(--color-divorced);
-    letter-spacing: 0;
+.legend-line.widowed {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='18' y1='2' x2='22' y2='8' stroke='black' stroke-width='2'/%3E%3Cline x1='22' y1='2' x2='18' y2='8' stroke='black' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-/* 情感關係線條 */
-.legend-line.positive {
-    background: var(--color-positive);
+.legend-line.affair {
+    background: repeating-linear-gradient(90deg, #E53935 0, #E53935 6px, transparent 6px, transparent 10px);
+    height: 2px;
+}
+
+/* --- 情感關係 (正向) --- */
+.legend-line.harmony {
+    background: #28a745;
+    height: 2px;
+}
+
+.legend-line.love {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3Ccircle cx='20' cy='5' r='3' stroke='%2328a745' stroke-width='2' fill='white'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.in-love {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='15' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3Cline x1='25' y1='5' x2='40' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3Ccircle cx='17' cy='5' r='3' stroke='%2328a745' stroke-width='2' fill='none'/%3E%3Ccircle cx='23' cy='5' r='3' stroke='%2328a745' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.close {
-    height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='2' x2='40' y2='2' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='8' x2='40' y2='8' stroke='%234caf50' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    height: 6px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='6'%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%2328a745' stroke-width='2'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.very-close {
     height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%234caf50' stroke-width='2'/%3E%3Cline x1='0' y1='9' x2='40' y2='9' stroke='%234caf50' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%2328a745' stroke-width='2'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3Cline x1='0' y1='9' x2='40' y2='9' stroke='%2328a745' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.admiration {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='40' y2='6' stroke='%23333333' stroke-width='2'/%3E%3Ccircle cx='20' cy='6' r='3' stroke='%23333333' stroke-width='2' fill='white'/%3E%3Cpath d='M34,2 L38,6 L34,10' stroke='%23333333' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.focused {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='38' y2='6' stroke='%23333333' stroke-width='2'/%3E%3Cpath d='M32,2 L38,6 L32,10' fill='%23333333'/%3E%3C/svg%3E") no-repeat center;
+}
+
+/* --- 情感關係 (負向) --- */
+.legend-line.indifferent {
+    background: repeating-linear-gradient(90deg, #dc3545 0, #dc3545 4px, transparent 4px, transparent 8px);
+    height: 2px;
 }
 
 .legend-line.distant {
-    background: repeating-linear-gradient(90deg,
-            var(--color-distant) 0,
-            var(--color-distant) 2px,
-            transparent 2px,
-            transparent 4px);
+    background: repeating-linear-gradient(90deg, #333 0, #333 4px, transparent 4px, transparent 8px);
     height: 2px;
+}
+
+.legend-line.distant::after {
+    /* 兩個黑色雙豎線代表疏離 */
+    content: '';
+    position: absolute;
+    left: 45%;
+    top: -3px;
+    width: 2px;
+    height: 8px;
+    background: transparent;
+    /* 這裡比較難單純用CSS畫出兩個垂直線疊在虛線上 */
+}
+
+/* 改用 SVG 畫 Distant (虛線+兩個豎線) */
+.legend-line.distant {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%23333' stroke-width='1.5' stroke-dasharray='4,4'/%3E%3Cline x1='18' y1='2' x2='18' y2='8' stroke='%23333' stroke-width='1.5'/%3E%3Cline x1='22' y1='2' x2='22' y2='8' stroke='%23333' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+}
+
+
+.legend-line.cutoff {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='16' y2='5' stroke='%23E53935' stroke-width='1.5' stroke-dasharray='4,4'/%3E%3Cline x1='24' y1='5' x2='40' y2='5' stroke='%23E53935' stroke-width='1.5' stroke-dasharray='4,4'/%3E%3Cline x1='18' y1='1' x2='18' y2='9' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='22' y1='1' x2='22' y2='9' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.conflict {
     height: 8px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cpath d='M0,4 Q5,0 10,4 T20,4 T30,4 T40,4' stroke='%23E53935' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='2' x2='40' y2='2' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='0' y1='6' x2='40' y2='6' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.violence {
-    height: 12px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,3 Q5,-1 10,3 T20,3 T30,3 T40,3' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3Cpath d='M0,9 Q5,5 10,9 T20,9 T30,9 T40,9' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+.legend-line.hate {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='2' x2='40' y2='2' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='0' y1='8' x2='40' y2='8' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.hostile {
     height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='10' y1='2' x2='15' y2='8' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='15' y1='2' x2='10' y2='8' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='25' y1='2' x2='30' y2='8' stroke='%23ff9800' stroke-width='2'/%3E%3Cline x1='30' y1='2' x2='25' y2='8' stroke='%23ff9800' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 Q2.5,1 5,5 T10,5 T15,5 T20,5 T25,5 T30,5 T35,5 T40,5' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.cutoff {
+.legend-line.distant-hostile {
     height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='15' y2='5' stroke='%23333333' stroke-width='2'/%3E%3Cline x1='25' y1='5' x2='40' y2='5' stroke='%23333333' stroke-width='2'/%3E%3Cline x1='17' y1='1' x2='17' y2='9' stroke='%23333333' stroke-width='2'/%3E%3Cline x1='23' y1='1' x2='23' y2='9' stroke='%23333333' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 Q2.5,2 5,5 T10,5 T15,5 T20,5 T25,5 T30,5 T35,5 T40,5' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3Cpath d='M25,2 L30,5 L25,8' fill='none' stroke='%23E53935' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.abuse {
-    height: 8px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cpath d='M0,4 Q5,0 10,4 T20,4 T30,4 T40,4' stroke='%234a90d9' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+.legend-line.close-hostile {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='2' x2='40' y2='2' stroke='%23757575' stroke-width='1'/%3E%3Cline x1='0' y1='8' x2='40' y2='8' stroke='%23757575' stroke-width='1'/%3E%3Cpath d='M0,5 L5,2 L10,8 L15,2 L20,8 L25,2 L30,8 L35,2 L40,5' fill='none' stroke='%23E53935' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.conflict-close {
     height: 12px;
-    background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,6 Q5,2 10,6 T20,6 T30,6 T40,6' stroke='%23E53935' stroke-width='1.5' fill='none'/%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%234caf50' stroke-width='1.5'/%3E%3Cline x1='0' y1='11' x2='40' y2='11' stroke='%234caf50' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,6 L5,3 L10,9 L15,3 L20,9 L25,3 L30,9 L35,3 L40,6' fill='none' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='0' y1='1' x2='40' y2='1' stroke='%2328a745' stroke-width='1.5'/%3E%3Cline x1='0' y1='11' x2='40' y2='11' stroke='%2328a745' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+}
+
+
+/* --- 虐待/暴力 --- */
+.legend-line.violence {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 L2.5,1 5,5 L7.5,9 L10,5 L12.5,1 15,5 L17.5,9 L20,5 L22.5,1 25,5 L27.5,9 L30,5 L32.5,1 35,5 L37.5,9 L40,5' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.abuse {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 Q2.5,1 5,5 T10,5 T15,5 T20,5 T25,5 T30,5 T35,5 T40,5' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.physical-abuse {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 Q2.5,1 5,5 T10,5 T15,5 T20,5 T25,5 T30,5 T35,5 T40,5' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='1'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.emotional-abuse {
+    height: 10px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 L2.5,2 5,5 L7.5,8 L10,5 L12.5,2 15,5 L17.5,8 L20,5 L22.5,2 25,5 L27.5,8 L30,5 L32.5,2 35,5 L37.5,8 L40,5' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='1'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.sexual-abuse {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cpath d='M0,4 L2.5,1 5,4 L7.5,7 L10,4 L12.5,1 15,4 L17.5,7 L20,4 L22.5,1 25,4 L27.5,7 L30,4 L32.5,1 35,4 L37.5,7 L40,4' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3Cpath d='M0,8 L2.5,5 5,8 L7.5,11 L10,8 L12.5,5 15,8 L17.5,11 L20,8 L22.5,5 25,8 L27.5,11 L30,8 L32.5,5 35,8 L37.5,11 L40,8' fill='none' stroke='%23007BFF' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.neglect {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='38' y2='6' stroke='%23007BFF' stroke-width='2'/%3E%3Cpath d='M34,2 L38,6 L34,10' fill='none' stroke='%23007BFF' stroke-width='2'/%3E%3Cline x1='30' y1='2' x2='30' y2='10' stroke='black' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.manipulative {
     height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cpath d='M0,5 Q5,1 10,5 T20,5 T30,5 T40,5' stroke='%23fd7e14' stroke-width='2' fill='none'/%3E%3Cpath d='M30,1 L38,5 L30,9' fill='none' stroke='%23fd7e14' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='18' y1='2' x2='22' y2='8' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='22' y1='2' x2='18' y2='8' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.controlling {
-    height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='38' y2='5' stroke='%23dc3545' stroke-width='2'/%3E%3Cpath d='M30,1 L38,5 L30,9' fill='%23dc3545'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='36' y2='6' stroke='%23E53935' stroke-width='2'/%3E%3Crect x='16' y='3' width='6' height='6' fill='none' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='16' y1='3' x2='22' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='22' y1='3' x2='16' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cpath d='M34,2 L38,6 L34,10 ' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='38' y1='2' x2='34' y2='10' stroke='%23E53935' stroke-width='2'/%3E%3Ccircle cx='36' cy='6' r='4' stroke='black' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat center;
+    /* 這個比較複雜，簡化為參考圖的 Style */
 }
 
-.legend-line.focused {
-    height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%234a90d9' stroke-width='2'/%3E%3Cpath d='M30,1 L38,5 L30,9' fill='none' stroke='%234a90d9' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
-}
-
-.legend-line.admiration {
-    height: 10px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='%2328a745' stroke-width='2'/%3E%3Ccircle cx='18' cy='5' r='3.5' fill='white' stroke='%2328a745' stroke-width='1.5'/%3E%3Cpath d='M30,1 L38,5 L30,9' fill='none' stroke='%2328a745' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
-    background-size: contain;
+/* 改正 controlling 為：Box+Cross 在中間，箭頭在末端 */
+.legend-line.controlling {
+    height: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='38' y2='6' stroke='%23E53935' stroke-width='2'/%3E%3Crect x='15' y='3' width='6' height='6' fill='white' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='15' y1='3' x2='21' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='21' y1='3' x2='15' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cpath d='M32,2 L38,6 L32,10' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
 
