@@ -1972,6 +1972,109 @@ class GenogramCanvas {
     }
 
     /**
+     * 匯出為 JPEG 圖片（含關係圖例）
+     * @param {Array} persons - 人物陣列
+     * @param {Array} relationships - 關係陣列
+     * @param {Array} households - 同住家庭陣列
+     * @param {number} quality - JPEG 品質 (0-1)
+     * @returns {string|null} - Data URL 或 null
+     */
+    exportToJPEG(persons, relationships, households = [], quality = 0.92) {
+        // 計算內容邊界
+        if (persons.length === 0) {
+            return null;
+        }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        persons.forEach(p => {
+            const halfSize = this.personSize / 2 + 10;
+            minX = Math.min(minX, p.x - halfSize);
+            minY = Math.min(minY, p.y - halfSize);
+            maxX = Math.max(maxX, p.x + halfSize);
+            maxY = Math.max(maxY, p.y + halfSize + 30);
+        });
+
+        if (households && households.length > 0) {
+            households.forEach(household => {
+                const bounds = this.getHouseholdBounds(household, persons, relationships);
+                if (bounds && bounds.hullPoints) {
+                    bounds.hullPoints.forEach(pt => {
+                        minX = Math.min(minX, pt.x);
+                        minY = Math.min(minY, pt.y);
+                        maxX = Math.max(maxX, pt.x);
+                        maxY = Math.max(maxY, pt.y);
+                    });
+                }
+            });
+        }
+
+        const margin = 50;
+        minX -= margin;
+        minY -= margin;
+        maxX += margin;
+        maxY += margin;
+
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+
+        const legendWidth = 440;
+        const legendPadding = 40;
+        const legendHeight = 850;
+
+        const totalWidth = contentWidth + legendWidth + legendPadding;
+        const totalHeight = Math.max(contentHeight, legendHeight + margin * 2);
+
+        const exportCanvas = document.createElement('canvas');
+        const exportScale = 3;
+        exportCanvas.width = totalWidth * exportScale;
+        exportCanvas.height = totalHeight * exportScale;
+        const exportCtx = exportCanvas.getContext('2d');
+        exportCtx.scale(exportScale, exportScale);
+
+        // JPEG 需要純白背景
+        exportCtx.fillStyle = '#ffffff';
+        exportCtx.fillRect(0, 0, totalWidth, totalHeight);
+
+        const originalCtx = this.ctx;
+        this.ctx = exportCtx;
+
+        this.ctx.save();
+        this.ctx.translate(-minX, -minY);
+
+        if (households && households.length > 0) {
+            this.drawHouseholds(households, persons, relationships, false, null);
+        }
+
+        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
+
+        this.drawFamilies(familyRels, persons, otherRels);
+
+        otherRels.forEach(rel => {
+            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            if (fromPerson && toPerson) {
+                this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
+            }
+        });
+
+        persons.forEach(person => {
+            this.drawPerson(person, false, false, false);
+        });
+
+        this.ctx.restore();
+
+        const legendX = totalWidth - legendWidth - legendPadding / 2;
+        const legendY = (totalHeight - legendHeight) / 2;
+        this.drawExportLegend(exportCtx, legendX, legendY);
+
+        this.ctx = originalCtx;
+
+        return exportCanvas.toDataURL('image/jpeg', quality);
+    }
+
+    /**
      * 繪製匯出用的關係圖例
      */
     drawExportLegend(ctx, x, y) {

@@ -179,7 +179,7 @@ class GenogramApp {
         this.elements.loadBtn.addEventListener('click', () => this.handleLoadClick());
         this.elements.fileInput.addEventListener('change', (e) => this.loadFromFile(e));
         if (this.elements.exportBtn) {
-            this.elements.exportBtn.addEventListener('click', () => this.exportPNG());
+            this.elements.exportBtn.addEventListener('click', () => this.showExportModal());
         }
 
         if (this.elements.helpBtn) {
@@ -2890,6 +2890,158 @@ class GenogramApp {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
         }
+    }
+
+    /**
+     * 顯示匯出格式選擇對話框
+     */
+    showExportModal() {
+        const modal = document.getElementById('exportModal');
+        if (modal) {
+            modal.classList.add('active');
+
+            // 綁定格式按鈕事件
+            modal.querySelectorAll('.export-option-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    const format = e.currentTarget.dataset.format;
+                    this.handleExportFormat(format);
+                    this.closeExportModal();
+                };
+            });
+
+            // 綁定取消按鈕
+            const cancelBtn = document.getElementById('cancelExport');
+            if (cancelBtn) {
+                cancelBtn.onclick = () => this.closeExportModal();
+            }
+        }
+    }
+
+    /**
+     * 關閉匯出格式選擇對話框
+     */
+    closeExportModal() {
+        const modal = document.getElementById('exportModal');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    /**
+     * 處理不同格式的匯出
+     * @param {string} format - 匯出格式 (png, jpeg, svg, pdf, json)
+     */
+    handleExportFormat(format) {
+        if (this.persons.length === 0) {
+            this.updateStatus('沒有內容可匯出', 'error');
+            return;
+        }
+
+        const timestamp = new Date().toISOString().slice(0, 10);
+
+        switch (format) {
+            case 'png':
+                this.exportPNG();
+                this.updateStatus('已匯出 PNG 圖片', 'success');
+                break;
+
+            case 'jpeg':
+                this.exportJPEG();
+                this.updateStatus('已匯出 JPEG 圖片', 'success');
+                break;
+
+            case 'svg':
+                this.exportSVG();
+                this.updateStatus('已匯出 SVG 向量圖', 'success');
+                break;
+
+            case 'pdf':
+                this.exportPDF();
+                this.updateStatus('已匯出 PDF 文件', 'success');
+                break;
+
+            case 'json':
+                this.exportJSON();
+                this.updateStatus('已匯出 JSON 資料備份', 'success');
+                break;
+
+            default:
+                console.warn('Unknown export format:', format);
+        }
+    }
+
+    /**
+     * 匯出 JPEG
+     */
+    exportJPEG() {
+        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || []);
+        if (dataUrl) {
+            const timestamp = new Date().toISOString().slice(0, 10);
+            this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
+        }
+    }
+
+    /**
+     * 匯出 SVG
+     * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
+     * 真正的向量 SVG 需要更複雜的實作
+     */
+    exportSVG() {
+        // 使用 PNG dataUrl 嵌入到 SVG 中
+        // 這是一個簡化的實作，保持視覺一致性
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || []);
+        if (dataUrl) {
+            // 從 canvas 取得尺寸
+            const img = new Image();
+            img.onload = () => {
+                const width = img.width;
+                const height = img.height;
+
+                const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" 
+     xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="${width}" height="${height}" 
+     viewBox="0 0 ${width} ${height}">
+    <title>Genogram Export</title>
+    <image x="0" y="0" width="${width}" height="${height}" xlink:href="${dataUrl}"/>
+</svg>`;
+
+                const timestamp = new Date().toISOString().slice(0, 10);
+                this.storage.exportSVG(svgContent, `genogram_${timestamp}.svg`);
+            };
+            img.src = dataUrl;
+        }
+    }
+
+    /**
+     * 匯出 PDF
+     */
+    exportPDF() {
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || []);
+        if (dataUrl) {
+            // 從 dataUrl 取得圖片尺寸
+            const img = new Image();
+            img.onload = () => {
+                const width = img.width;
+                const height = img.height;
+                const timestamp = new Date().toISOString().slice(0, 10);
+                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`);
+            };
+            img.src = dataUrl;
+        }
+    }
+
+    /**
+     * 匯出 JSON 資料備份
+     */
+    exportJSON() {
+        const timestamp = new Date().toISOString().slice(0, 10);
+        this.storage.exportDataJSON(
+            this.persons,
+            this.relationships,
+            this.households || [],
+            `genogram_backup_${timestamp}.json`
+        );
     }
 
 

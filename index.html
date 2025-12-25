@@ -376,9 +376,51 @@
         </div>
     </div>
 
+    <!-- 匯出格式選擇對話框 -->
+    <div class="modal-overlay" id="exportModal">
+        <div class="modal">
+            <h3 class="modal-title">選擇匯出格式</h3>
+            <div class="modal-content">
+                <div class="export-options">
+                    <button class="export-option-btn" data-format="png">
+                        <span class="export-icon">🖼</span>
+                        <span class="format-name">PNG</span>
+                        <span class="format-desc">點陣圖，適合分享</span>
+                    </button>
+                    <button class="export-option-btn" data-format="jpeg">
+                        <span class="export-icon">📷</span>
+                        <span class="format-name">JPEG</span>
+                        <span class="format-desc">壓縮圖片，檔案較小</span>
+                    </button>
+                    <button class="export-option-btn" data-format="svg">
+                        <span class="export-icon">📐</span>
+                        <span class="format-name">SVG</span>
+                        <span class="format-desc">向量圖，可無限放大</span>
+                    </button>
+                    <button class="export-option-btn" data-format="pdf">
+                        <span class="export-icon">📄</span>
+                        <span class="format-name">PDF</span>
+                        <span class="format-desc">文件格式，適合列印</span>
+                    </button>
+                    <button class="export-option-btn" data-format="json">
+                        <span class="export-icon">💾</span>
+                        <span class="format-name">JSON</span>
+                        <span class="format-desc">資料備份，可重新匯入</span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="cancelExport">取消</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 隱藏的檔案輸入 -->
     <input type="file" id="fileInput" accept=".json" style="display: none;">
     </div>
+
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <script src="js/person.js"></script>
     <script src="js/relationship.js"></script>

@@ -9,6 +9,16 @@ class StorageManager {
     }
 
     /**
+     * 取得台灣時間字串（UTC+8）
+     * @returns {string} 格式化的台灣時間字串
+     */
+    getTaiwanTimeString() {
+        const now = new Date();
+        const taiwanTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+        return taiwanTime.toISOString().replace('Z', '+08:00');
+    }
+
+    /**
      * 儲存檔案（如果有開啟的檔案，直接覆蓋；否則保存到 LocalStorage）
      * @param {Array<Person>} persons
      * @param {Array<Relationship>} relationships
@@ -24,7 +34,7 @@ class StorageManager {
             try {
                 const data = {
                     version: '1.0',
-                    createdAt: new Date().toISOString(),
+                    createdAt: this.getTaiwanTimeString(),
                     persons: persons.map(p => p.toJSON()),
                     relationships: relationships.map(r => r.toJSON()),
                     households: households || []
@@ -53,7 +63,7 @@ class StorageManager {
     async downloadFile(persons, relationships, households = [], filename = 'genogram.json') {
         const data = {
             version: '1.0',
-            createdAt: new Date().toISOString(),
+            createdAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
             households: households || []
@@ -249,7 +259,7 @@ class StorageManager {
         try {
             const data = {
                 version: '1.0',
-                savedAt: new Date().toISOString(),
+                savedAt: this.getTaiwanTimeString(),
                 persons: persons.map(p => p.toJSON()),
                 relationships: relationships.map(r => r.toJSON()),
                 households: households || [],
@@ -311,6 +321,122 @@ class StorageManager {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+
+    /**
+     * 匯出 JPEG 圖片
+     * @param {string} dataUrl - Canvas 的 dataURL
+     * @param {string} filename
+     */
+    exportJPEG(dataUrl, filename = 'genogram.jpg') {
+        if (!dataUrl) {
+            alert('沒有內容可匯出');
+            return;
+        }
+
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    /**
+     * 匯出 SVG 圖片
+     * @param {string} svgContent - SVG 內容字串
+     * @param {string} filename
+     */
+    exportSVG(svgContent, filename = 'genogram.svg') {
+        if (!svgContent) {
+            alert('沒有內容可匯出');
+            return;
+        }
+
+        const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    /**
+     * 匯出 PDF 文件
+     * @param {string} dataUrl - 圖片的 dataURL
+     * @param {number} width - 圖片寬度
+     * @param {number} height - 圖片高度
+     * @param {string} filename
+     */
+    exportPDF(dataUrl, width, height, filename = 'genogram.pdf') {
+        if (!dataUrl) {
+            alert('沒有內容可匯出');
+            return;
+        }
+
+        // 檢查 jsPDF 是否已載入
+        if (typeof window.jspdf === 'undefined') {
+            alert('PDF 匯出模組尚未載入，請稍後再試');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+
+        // 根據圖片尺寸決定方向
+        const orientation = width > height ? 'l' : 'p';
+
+        // 建立 PDF，使用 mm 單位
+        const pdf = new jsPDF({
+            orientation: orientation,
+            unit: 'mm'
+        });
+
+        // 取得 PDF 頁面尺寸
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        // 計算縮放比例以適應頁面
+        const scale = Math.min(pageWidth / width, pageHeight / height) * 0.95;
+        const scaledWidth = width * scale;
+        const scaledHeight = height * scale;
+
+        // 置中
+        const x = (pageWidth - scaledWidth) / 2;
+        const y = (pageHeight - scaledHeight) / 2;
+
+        pdf.addImage(dataUrl, 'PNG', x, y, scaledWidth, scaledHeight);
+        pdf.save(filename);
+    }
+
+    /**
+     * 匯出 JSON 資料備份
+     * @param {Array<Person>} persons
+     * @param {Array<Relationship>} relationships
+     * @param {Array} households
+     * @param {string} filename
+     */
+    exportDataJSON(persons, relationships, households = [], filename = 'genogram_backup.json') {
+        const data = {
+            version: '1.0',
+            exportedAt: this.getTaiwanTimeString(),
+            persons: persons.map(p => p.toJSON()),
+            relationships: relationships.map(r => r.toJSON()),
+            households: households || []
+        };
+
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 }
 
