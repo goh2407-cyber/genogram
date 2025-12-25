@@ -23,6 +23,13 @@ class GenogramApp {
         ORIGIN_X: 50,         // 格子起點 X (半格偏移，讓人物置中)
         ORIGIN_Y: 60          // 格子起點 Y (半格偏移)
     };
+
+    // [Bug Fix] 統一婚姻類型清單，避免多處重複定義
+    static MARRIAGE_TYPES = [
+        'married', 'engaged', 'cohabiting', 'legal-cohabiting',
+        'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
+        'engaged-separated', 'engaged-cohabiting'
+    ];
     constructor() {
         // 資料
         this.persons = [];
@@ -49,6 +56,11 @@ class GenogramApp {
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
+
+        // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
+        this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
+        this.pendingParents = null; // 子女選擇對話框的父母 ID 列表
+        this.selectedChildrenIds = []; // 子女選擇對話框的選中子女 ID 列表
 
         // 拖曳 History 合併：記錄拖曳開始時的狀態快照
         this.dragStartSnapshot = null;
@@ -261,6 +273,19 @@ class GenogramApp {
             if (document.hidden) {
                 this.cancelInteraction();
             }
+        });
+
+        // [Bug Fix] 頁面關閉前強制儲存，避免最後變更遺失
+        window.addEventListener('beforeunload', () => {
+            if (this.autoSaveTimer) {
+                clearTimeout(this.autoSaveTimer);
+            }
+            // 立即執行儲存
+            this.storage.autoSave(this.persons, this.relationships, this.households || [], {
+                scale: this.canvas?.scale || 1,
+                offsetX: this.canvas?.offsetX || 0,
+                offsetY: this.canvas?.offsetY || 0
+            });
         });
     }
 
@@ -529,7 +554,8 @@ class GenogramApp {
                 this.selectedPersonIds = []; // 清空多選
                 this.selectPerson(clickedPerson.id);
 
-                this.saveState(); // 拖曳開始前保存狀態
+                // [Bug Fix] 使用 dragStartSnapshot 機制，避免雙重記錄
+                this.dragStartSnapshot = this.getState();
                 this.canvas.isDragging = true;
                 this.canvas.dragStart = point;
                 this.canvas.draggedPerson = clickedPerson;
@@ -643,8 +669,10 @@ class GenogramApp {
 
             // [UX Fix] 選取衝突：位移超過閾值才視為有效的圈選範圍
             const threshold = 5;
-            const dx = Math.abs(this.boxSelectEnd.x - this.boxSelectInitialPoint.x);
-            const dy = Math.abs(this.boxSelectEnd.y - this.boxSelectInitialPoint.y);
+            // [Bug Fix] 加入 fallback 防止 boxSelectInitialPoint 未定義
+            const startPoint = this.boxSelectInitialPoint || this.boxSelectStart;
+            const dx = Math.abs(this.boxSelectEnd.x - startPoint.x);
+            const dy = Math.abs(this.boxSelectEnd.y - startPoint.y);
 
             if (dx > threshold || dy > threshold) {
                 // 即時更新選取結果，這會讓人物在拖曳過程中就顯示綠色高亮 (Highlighted)
@@ -849,9 +877,11 @@ class GenogramApp {
                         const clampedGeneration = Math.max(0, Math.min(3, newGeneration));
 
                         // 更新輩分
-                        if (typeof p.generation === 'number' && p.generation !== clampedGeneration) {
+                        // [Bug Fix] 修正類型檢查：p.generation 是字串，需轉換為索引比較
+                        const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
+                        const currentGenIndex = genNames.indexOf(p.generation);
+                        if (currentGenIndex !== -1 && currentGenIndex !== clampedGeneration) {
                             // 輩分發生改變，更新 generation 屬性
-                            const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
                             p.generation = genNames[clampedGeneration] || 'parent';
                             this.updateStatus(`已移動到${GenogramApp.GENERATION_LEVELS[p.generation]?.label || '新輩分'}`, 'info');
                         }
@@ -1049,9 +1079,17 @@ class GenogramApp {
                 this.setTool('select');
                 break;
             case '1':
+                this.showGenderModal('grandparent');
+                break;
             case '2':
+                this.showGenderModal('parent');
+                break;
             case '3':
+                this.showGenderModal('child');
+                break;
             case '4':
+                this.showGenderModal('grandchild');
+                break;
             case 'n':
             case 'N':
                 this.showGenderModal('parent');
@@ -1587,7 +1625,10 @@ class GenogramApp {
         }
 
         const x = this.snapToGrid(finalX, 'x');
-        const person = new Person({ x, y, gender, generation });
+        // [Bug Fix] 將數字 generation 轉換為字串格式，與系統其他部分保持一致
+        const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
+        const generationStr = genNames[genIndex] || 'parent';
+        const person = new Person({ x, y, gender, generation: generationStr });
         this.persons.push(person);
 
         // 自動建立關係
@@ -1977,7 +2018,19 @@ class GenogramApp {
 
         const fromId = this.connectingFrom.person.id;
         const toId = this.connectingTo.id;
+        const fromPerson = this.persons.find(p => p.id === fromId);
+        const toPerson = this.persons.find(p => p.id === toId);
         const category = Relationship.getCategory(type);
+
+        // [驗證] 婚姻類關係的限制規則
+        if (category === 'marriage') {
+            const validationResult = this.validateMarriageRelationship(fromPerson, toPerson);
+            if (!validationResult.valid) {
+                this.updateStatus(validationResult.message, 'error');
+                this.closeRelationshipModal();
+                return;
+            }
+        }
 
         // 檢查是否已存在「完全相同」的關係（防止完全重複）
         const exactDuplicate = this.relationships.find(r =>
@@ -2032,6 +2085,141 @@ class GenogramApp {
         this.render();
 
 
+    }
+
+    /**
+     * 驗證婚姻類關係是否合法
+     * @param {Person} person1 - 第一個人物
+     * @param {Person} person2 - 第二個人物
+     * @returns {{valid: boolean, message: string}} - 驗證結果
+     */
+    validateMarriageRelationship(person1, person2) {
+        if (!person1 || !person2) {
+            return { valid: false, message: '無法找到選取的人物' };
+        }
+
+        const grid = GenogramApp.GRID;
+
+        // 規則 1: 同輩分檢查（Y 座標差異不超過半個格子高度）
+        const yDiff = Math.abs(person1.y - person2.y);
+        if (yDiff > grid.CELL_HEIGHT * 0.5) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人不在同一輩分' };
+        }
+
+        // 規則 2: 檢查是否已有直接親子關係
+        const hasDirectParentChild = this.relationships.some(r =>
+            r.type === 'parent-child' &&
+            ((r.fromPersonId === person1.id && r.toPersonId === person2.id) ||
+                (r.fromPersonId === person2.id && r.toPersonId === person1.id))
+        );
+        if (hasDirectParentChild) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人之間已有親子關係' };
+        }
+
+        // 輔助方法：取得某人的父母 ID
+        const getParentIds = (personId) => {
+            const parents = new Set();
+            this.relationships.forEach(r => {
+                if (r.type === 'parent-child') {
+                    const from = this.persons.find(p => p.id === r.fromPersonId);
+                    const to = this.persons.find(p => p.id === r.toPersonId);
+                    if (!from || !to) return;
+
+                    // 父母是 Y 座標較小的那個
+                    if (from.y < to.y && to.id === personId) {
+                        parents.add(from.id);
+                    } else if (to.y < from.y && from.id === personId) {
+                        parents.add(to.id);
+                    }
+                }
+            });
+            return parents;
+        };
+
+        // 輔助方法：取得某人的子女 ID
+        const getChildrenIds = (personId) => {
+            const children = new Set();
+            this.relationships.forEach(r => {
+                if (r.type === 'parent-child') {
+                    const from = this.persons.find(p => p.id === r.fromPersonId);
+                    const to = this.persons.find(p => p.id === r.toPersonId);
+                    if (!from || !to) return;
+
+                    // 子女是 Y 座標較大的那個
+                    if (from.y < to.y && from.id === personId) {
+                        children.add(to.id);
+                    } else if (to.y < from.y && to.id === personId) {
+                        children.add(from.id);
+                    }
+                }
+            });
+            return children;
+        };
+
+        // 輔助方法：取得所有祖先 ID（遞迴向上查找）
+        const getAncestorIds = (personId, visited = new Set()) => {
+            if (visited.has(personId)) return new Set();
+            visited.add(personId);
+
+            const ancestors = new Set();
+            const parents = getParentIds(personId);
+            parents.forEach(parentId => {
+                ancestors.add(parentId);
+                // 遞迴取得祖父母等
+                getAncestorIds(parentId, visited).forEach(id => ancestors.add(id));
+            });
+            return ancestors;
+        };
+
+        // 輔助方法：取得所有子孫 ID（遞迴向下查找）
+        const getDescendantIds = (personId, visited = new Set()) => {
+            if (visited.has(personId)) return new Set();
+            visited.add(personId);
+
+            const descendants = new Set();
+            const children = getChildrenIds(personId);
+            children.forEach(childId => {
+                descendants.add(childId);
+                // 遞迴取得孫子女等
+                getDescendantIds(childId, visited).forEach(id => descendants.add(id));
+            });
+            return descendants;
+        };
+
+        // 規則 3: 檢查是否為手足（共同父母）
+        const parents1 = getParentIds(person1.id);
+        const parents2 = getParentIds(person2.id);
+
+        for (const parentId of parents1) {
+            if (parents2.has(parentId)) {
+                return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人是手足（有共同父母）' };
+            }
+        }
+
+        // 規則 4: 檢查 person2 是否在 person1 的祖先中（不能和父母、祖父母結婚）
+        const ancestors1 = getAncestorIds(person1.id);
+        if (ancestors1.has(person2.id)) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚' };
+        }
+
+        // 規則 5: 檢查 person2 是否在 person1 的子孫中（不能和子女、孫子女結婚）
+        const descendants1 = getDescendantIds(person1.id);
+        if (descendants1.has(person2.id)) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與子女或後代結婚' };
+        }
+
+        // 規則 6: 反向檢查（person1 是否在 person2 的祖先/子孫中）
+        const ancestors2 = getAncestorIds(person2.id);
+        if (ancestors2.has(person1.id)) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與子女或後代結婚' };
+        }
+
+        const descendants2 = getDescendantIds(person2.id);
+        if (descendants2.has(person1.id)) {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚' };
+        }
+
+        return { valid: true, message: '' };
     }
 
     /**
@@ -2196,7 +2384,8 @@ class GenogramApp {
      * @returns {Person|null}
      */
     findSpouse(personId) {
-        const marriageTypes = ['married', 'engaged', 'cohabiting', 'separated', 'divorced'];
+        // 使用類別常數
+        const marriageTypes = GenogramApp.MARRIAGE_TYPES;
 
         for (const rel of this.relationships) {
             if (marriageTypes.includes(rel.type)) {
@@ -2353,8 +2542,8 @@ class GenogramApp {
         const grid = GenogramApp.GRID;
         const sameGenErrorMargin = grid.CELL_HEIGHT * 0.5;
 
-        // 1. 檢查配偶 (Marriage)
-        const marriageTypes = ['married', 'engaged', 'cohabiting', 'separated', 'divorced'];
+        // 使用類別常數
+        const marriageTypes = GenogramApp.MARRIAGE_TYPES;
         const marriageRels = this.relationships.filter(r =>
             marriageTypes.includes(r.type) &&
             (r.fromPersonId === person.id || r.toPersonId === person.id)
@@ -2742,10 +2931,11 @@ class GenogramApp {
             this.households = saved.households || [];
 
             // 還原視圖狀態
-            if (saved.view) {
-                this.scale = saved.view.scale || 1;
-                this.offsetX = saved.view.offsetX || 0;
-                this.offsetY = saved.view.offsetY || 0;
+            // [Bug Fix] 視圖狀態應寫入 canvas 物件而非 app
+            if (saved.view && this.canvas) {
+                this.canvas.scale = saved.view.scale || 1;
+                this.canvas.offsetX = saved.view.offsetX || 0;
+                this.canvas.offsetY = saved.view.offsetY || 0;
                 this.updateZoomDisplay();
             }
 
@@ -2763,6 +2953,9 @@ class GenogramApp {
             }
             // 讓恢復訊息停留長一點
             setTimeout(() => this.updateStatus(), 5000);
+        } else {
+            // [Bug Fix] 即使沒有儲存資料，也要重置 isLoading 狀態
+            this.isLoading = false;
         }
     }
 
@@ -2787,7 +2980,7 @@ class GenogramApp {
         }
 
         // 2. 找出所有婚姻關係（配偶會被放在同一代）
-        const marriageTypes = ['married', 'engaged', 'cohabiting', 'separated', 'divorced', 'widowed', 'affair'];
+        const marriageTypes = GenogramApp.MARRIAGE_TYPES;
         const marriageRels = this.relationships.filter(rel => marriageTypes.includes(rel.type));
 
         // 建立人物映射
@@ -2810,20 +3003,52 @@ class GenogramApp {
             return spouses;
         };
 
-        // 找某人的父母
+        // 找某人的父母 [Bug Fix] 加入 Y 座標比較，確保方向正確
         const getParents = (personId) => {
             const parents = [];
+            const person = personMap[personId];
+            if (!person) return parents;
+
             familyRels.forEach(r => {
-                if (r.toPersonId === personId) parents.push(r.fromPersonId);
+                // 檢查 toPersonId 指向的情況
+                if (r.toPersonId === personId) {
+                    const parent = personMap[r.fromPersonId];
+                    if (parent && parent.y < person.y) {
+                        parents.push(r.fromPersonId);
+                    }
+                }
+                // [Bug Fix] 也檢查 fromPersonId 指向的情況（如果使用者從子女連到父母）
+                if (r.fromPersonId === personId) {
+                    const parent = personMap[r.toPersonId];
+                    if (parent && parent.y < person.y) {
+                        parents.push(r.toPersonId);
+                    }
+                }
             });
             return parents;
         };
 
-        // 找某人的子女
+        // 找某人的子女 [Bug Fix] 加入 Y 座標比較，確保方向正確
         const getChildren = (personId) => {
             const children = [];
+            const person = personMap[personId];
+            if (!person) return children;
+
             familyRels.forEach(r => {
-                if (r.fromPersonId === personId) children.push(r.toPersonId);
+                // 檢查 fromPersonId 指向的情況
+                if (r.fromPersonId === personId) {
+                    const child = personMap[r.toPersonId];
+                    if (child && child.y > person.y) {
+                        children.push(r.toPersonId);
+                    }
+                }
+                // [Bug Fix] 也檢查 toPersonId 指向的情況（如果使用者從子女連到父母）
+                if (r.toPersonId === personId) {
+                    const child = personMap[r.fromPersonId];
+                    if (child && child.y > person.y) {
+                        children.push(r.fromPersonId);
+                    }
+                }
             });
             return children;
         };

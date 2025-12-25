@@ -167,12 +167,12 @@ class Relationship {
             'widowed': { color: '#333333', width: 2, pattern: 'solid', decoration: 'x' },
             // 訂婚並分居：黑色虛線 + 斜線
             'engaged-separated': { color: '#333333', width: 2, pattern: 'dashed', decoration: 'single-slash' },
-            // 訂婚並同居：黑色虛線
-            'engaged-cohabiting': { color: '#333333', width: 2, pattern: 'dashed' },
-            // 同居：黑色虛線
-            'cohabiting': { color: '#333333', width: 2, pattern: 'dashed' },
-            // 法律同居：黑色虛線 + 小房子
-            'legal-cohabiting': { color: '#333333', width: 2, pattern: 'dashed', decoration: 'house' },
+            // 訂婚並同居：黑色點線（同居樣式）
+            'engaged-cohabiting': { color: '#333333', width: 2, pattern: 'dotted' },
+            // 同居：黑色點線（較短間隔，與訂婚的長虛線區分）
+            'cohabiting': { color: '#333333', width: 2, pattern: 'dotted' },
+            // 法律同居：黑色點線 + 小房子
+            'legal-cohabiting': { color: '#333333', width: 2, pattern: 'dotted', decoration: 'house' },
             // 外遇：紅色虛線
             'affair': { color: '#E53935', width: 2, pattern: 'dashed' },
 

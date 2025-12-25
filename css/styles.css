@@ -492,20 +492,21 @@ body {
 }
 
 .legend-line.engaged {
-    background: repeating-linear-gradient(90deg, #000 0, #000 6px, transparent 6px, transparent 10px);
+    /* 訂婚：長虛線 (12px線段, 6px間隔) */
+    background: repeating-linear-gradient(90deg, #000 0, #000 12px, transparent 12px, transparent 18px);
     height: 2px;
 }
 
 .legend-line.cohabiting {
-    background: repeating-linear-gradient(90deg, #000 0, #000 3px, transparent 3px, transparent 6px);
+    /* 同居：短點線 (2px線段, 6px間隔) - 與訂婚明顯區分 */
+    background: repeating-linear-gradient(90deg, #000 0, #000 2px, transparent 2px, transparent 8px);
     height: 2px;
 }
 
 .legend-line.legal-cohabiting {
-    background: repeating-linear-gradient(90deg, #000 0, #000 3px, transparent 3px, transparent 6px);
     height: 8px;
-    /* 為了容納中間的房屋圖示 */
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='6' x2='15' y2='6' stroke='black' stroke-width='2' stroke-dasharray='3,3'/%3E%3Cline x1='25' y1='6' x2='40' y2='6' stroke='black' stroke-width='2' stroke-dasharray='3,3'/%3E%3Cpath d='M16,6 L20,2 L24,6' fill='none' stroke='black' stroke-width='2'/%3E%3Crect x='17' y='6' width='6' height='4' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
+    /* 法律同居：短點線 + 房屋圖示 */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8'%3E%3Cline x1='0' y1='6' x2='15' y2='6' stroke='black' stroke-width='2' stroke-dasharray='2,6'/%3E%3Cline x1='25' y1='6' x2='40' y2='6' stroke='black' stroke-width='2' stroke-dasharray='2,6'/%3E%3Cpath d='M16,6 L20,2 L24,6' fill='none' stroke='black' stroke-width='2'/%3E%3Crect x='17' y='6' width='6' height='4' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center;
 }
 
 .legend-line.separated {
@@ -671,13 +672,7 @@ body {
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='10'%3E%3Cline x1='0' y1='5' x2='40' y2='5' stroke='black' stroke-width='2'/%3E%3Cline x1='18' y1='2' x2='22' y2='8' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='22' y1='2' x2='18' y2='8' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
 }
 
-.legend-line.controlling {
-    height: 12px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='36' y2='6' stroke='%23E53935' stroke-width='2'/%3E%3Crect x='16' y='3' width='6' height='6' fill='none' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='16' y1='3' x2='22' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='22' y1='3' x2='16' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cpath d='M34,2 L38,6 L34,10 ' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3Cline x1='38' y1='2' x2='34' y2='10' stroke='%23E53935' stroke-width='2'/%3E%3Ccircle cx='36' cy='6' r='4' stroke='black' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat center;
-    /* 這個比較複雜，簡化為參考圖的 Style */
-}
-
-/* 改正 controlling 為：Box+Cross 在中間，箭頭在末端 */
+/* .legend-line.controlling - 已合併重複定義 */
 .legend-line.controlling {
     height: 12px;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12'%3E%3Cline x1='0' y1='6' x2='38' y2='6' stroke='%23E53935' stroke-width='2'/%3E%3Crect x='15' y='3' width='6' height='6' fill='white' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='15' y1='3' x2='21' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cline x1='21' y1='3' x2='15' y2='9' stroke='%23E53935' stroke-width='1.5'/%3E%3Cpath d='M32,2 L38,6 L32,10' fill='none' stroke='%23E53935' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
