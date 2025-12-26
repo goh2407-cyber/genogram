@@ -25,9 +25,9 @@ class StorageManager {
      * @param {Array} households
      * @returns {Promise<boolean>} 是否成功儲存到檔案
      */
-    async saveToFile(persons, relationships, households = []) {
+    async saveToFile(persons, relationships, households = [], lifeCircles = []) {
         // 也保存到 localStorage 作為備份
-        this.autoSave(persons, relationships, households);
+        this.autoSave(persons, relationships, households, lifeCircles);
 
         // 如果有開啟的檔案 handle，直接寫入
         if (this.currentFileHandle) {
@@ -37,7 +37,8 @@ class StorageManager {
                     createdAt: this.getTaiwanTimeString(),
                     persons: persons.map(p => p.toJSON()),
                     relationships: relationships.map(r => r.toJSON()),
-                    households: households || []
+                    households: households || [],
+                    lifeCircles: lifeCircles || []
                 };
                 const jsonStr = JSON.stringify(data, null, 2);
 
@@ -60,13 +61,14 @@ class StorageManager {
      * @param {Array} households
      * @param {string} filename
      */
-    async downloadFile(persons, relationships, households = [], filename = 'genogram.json') {
+    async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json') {
         const data = {
             version: '1.0',
             createdAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
-            households: households || []
+            households: households || [],
+            lifeCircles: lifeCircles || []
         };
 
         const jsonStr = JSON.stringify(data, null, 2);
@@ -124,7 +126,8 @@ class StorageManager {
             version: data.version || '0.1', // 預設舊版本
             persons: Array.isArray(data.persons) ? data.persons : [],
             relationships: Array.isArray(data.relationships) ? data.relationships : [],
-            households: Array.isArray(data.households) ? data.households : []
+            households: Array.isArray(data.households) ? data.households : [],
+            lifeCircles: Array.isArray(data.lifeCircles) ? data.lifeCircles : []
         };
 
         // 這裡可以根據版本進行具體欄位轉換
@@ -166,8 +169,9 @@ class StorageManager {
                     const persons = data.persons.map(p => Person.fromJSON(p));
                     const relationships = data.relationships.map(r => Relationship.fromJSON(r));
                     const households = data.households || [];
+                    const lifeCircles = data.lifeCircles || [];
 
-                    resolve({ persons, relationships, households });
+                    resolve({ persons, relationships, households, lifeCircles });
                 } catch (err) {
                     reject(new Error('檔案解析失敗，請確認檔案格式是否正確: ' + err.message));
                 }
@@ -214,8 +218,9 @@ class StorageManager {
             const persons = data.persons.map(p => Person.fromJSON(p));
             const relationships = data.relationships.map(r => Relationship.fromJSON(r));
             const households = data.households || [];
+            const lifeCircles = data.lifeCircles || [];
 
-            return { persons, relationships, households };
+            return { persons, relationships, households, lifeCircles };
         } catch (err) {
             if (err.name === 'AbortError') {
                 return null; // 用戶取消
@@ -255,7 +260,7 @@ class StorageManager {
      * @param {Array} households
      * @param {Object} options - 額外視圖選項
      */
-    autoSave(persons, relationships, households = [], options = {}) {
+    autoSave(persons, relationships, households = [], lifeCircles = [], options = {}) {
         try {
             const data = {
                 version: '1.0',
@@ -263,6 +268,7 @@ class StorageManager {
                 persons: persons.map(p => p.toJSON()),
                 relationships: relationships.map(r => r.toJSON()),
                 households: households || [],
+                lifeCircles: lifeCircles || [],
                 filename: this.currentFileName, // 紀錄檔名
                 view: options || {} // 儲存縮放與位移
             };
@@ -287,10 +293,11 @@ class StorageManager {
             const persons = data.persons.map(p => Person.fromJSON(p));
             const relationships = data.relationships.map(r => Relationship.fromJSON(r));
             const households = data.households || [];
+            const lifeCircles = data.lifeCircles || [];
             const view = data.view || null;
             this.currentFileName = data.filename || null; // 還原檔名
 
-            return { persons, relationships, households, view, filename: this.currentFileName, savedAt: data.savedAt };
+            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt };
         } catch (err) {
             console.warn('載入自動儲存失敗:', err);
             return null;

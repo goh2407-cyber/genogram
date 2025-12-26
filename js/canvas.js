@@ -634,9 +634,9 @@ class GenogramCanvas {
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else if (category === 'marriage') {
-                // 婚姻關係高亮
-                this.ctx.lineWidth = style.width + 4;
-                this.ctx.globalAlpha = 0.3;
+                // 婚姻關係高亮 - 增強可見度
+                this.ctx.lineWidth = style.width + 8;
+                this.ctx.globalAlpha = 0.6;
                 const fromPoint = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
                 const toPoint = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
 
@@ -656,9 +656,9 @@ class GenogramCanvas {
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else {
-                // 情感關係高亮
-                this.ctx.lineWidth = style.width + 4;
-                this.ctx.globalAlpha = 0.3;
+                // 情感關係高亮 - 增強可見度
+                this.ctx.lineWidth = style.width + 8;
+                this.ctx.globalAlpha = 0.6;
                 let path = this.getSmartPath(fromPerson, toPerson, persons);
 
                 // 套用位移到路徑中的所有點
@@ -1862,7 +1862,7 @@ class GenogramCanvas {
     /**
      * 匯出為 PNG 圖片（含關係圖例）
      */
-    exportToPNG(persons, relationships, households = []) {
+    exportToPNG(persons, relationships, households = [], lifeCircles = []) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -1885,6 +1885,20 @@ class GenogramCanvas {
                 const bounds = this.getHouseholdBounds(household, persons, relationships);
                 if (bounds && bounds.hullPoints) {
                     bounds.hullPoints.forEach(pt => {
+                        minX = Math.min(minX, pt.x);
+                        minY = Math.min(minY, pt.y);
+                        maxX = Math.max(maxX, pt.x);
+                        maxY = Math.max(maxY, pt.y);
+                    });
+                }
+            });
+        }
+
+        // 3. 考慮 lifeCircles 的邊界
+        if (lifeCircles && lifeCircles.length > 0) {
+            lifeCircles.forEach(lc => {
+                if (lc.points) {
+                    lc.points.forEach(pt => {
                         minX = Math.min(minX, pt.x);
                         minY = Math.min(minY, pt.y);
                         maxX = Math.max(maxX, pt.x);
@@ -1933,7 +1947,12 @@ class GenogramCanvas {
         this.ctx.save();
         this.ctx.translate(-minX, -minY);
 
-        // 1. 先繪製同住家庭 (最底層)
+        // 1. 先繪製生活圈 (最最底層)
+        if (lifeCircles && lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(lifeCircles);
+        }
+
+        // 1.5 繪製同住家庭
         if (households && households.length > 0) {
             this.drawHouseholds(households, persons, relationships, false, null);
         }
@@ -2449,21 +2468,26 @@ class GenogramCanvas {
         });
 
         // 2. 依照父母組合分組家庭
-        const families = {}; // key -> { parents: [], children: [], relIds: [] }
+        const families = {}; // key -> { parents: [], children: [], relIds: [], childToRelIds: {} }
 
         Object.keys(childParents).forEach(childId => {
             const parents = childParents[childId].sort();
             const key = parents.join('_');
 
             if (!families[key]) {
-                families[key] = { parents: parents, children: [], relIds: [] };
+                families[key] = { parents: parents, children: [], relIds: [], childToRelIds: {} };
             }
             families[key].children.push(childId);
-            // 收集這個家庭涉及的所有關係 ID
+
+            // 收集這個家庭涉及的所有關係 ID，並記錄每個子女對應的關係 ID
+            families[key].childToRelIds[childId] = [];
             parents.forEach(parentId => {
                 const relId = childParentRelMap[`${childId}_${parentId}`];
-                if (relId && !families[key].relIds.includes(relId)) {
-                    families[key].relIds.push(relId);
+                if (relId) {
+                    if (!families[key].relIds.includes(relId)) {
+                        families[key].relIds.push(relId);
+                    }
+                    families[key].childToRelIds[childId].push(relId);
                 }
             });
         });
@@ -2473,9 +2497,19 @@ class GenogramCanvas {
             const parentIds = fam.parents;
             const childIds = fam.children;
             const relIds = fam.relIds;
+            const childToRelIds = fam.childToRelIds;
 
-            // 檢查是否有任何關係被選中
-            const isSelected = selectedRelationshipId && relIds.includes(selectedRelationshipId);
+            // 找出被選中關係對應的子女ID (如果有的話)
+            let selectedChildId = null;
+            if (selectedRelationshipId && relIds.includes(selectedRelationshipId)) {
+                // 找出哪個子女的關係被選中
+                for (const [childId, childRelIds] of Object.entries(childToRelIds)) {
+                    if (childRelIds.includes(selectedRelationshipId)) {
+                        selectedChildId = childId;
+                        break;
+                    }
+                }
+            }
 
             // 取得物件
             const parentObjs = parentIds.map(id => persons.find(p => p.id === id)).filter(p => p);
@@ -2483,15 +2517,9 @@ class GenogramCanvas {
 
             if (parentObjs.length === 0 || childObjs.length === 0) return;
 
-            // 設置線條樣式
-            if (isSelected) {
-                // 選取時使用藍色高亮
-                this.ctx.strokeStyle = '#4a90d9';
-                this.ctx.lineWidth = 4;
-            } else {
-                this.ctx.strokeStyle = '#333';
-                this.ctx.lineWidth = 2;
-            }
+            // 設置預設線條樣式 (不選中時)
+            this.ctx.strokeStyle = '#333';
+            this.ctx.lineWidth = 2;
             this.ctx.setLineDash([]); // 實線
 
             let sourceX, sourceY;
@@ -2523,14 +2551,9 @@ class GenogramCanvas {
                     this.ctx.stroke();
                     this.ctx.restore();
 
-                    // 恢復選取樣式
-                    if (isSelected) {
-                        this.ctx.strokeStyle = '#4a90d9';
-                        this.ctx.lineWidth = 4;
-                    } else {
-                        this.ctx.strokeStyle = '#333';
-                        this.ctx.lineWidth = 2;
-                    }
+                    // 恢復預設樣式
+                    this.ctx.strokeStyle = '#333';
+                    this.ctx.lineWidth = 2;
                     this.ctx.setLineDash([]);
 
                     sourceX = (p1.x + p2.x) / 2;
@@ -2557,46 +2580,28 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
-            // 如果被選中，先繪製高亮光暈效果
-            if (isSelected) {
-                this.ctx.save();
-                this.ctx.strokeStyle = 'rgba(74, 144, 217, 0.3)';
-                this.ctx.lineWidth = 10;
-                this.ctx.lineCap = 'round';
-                this.ctx.lineJoin = 'round';
+            // 如果有選中特定子女關係，先繪製該子女的高亮效果
+            if (selectedChildId) {
+                const selectedChild = childObjs.find(c => c.id === selectedChildId);
+                if (selectedChild) {
+                    this.ctx.save();
+                    this.ctx.strokeStyle = 'rgba(74, 144, 217, 0.3)';
+                    this.ctx.lineWidth = 10;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
 
-                // 繪製高亮背景 - 垂直線
-                this.ctx.beginPath();
-                this.ctx.moveTo(sourceX, sourceY);
-                this.ctx.lineTo(sourceX, barY);
-                this.ctx.stroke();
-
-                // 繪製高亮背景 - 橫槓
-                const allX = [...childObjs.map(c => c.x), sourceX];
-                const minX = Math.min(...allX);
-                const maxX = Math.max(...allX);
-                this.ctx.beginPath();
-                this.ctx.moveTo(minX, barY);
-                this.ctx.lineTo(maxX, barY);
-                this.ctx.stroke();
-
-                // 繪製高亮背景 - 每個孩子的垂直線
-                childObjs.forEach(child => {
-                    const childTop = child.y - this.personSize / 2;
+                    // 繪製高亮背景 - 僅選中子女的垂直線
+                    const childTop = selectedChild.y - this.personSize / 2;
                     this.ctx.beginPath();
-                    this.ctx.moveTo(child.x, barY);
-                    this.ctx.lineTo(child.x, childTop);
+                    this.ctx.moveTo(selectedChild.x, barY);
+                    this.ctx.lineTo(selectedChild.x, childTop);
                     this.ctx.stroke();
-                });
 
-                this.ctx.restore();
-
-                // 恢復選取前景樣式
-                this.ctx.strokeStyle = '#4a90d9';
-                this.ctx.lineWidth = 4;
+                    this.ctx.restore();
+                }
             }
 
-            // 繪製 Source -> Bar 的垂直線
+            // 繪製 Source -> Bar 的垂直線 (預設樣式)
             this.ctx.beginPath();
             this.ctx.moveTo(sourceX, sourceY);
             if (barY > sourceY) {
@@ -2619,10 +2624,23 @@ class GenogramCanvas {
             // 繪製 Bar -> 每个孩子 的垂直線
             childObjs.forEach(child => {
                 const childTop = child.y - this.personSize / 2;
+                const isThisChildSelected = selectedChildId === child.id;
+
+                // 如果這個子女被選中，使用高亮樣式
+                if (isThisChildSelected) {
+                    this.ctx.save();
+                    this.ctx.strokeStyle = '#4a90d9';
+                    this.ctx.lineWidth = 4;
+                }
+
                 this.ctx.beginPath();
                 this.ctx.moveTo(child.x, barY);
                 this.ctx.lineTo(child.x, childTop);
                 this.ctx.stroke();
+
+                if (isThisChildSelected) {
+                    this.ctx.restore();
+                }
             });
         });
     }
@@ -3035,24 +3053,34 @@ class GenogramCanvas {
         }
 
         if (category === 'family') {
-            // 親子關係：L型路徑
+            // 親子關係：計算與 drawFamilies 一致的垂直線路徑 (橫槓 → 子女)
+            // 確定父母和子女
+            let parentPerson, childPerson;
             if (fromPerson.y < toPerson.y) {
-                const fromPoint = fromPerson.getConnectionPoint('bottom');
-                const toPoint = toPerson.getConnectionPoint('top');
-                const midY = (fromPoint.y + toPoint.y) / 2;
-                points.push(fromPoint);
-                points.push({ x: fromPoint.x, y: midY });
-                points.push({ x: toPoint.x, y: midY });
-                points.push(toPoint);
+                parentPerson = fromPerson;
+                childPerson = toPerson;
             } else {
-                const fromPoint = fromPerson.getConnectionPoint('top');
-                const toPoint = toPerson.getConnectionPoint('bottom');
-                const midY = (fromPoint.y + toPoint.y) / 2;
-                points.push(fromPoint);
-                points.push({ x: fromPoint.x, y: midY });
-                points.push({ x: toPoint.x, y: midY });
-                points.push(toPoint);
+                parentPerson = toPerson;
+                childPerson = fromPerson;
             }
+
+            // 計算 sourceY (父母底部或中間位置)
+            const sourceY = parentPerson.y + this.personSize / 2;
+
+            // 計算 barY (與 drawFamilies 使用相同邏輯)
+            const childTop = childPerson.y - this.personSize / 2;
+            let barY = (sourceY + childTop) / 2;
+
+            // 防呆處理
+            if (barY < sourceY + 20) barY = sourceY + 20;
+            if (barY > childTop - 20) barY = childTop - 20;
+            if (sourceY >= childTop - 10) {
+                barY = sourceY + 30;
+            }
+
+            // 路徑：從橫槓位置垂直連到子女頂部 (這是可點擊的部分)
+            points.push({ x: childPerson.x, y: barY });
+            points.push({ x: childPerson.x, y: childTop });
         } else if (category === 'marriage') {
             // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
             const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
@@ -3255,6 +3283,131 @@ class GenogramCanvas {
         const maxY = y + 75 + padding;
 
         return px >= minX && px <= maxX && py >= minY && py <= maxY;
+    }
+
+    /**
+     * 繪製生活圈（半透明填充多邊形）
+     * @param {Array} lifeCircles - 生活圈列表
+     * @param {string} selectedId - 選中的生活圈 ID
+     */
+    drawLifeCircles(lifeCircles, selectedId = null) {
+        if (!lifeCircles || lifeCircles.length === 0) return;
+
+        this.ctx.save();
+        this.applyTransform();
+
+        lifeCircles.forEach(lc => {
+            if (!lc.points || lc.points.length < 3) return;
+
+            const isSelected = selectedId === lc.id;
+
+            // 繪製填充多邊形
+            this.ctx.beginPath();
+            this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
+            for (let i = 1; i < lc.points.length; i++) {
+                this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
+            }
+            this.ctx.closePath();
+
+            // 填充
+            this.ctx.fillStyle = lc.color || 'rgba(74, 144, 226, 0.15)';
+            this.ctx.fill();
+
+            // 邊框
+            this.ctx.strokeStyle = isSelected ? '#4a90d9' : 'rgba(74, 144, 226, 0.5)';
+            this.ctx.lineWidth = isSelected ? 3 : 2;
+            this.ctx.setLineDash(isSelected ? [] : [5, 3]);
+            this.ctx.stroke();
+
+            // 繪製頂點（選中時）
+            if (isSelected) {
+                lc.points.forEach(p => {
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                    this.ctx.fillStyle = '#4a90d9';
+                    this.ctx.fill();
+                });
+            }
+
+            // 標籤已移除，不再繪製
+        });
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 繪製生活圈（匯出用，不含選取高亮）
+     */
+    drawLifeCirclesExport(lifeCircles) {
+        if (!lifeCircles || lifeCircles.length === 0) return;
+
+        lifeCircles.forEach(lc => {
+            if (!lc.points || lc.points.length < 3) return;
+
+            // 繪製填充多邊形
+            this.ctx.beginPath();
+            this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
+            for (let i = 1; i < lc.points.length; i++) {
+                this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
+            }
+            this.ctx.closePath();
+
+            // 填充
+            this.ctx.fillStyle = lc.color || 'rgba(74, 144, 226, 0.15)';
+            this.ctx.fill();
+
+            // 邊框
+            this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 3]);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        });
+    }
+
+    /**
+     * 繪製生活圈預覽（正在繪製中）
+     * @param {Array} points - 目前的頂點列表
+     * @param {Object} mousePos - 滑鼠目前位置（可選）
+     */
+    drawLifeCirclePreview(points, mousePos = null) {
+        if (!points || points.length === 0) return;
+
+        this.ctx.save();
+        this.applyTransform();
+
+        // 繪製已確定的線段
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            this.ctx.lineTo(points[i].x, points[i].y);
+        }
+
+        // 如果有滑鼠位置，繪製到滑鼠的預覽線
+        if (mousePos) {
+            this.ctx.lineTo(mousePos.x, mousePos.y);
+        }
+
+        this.ctx.strokeStyle = '#4a90d9';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.stroke();
+
+        // 繪製頂點
+        points.forEach((p, i) => {
+            this.ctx.beginPath();
+            this.ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            this.ctx.fillStyle = i === 0 ? '#ff6b6b' : '#4a90d9'; // 第一個點用紅色標記
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#fff';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([]);
+            this.ctx.stroke();
+        });
+
+        // 提示文字已移除
+
+        this.ctx.restore();
     }
 }
 

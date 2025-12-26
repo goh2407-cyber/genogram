@@ -149,85 +149,85 @@ class Relationship {
      */
     getLineStyle() {
         const styles = {
-            // 親子關係
+            // 親子關係 - 保持 width: 2
             'parent-child': { color: '#333333', width: 2, pattern: 'solid' },
 
             // ===== 家庭關係 (Family Relationship - 第二張圖) =====
             // 婚姻：黑色實線
-            'married': { color: '#333333', width: 2, pattern: 'solid' },
+            'married': { color: '#333333', width: 3, pattern: 'solid' },
             // 訂婚：黑色實線 (通常為虛線，或實線加標記)
-            'engaged': { color: '#333333', width: 2, pattern: 'dashed' },
+            'engaged': { color: '#333333', width: 3, pattern: 'dashed' },
             // 事實分居：黑色實線 + 單斜線
-            'separated': { color: '#333333', width: 2, pattern: 'solid', decoration: 'single-slash' },
+            'separated': { color: '#333333', width: 3, pattern: 'solid', decoration: 'single-slash' },
             // 法律分居：黑色實線 + 雙斜線
-            'legal-separated': { color: '#333333', width: 2, pattern: 'solid', decoration: 'double-slash' },
+            'legal-separated': { color: '#333333', width: 3, pattern: 'solid', decoration: 'double-slash' },
             // 離婚：黑色實線 + 雙斜線(分開)
-            'divorced': { color: '#333333', width: 2, pattern: 'solid', decoration: 'divorce-slash' },
+            'divorced': { color: '#333333', width: 3, pattern: 'solid', decoration: 'divorce-slash' },
             // 喪偶：黑色實線 + X
-            'widowed': { color: '#333333', width: 2, pattern: 'solid', decoration: 'x' },
+            'widowed': { color: '#333333', width: 3, pattern: 'solid', decoration: 'x' },
             // 訂婚並分居：黑色虛線 + 斜線
-            'engaged-separated': { color: '#333333', width: 2, pattern: 'dashed', decoration: 'single-slash' },
+            'engaged-separated': { color: '#333333', width: 3, pattern: 'dashed', decoration: 'single-slash' },
             // 訂婚並同居：黑色點線（同居樣式）
-            'engaged-cohabiting': { color: '#333333', width: 2, pattern: 'dotted' },
+            'engaged-cohabiting': { color: '#333333', width: 3, pattern: 'dotted' },
             // 同居：黑色點線（較短間隔，與訂婚的長虛線區分）
-            'cohabiting': { color: '#333333', width: 2, pattern: 'dotted' },
+            'cohabiting': { color: '#333333', width: 3, pattern: 'dotted' },
             // 法律同居：黑色點線 + 小房子
-            'legal-cohabiting': { color: '#333333', width: 2, pattern: 'dotted', decoration: 'house' },
+            'legal-cohabiting': { color: '#333333', width: 3, pattern: 'dotted', decoration: 'house' },
             // 外遇：紅色虛線
-            'affair': { color: '#E53935', width: 2, pattern: 'dashed' },
+            'affair': { color: '#E53935', width: 3, pattern: 'dashed' },
 
             // ===== 情感關係 (Emotional Relationship - 第三張圖) =====
             // 和諧：綠色實線
-            'harmony': { color: '#4caf50', width: 2, pattern: 'solid' },
+            'harmony': { color: '#4caf50', width: 3, pattern: 'solid' },
             // 冷漠：紅色虛線
-            'indifferent': { color: '#E53935', width: 2, pattern: 'dashed' },
+            'indifferent': { color: '#E53935', width: 3, pattern: 'dashed' },
             // 愛：綠色實線 + 圓
-            'love': { color: '#4caf50', width: 2, pattern: 'solid', decoration: 'circle' },
+            'love': { color: '#4caf50', width: 3, pattern: 'solid', decoration: 'circle' },
             // 熱戀：綠色實線 + 雙圓
-            'in-love': { color: '#4caf50', width: 2, pattern: 'solid', decoration: 'double-circle' },
+            'in-love': { color: '#4caf50', width: 3, pattern: 'solid', decoration: 'double-circle' },
             // 親密/友誼：綠色雙實線
-            'close': { color: '#4caf50', width: 2, pattern: 'double' },
+            'close': { color: '#4caf50', width: 3, pattern: 'double' },
             // 非常親密：綠色三實線
-            'very-close': { color: '#4caf50', width: 2, pattern: 'triple' },
+            'very-close': { color: '#4caf50', width: 3, pattern: 'triple' },
             // 衝突/不和：紅色雙實線 (Discord/Conflict)
-            'conflict': { color: '#E53935', width: 2, pattern: 'double' },
+            'conflict': { color: '#E53935', width: 3, pattern: 'double' },
             // 仇恨：紅色三實線 (Hate)
-            'hate': { color: '#E53935', width: 2, pattern: 'triple' },
+            'hate': { color: '#E53935', width: 3, pattern: 'triple' },
             // 斷絕/疏遠：紅色虛線 + 雙豎線
-            'cutoff': { color: '#E53935', width: 2, pattern: 'dashed', decoration: 'double-bar' },
-            'estranged': { color: '#E53935', width: 2, pattern: 'dashed', decoration: 'double-bar' },
+            'cutoff': { color: '#E53935', width: 3, pattern: 'dashed', decoration: 'double-bar' },
+            'estranged': { color: '#E53935', width: 3, pattern: 'dashed', decoration: 'double-bar' },
             // 敵對：紅色波浪線 (Hostile)
-            'hostile': { color: '#E53935', width: 2, pattern: 'wave' },
+            'hostile': { color: '#E53935', width: 3, pattern: 'wave' },
             // 遠距敵對：紅色波浪線 + 箭頭 (Distant Hostile)
-            'distant-hostile': { color: '#E53935', width: 2, pattern: 'wave', decoration: 'arrow' },
+            'distant-hostile': { color: '#E53935', width: 3, pattern: 'wave', decoration: 'arrow' },
             // 親密敵對：灰色雙線夾紅色鋸齒 (Close Hostile - Chart)
-            'close-hostile': { color: '#E53935', width: 2, pattern: 'close-hostile' },
+            'close-hostile': { color: '#E53935', width: 3, pattern: 'close-hostile' },
             // 融合敵對：灰色雙線夾紅色鋸齒 (Fused Hostile)
-            'fused-hostile': { color: '#E53935', width: 2, pattern: 'fused-hostile' },
+            'fused-hostile': { color: '#E53935', width: 3, pattern: 'fused-hostile' },
             // 暴力：藍色鋸齒線 (Revert to Blue per UI Legend)
-            'violence': { color: '#007BFF', width: 2, pattern: 'zigzag' },
+            'violence': { color: '#007BFF', width: 3, pattern: 'zigzag' },
             // 虐待：藍色波浪線
-            'abuse': { color: '#007BFF', width: 2, pattern: 'wave' },
+            'abuse': { color: '#007BFF', width: 3, pattern: 'wave' },
             // 身體虐待：藍色波浪 + 黑色直線 (UI Legend Style)
-            'physical-abuse': { color: '#007BFF', width: 2, pattern: 'physical-abuse' },
+            'physical-abuse': { color: '#007BFF', width: 3, pattern: 'physical-abuse' },
             // 情緒虐待：藍色鋸齒 + 黑色直線 (UI Legend Style)
-            'emotional-abuse': { color: '#007BFF', width: 2, pattern: 'emotional-abuse' },
+            'emotional-abuse': { color: '#007BFF', width: 3, pattern: 'emotional-abuse' },
             // 性虐待：藍色雙鋸齒線 (UI Legend: Double Zigzag)
-            'sexual-abuse': { color: '#007BFF', width: 2, pattern: 'sexual-abuse' },
+            'sexual-abuse': { color: '#007BFF', width: 3, pattern: 'sexual-abuse' },
             // 忽視：藍色實線 + 箭頭 + 豎線 (UI Legend: Arrow + Bar)
-            'neglect': { color: '#007BFF', width: 2, pattern: 'solid', decoration: 'arrow-bar' },
+            'neglect': { color: '#007BFF', width: 3, pattern: 'solid', decoration: 'arrow-bar' },
             // 操控：黑色實線 + 紅色 X (UI Legend)
-            'manipulative': { color: '#000000', width: 2, pattern: 'solid', decoration: 'x' },
+            'manipulative': { color: '#000000', width: 3, pattern: 'solid', decoration: 'x' },
             // 控制：紅色實線 + 方框交叉箭頭
-            'controlling': { color: '#E53935', width: 2, pattern: 'solid', decoration: 'box-cross-arrow' },
+            'controlling': { color: '#E53935', width: 3, pattern: 'solid', decoration: 'box-cross-arrow' },
             // 關注：黑色實線 + 箭頭
-            'focused': { color: '#333333', width: 2, pattern: 'solid', decoration: 'arrow' },
+            'focused': { color: '#333333', width: 3, pattern: 'solid', decoration: 'arrow' },
             // 崇拜：黑色實線 + 圓箭頭
-            'admiration': { color: '#333333', width: 2, pattern: 'solid', decoration: 'circle-arrow' },
+            'admiration': { color: '#333333', width: 3, pattern: 'solid', decoration: 'circle-arrow' },
             // 衝突又親密：特殊樣式 (紅鋸齒 + 綠雙線)
-            'conflict-close': { color: '#E53935', width: 2, pattern: 'conflict-close' },
+            'conflict-close': { color: '#E53935', width: 3, pattern: 'conflict-close' },
             // 疏離：灰色點線
-            'distant': { color: '#9e9e9e', width: 2, pattern: 'dashed', decoration: 'double-bar' }
+            'distant': { color: '#9e9e9e', width: 3, pattern: 'dashed', decoration: 'double-bar' }
         };
         return styles[this.type] || styles['married'];
     }

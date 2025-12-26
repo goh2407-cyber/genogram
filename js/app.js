@@ -53,6 +53,14 @@ class GenogramApp {
         this.boxSelectEnd = { x: 0, y: 0 };
         this.selectedPersonIds = []; // 多選的人物 ID 列表
         this.householdSelection = []; // 用於建立同住家庭的暫存選取列表
+
+        // 生活圈功能
+        this.lifeCircles = [];              // 儲存所有生活圈
+        this.isDrawingLifeCircle = false;   // 是否正在繪製生活圈
+        this.currentLifeCirclePoints = [];  // 目前繪製中的頂點
+        this.selectedLifeCircleId = null;   // 選中的生活圈 ID
+        this.lifeCircleMousePos = null;     // 繪製時的滑鼠位置（用於預覽線）
+
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
@@ -120,6 +128,7 @@ class GenogramApp {
             boxSelectToolBtn: document.getElementById('boxSelectTool'),
             connectToolBtn: document.getElementById('connectTool'),
             householdToolBtn: document.getElementById('householdTool'),
+            lifeCircleToolBtn: document.getElementById('lifeCircleTool'),
             deleteToolBtn: document.getElementById('deleteTool'),
             undoBtn: document.getElementById('undoBtn'),
             redoBtn: document.getElementById('redoBtn'),
@@ -171,6 +180,9 @@ class GenogramApp {
         this.elements.boxSelectToolBtn.addEventListener('click', () => this.setTool('boxSelect'));
         this.elements.connectToolBtn.addEventListener('click', () => this.setTool('connect'));
         this.elements.householdToolBtn.addEventListener('click', () => this.setTool('household'));
+        if (this.elements.lifeCircleToolBtn) {
+            this.elements.lifeCircleToolBtn.addEventListener('click', () => this.setTool('lifeCircle'));
+        }
         this.elements.deleteToolBtn.addEventListener('click', () => this.deleteSelected());
         this.elements.undoBtn.addEventListener('click', () => this.undo());
         this.elements.redoBtn.addEventListener('click', () => this.redo());
@@ -281,7 +293,7 @@ class GenogramApp {
                 clearTimeout(this.autoSaveTimer);
             }
             // 立即執行儲存
-            this.storage.autoSave(this.persons, this.relationships, this.households || [], {
+            this.storage.autoSave(this.persons, this.relationships, this.households || [], this.lifeCircles || [], {
                 scale: this.canvas?.scale || 1,
                 offsetX: this.canvas?.offsetX || 0,
                 offsetY: this.canvas?.offsetY || 0
@@ -322,6 +334,9 @@ class GenogramApp {
                 } else {
                     statusText = '同住圈選：拖曳圈選成員，放開後自動建立';
                 }
+                break;
+            case 'lifeCircle':
+                statusText = '生活圈繪製：點擊增加頂點，雙擊或 Enter 完成，Esc 取消';
                 break;
         }
         this.updateStatus(statusText);
@@ -390,6 +405,11 @@ class GenogramApp {
             case 'household':
                 this.elements.householdToolBtn.classList.add('active');
                 break;
+            case 'lifeCircle':
+                if (this.elements.lifeCircleToolBtn) {
+                    this.elements.lifeCircleToolBtn.classList.add('active');
+                }
+                break;
         }
 
         // 撤銷/重做按鈕狀態
@@ -431,6 +451,9 @@ class GenogramApp {
             case 'household':
                 canvas.style.cursor = 'crosshair';
                 break;
+            case 'lifeCircle':
+                canvas.style.cursor = 'crosshair';
+                break;
             default:
                 canvas.style.cursor = 'default';
         }
@@ -458,6 +481,23 @@ class GenogramApp {
                     return;
                 }
             }
+        }
+
+        // 生活圈繪製模式
+        if (this.currentTool === 'lifeCircle') {
+            if (!this.isDrawingLifeCircle) {
+                // 開始新的生活圈繪製
+                this.isDrawingLifeCircle = true;
+                this.currentLifeCirclePoints = [point];
+                this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成');
+            } else {
+                // 增加頂點
+                this.currentLifeCirclePoints.push(point);
+                const count = this.currentLifeCirclePoints.length;
+                this.updateStatus(`已新增第 ${count} 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成`);
+            }
+            this.render();
+            return;
         }
 
         if (this.currentTool === 'boxSelect' || this.currentTool === 'household') {
@@ -613,6 +653,7 @@ class GenogramApp {
                     this.selectedPersonId = null;
                     this.selectedPersonIds = [];
                     this.selectedRelationshipId = null;
+                    this.selectedLifeCircleId = null;
                     this.updatePropertyPanel();
                     this.render();
 
@@ -622,6 +663,25 @@ class GenogramApp {
                     this.updateStatus('正在拖曳同住家庭 (放開滑鼠以完成)', 'info');
                     return;
                 }
+            }
+
+            // 3.5 檢查是否點擊到生活圈
+            const clickedLifeCircle = this.getLifeCircleAt(point.x, point.y);
+            if (clickedLifeCircle && !e.shiftKey) {
+                this.selectedLifeCircleId = clickedLifeCircle.id;
+                this.selectedPersonId = null;
+                this.selectedPersonIds = [];
+                this.selectedRelationshipId = null;
+                this.selectedHouseholdId = null;
+                this.updatePropertyPanel();
+                this.render();
+
+                // 開始拖曳生活圈
+                this.canvas.isDragging = true;
+                this.canvas.dragStart = point;
+                this.canvas.draggedLifeCircle = clickedLifeCircle;
+                this.updateStatus(`已選取「${clickedLifeCircle.label}」，拖曳移動或按 Del 刪除`, 'info');
+                return;
             }
 
             // 4. 點擊空白處 (或 Shift+點擊家庭內部)，開始拖曳畫布或範圍圈選
@@ -688,6 +748,17 @@ class GenogramApp {
         if (this.canvas.isDragging) {
             let dx = point.x - this.canvas.dragStart.x;
             let dy = point.y - this.canvas.dragStart.y;
+
+            // 生活圈拖曳
+            if (this.canvas.draggedLifeCircle) {
+                this.canvas.draggedLifeCircle.points.forEach(p => {
+                    p.x += dx;
+                    p.y += dy;
+                });
+                this.canvas.dragStart = point;
+                this.render();
+                return;
+            }
 
             if (this.canvas.draggedPerson || this.canvas.draggedHousehold) {
                 // 取得正在拖曳的人員列表
@@ -937,6 +1008,7 @@ class GenogramApp {
             this.canvas.isDragging = false;
             this.canvas.draggedPerson = null;
             this.canvas.draggedHousehold = null; // 清除家庭拖曳狀態
+            this.canvas.draggedLifeCircle = null; // 清除生活圈拖曳狀態
 
             // [Bug Fix #3] 拖曳 History 合併：拖曳結束時才 push 一筆
             // 加入位移閾值檢查，避免記錄意外點擊或極小位移
@@ -1026,6 +1098,12 @@ class GenogramApp {
      * 處理雙擊（編輯人物）
      */
     handleDoubleClick(e) {
+        // 生活圈繪製模式：雙擊完成
+        if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
+            this.finishLifeCircle();
+            return;
+        }
+
         const point = this.canvas.getMousePos(e);
         const person = this.getPersonAt(point.x, point.y);
         if (person) {
@@ -1106,6 +1184,10 @@ class GenogramApp {
             case 'H':
                 this.setTool('household');
                 break;
+            case 'l':
+            case 'L':
+                this.setTool('lifeCircle');
+                break;
             case 'Delete':
             case 'Backspace':
                 e.preventDefault();
@@ -1113,7 +1195,9 @@ class GenogramApp {
                 break;
             case 'Escape':
                 // [UX Fix] 改進 Esc 處理，顯示明確的狀態訊息
-                if (this.connectingFrom) {
+                if (this.isDrawingLifeCircle) {
+                    this.cancelLifeCircle();
+                } else if (this.connectingFrom) {
                     this.connectingFrom = null;
                     this.updateStatus('連接已取消', 'info');
                 } else {
@@ -1124,6 +1208,11 @@ class GenogramApp {
                 this.render();
                 break;
             case 'Enter':
+                // 生活圈繪製：按 Enter 完成
+                if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
+                    this.finishLifeCircle();
+                    break;
+                }
                 // [UX Fix] Enter 鍵建立同住框 (避免自動建立)
                 if (this.currentTool === 'household') {
                     if (this.selectedPersonIds.length > 0) {
@@ -1220,6 +1309,38 @@ class GenogramApp {
             }
         }
         return null;
+    }
+
+    /**
+     * 偵測點擊位置是否在生活圈內
+     */
+    getLifeCircleAt(x, y) {
+        // 從後往前檢查（後建立的在上層）
+        for (let i = this.lifeCircles.length - 1; i >= 0; i--) {
+            const lc = this.lifeCircles[i];
+            if (this.isPointInPolygon(x, y, lc.points)) {
+                return lc;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 點在多邊形內判斷（射線法）
+     */
+    isPointInPolygon(x, y, points) {
+        if (!points || points.length < 3) return false;
+
+        let inside = false;
+        for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+            const xi = points[i].x, yi = points[i].y;
+            const xj = points[j].x, yj = points[j].y;
+
+            const intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
     }
 
     /**
@@ -1895,6 +2016,64 @@ class GenogramApp {
     }
 
     /**
+     * 完成生活圈繪製
+     */
+    finishLifeCircle() {
+        if (this.currentLifeCirclePoints.length < 3) {
+            this.updateStatus('生活圈至少需要3個頂點', 'warning');
+            return;
+        }
+
+        const newLifeCircle = {
+            id: 'lc_' + Date.now(),
+            points: [...this.currentLifeCirclePoints],
+            color: this.getNextLifeCircleColor(),
+            label: `生活圈 ${this.lifeCircles.length + 1}`
+        };
+
+        this.lifeCircles.push(newLifeCircle);
+
+        // 重置繪製狀態
+        this.isDrawingLifeCircle = false;
+        this.currentLifeCirclePoints = [];
+        this.lifeCircleMousePos = null;
+
+        // 選取剛建立的生活圈
+        this.selectedLifeCircleId = newLifeCircle.id;
+
+        this.updateStatus(`已建立「${newLifeCircle.label}」`, 'success');
+        this.saveState();
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * 取消生活圈繪製
+     */
+    cancelLifeCircle() {
+        this.isDrawingLifeCircle = false;
+        this.currentLifeCirclePoints = [];
+        this.lifeCircleMousePos = null;
+        this.updateStatus('生活圈繪製已取消', 'info');
+        this.render();
+    }
+
+    /**
+     * 獲取下一個生活圈的顏色
+     */
+    getNextLifeCircleColor() {
+        const colors = [
+            'rgba(74, 144, 226, 0.15)',   // 藍色
+            'rgba(80, 200, 120, 0.15)',   // 綠色
+            'rgba(255, 165, 0, 0.15)',    // 橙色
+            'rgba(148, 103, 189, 0.15)',  // 紫色
+            'rgba(255, 99, 132, 0.15)',   // 粉紅
+            'rgba(75, 192, 192, 0.15)'    // 青色
+        ];
+        return colors[this.lifeCircles.length % colors.length];
+    }
+
+    /**
      * 設定屬性表單事件
      */
     setupPropertyFormEvents() {
@@ -2422,6 +2601,17 @@ class GenogramApp {
             this.autoSave();
             this.render();
         }
+        // 優先權 2.5: 刪除「生活圈」
+        else if (this.selectedLifeCircleId) {
+            this.saveState();
+            const lc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+            this.lifeCircles = this.lifeCircles.filter(l => l.id !== this.selectedLifeCircleId);
+            this.selectedLifeCircleId = null;
+            this.updateStatus(`已刪除「${lc?.label || '生活圈'}」`, 'success');
+            this.updatePropertyPanel();
+            this.autoSave();
+            this.render();
+        }
         // 優先權 3: 刪除多選人物
         else if (this.selectedPersonIds.length > 0) {
             // 刪除多選的人物
@@ -2483,6 +2673,16 @@ class GenogramApp {
             this.selectedHouseholdId, // 選中的家庭 ID
             this.hoveredPersonId // hover 的角色 ID
         );
+
+        // 繪製生活圈（在最底層，但因為是 overlay 方式，需要特殊處理）
+        if (this.lifeCircles && this.lifeCircles.length > 0) {
+            this.canvas.drawLifeCircles(this.lifeCircles, this.selectedLifeCircleId);
+        }
+
+        // 繪製生活圈預覽（正在繪製中）
+        if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
+            this.canvas.drawLifeCirclePreview(this.currentLifeCirclePoints, this.lifeCircleMousePos);
+        }
     }
 
     /**
@@ -2746,7 +2946,8 @@ class GenogramApp {
         return {
             persons: this.persons.map(p => p.toJSON()),
             relationships: this.relationships.map(r => r.toJSON()),
-            households: this.households || []
+            households: this.households || [],
+            lifeCircles: this.lifeCircles || []
         };
     }
 
@@ -2791,7 +2992,7 @@ class GenogramApp {
         this.autoSave();
 
         // 2. 嘗試直接寫入檔案 (如果瀏覽器支援且有連結)
-        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || []);
+        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
 
         if (result === true) {
             this.updateStatus(`已成功儲存至檔案: ${this.storage.getOpenFileName()}`, 'success');
@@ -2815,7 +3016,7 @@ class GenogramApp {
         const timestamp = new Date().toISOString().slice(0, 10);
         const filename = suggestedName || `genogram_${timestamp}.json`;
         this.updateStatus(`正在另存檔案: ${filename}...`, 'info');
-        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], filename);
+        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename);
         if (success) {
             this.updateStatus(`已成功導出: ${this.storage.getOpenFileName()}`, 'success');
             this.autoSave();
@@ -2830,6 +3031,7 @@ class GenogramApp {
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
         this.relationships = (data.relationships || []).map(r => Relationship.fromJSON(r));
         this.households = data.households || [];
+        this.lifeCircles = data.lifeCircles || [];
         this.selectedPersonId = null;
         this.updatePropertyPanel();
         this.autoSave();
@@ -2885,7 +3087,7 @@ class GenogramApp {
      * 匯出 PNG
      */
     exportPNG() {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || []);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -3061,7 +3263,7 @@ class GenogramApp {
             // 避免頻繁重複寫入
             if (now - this.lastAutoSaveTime < 1000) return;
 
-            this.storage.autoSave(this.persons, this.relationships, this.households || [], {
+            this.storage.autoSave(this.persons, this.relationships, this.households || [], this.lifeCircles || [], {
                 scale: this.scale,
                 offsetX: this.offsetX,
                 offsetY: this.offsetY
@@ -3081,6 +3283,7 @@ class GenogramApp {
             this.persons = saved.persons;
             this.relationships = saved.relationships;
             this.households = saved.households || [];
+            this.lifeCircles = saved.lifeCircles || [];
 
             // 還原視圖狀態
             // [Bug Fix] 視圖狀態應寫入 canvas 物件而非 app
@@ -3908,6 +4111,23 @@ class GenogramApp {
             });
 
             // 5. 展開單位並處理內部排序
+            // 建立一個暫存結構來追蹤需要延後處理的配偶
+            const deferredSpouses = []; // { spouseId, bloodRelativeId, position: 'left'|'right' }
+            const bloodRelativeIds = new Set(); // 有父母的人（血親）
+
+            // 預先識別所有血親（在此代中有父母的人）
+            if (genIndex > 0) {
+                personIds.forEach(pid => {
+                    const hasParentInPrevGen = familyRels.some(r =>
+                        (r.toPersonId === pid && prevGenIds.includes(r.fromPersonId)) ||
+                        (r.fromPersonId === pid && prevGenIds.includes(r.toPersonId))
+                    );
+                    if (hasParentInPrevGen) {
+                        bloodRelativeIds.add(pid);
+                    }
+                });
+            }
+
             units.forEach(unit => {
                 if (unit.type === 'household') {
                     const members = [...unit.members];
@@ -3930,14 +4150,49 @@ class GenogramApp {
                 } else if (unit.type === 'couple') {
                     const [p1, p2] = unit.members;
                     const per1 = personMap[p1], per2 = personMap[p2];
-                    // 男左女右
-                    if (per1?.gender === 'female' && per2?.gender === 'male') {
-                        sortedIds.push(p2, p1);
+
+                    // 識別哪個是血親，哪個是姻親配偶
+                    const p1IsBlood = bloodRelativeIds.has(p1);
+                    const p2IsBlood = bloodRelativeIds.has(p2);
+
+                    if (p1IsBlood && !p2IsBlood) {
+                        // p1 是血親，p2 是姻親配偶
+                        // 先只加入血親，配偶稍後放到邊緣
+                        sortedIds.push(p1);
+                        deferredSpouses.push({ spouseId: p2, bloodRelativeId: p1 });
+                    } else if (p2IsBlood && !p1IsBlood) {
+                        // p2 是血親，p1 是姻親配偶
+                        sortedIds.push(p2);
+                        deferredSpouses.push({ spouseId: p1, bloodRelativeId: p2 });
                     } else {
-                        sortedIds.push(p1, p2);
+                        // 兩者都是血親，或都不是血親 → 維持男左女右
+                        if (per1?.gender === 'female' && per2?.gender === 'male') {
+                            sortedIds.push(p2, p1);
+                        } else {
+                            sortedIds.push(p1, p2);
+                        }
                     }
                 } else {
                     sortedIds.push(...unit.members);
+                }
+            });
+
+            // 處理延後的配偶 - 放在血親的外側
+            deferredSpouses.forEach(({ spouseId, bloodRelativeId }) => {
+                const bloodIdx = sortedIds.indexOf(bloodRelativeId);
+                if (bloodIdx !== -1) {
+                    // 判斷血親在哪一側
+                    const midPoint = sortedIds.length / 2;
+                    if (bloodIdx < midPoint) {
+                        // 血親在左半邊，配偶插入其左邊
+                        sortedIds.splice(bloodIdx, 0, spouseId);
+                    } else {
+                        // 血親在右半邊，配偶插入其右邊
+                        sortedIds.splice(bloodIdx + 1, 0, spouseId);
+                    }
+                } else {
+                    // 找不到血親，直接加到最後
+                    sortedIds.push(spouseId);
                 }
             });
 
