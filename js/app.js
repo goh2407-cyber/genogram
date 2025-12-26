@@ -1486,15 +1486,43 @@ class GenogramApp {
         const grid = GenogramApp.GRID;
         const childY = parent.y + grid.CELL_HEIGHT;
 
-        // 計算 X 座標（避免重疊）
-        let childX = parent.x;
-        const existingChildren = this.persons.filter(p =>
-            Math.abs(p.y - childY) < grid.CELL_HEIGHT * 0.5
-        );
-        if (existingChildren.length > 0) {
+        // 找配偶
+        const spouse = this.findSpouse(parent.id);
+        const parentIds = spouse ? [parent.id, spouse.id] : [parent.id];
+
+        // 找出這對父母現有的所有子女
+        const existingChildren = this.persons.filter(p => {
+            // 檢查是否有從任一父母到此人的 parent-child 關係
+            return this.relationships.some(r =>
+                parentIds.includes(r.fromPersonId) &&
+                r.toPersonId === p.id &&
+                r.type === 'parent-child'
+            );
+        });
+
+        // 計算新子女的 X 座標
+        let childX;
+        if (existingChildren.length === 0) {
+            // 第一個子女：放在父母中間
+            if (spouse) {
+                childX = (parent.x + spouse.x) / 2;
+            } else {
+                childX = parent.x;
+            }
+        } else {
+            // 有現有子女：放在最右邊子女的右側
             const rightmost = Math.max(...existingChildren.map(p => p.x));
-            if (Math.abs(childX - rightmost) < grid.CELL_WIDTH * 0.8) {
-                childX = rightmost + grid.CELL_WIDTH;
+            childX = rightmost + grid.CELL_WIDTH;
+        }
+
+        // 額外檢查：確保不會與同層其他人重疊
+        const sameLevelPersons = this.persons.filter(p =>
+            Math.abs(p.y - childY) < grid.CELL_HEIGHT * 0.3
+        );
+        if (sameLevelPersons.length > 0) {
+            const occupied = sameLevelPersons.map(p => p.x);
+            while (occupied.some(x => Math.abs(x - childX) < grid.CELL_WIDTH * 0.8)) {
+                childX += grid.CELL_WIDTH;
             }
         }
 
@@ -1514,8 +1542,7 @@ class GenogramApp {
         });
         this.relationships.push(parentChildRel);
 
-        // 尋找配偶（婚姻或同居關係），為配偶也建立親子關係
-        const spouse = this.findSpouse(parent.id);
+        // 為配偶也建立親子關係
         if (spouse) {
             const spouseChildRel = new Relationship({
                 fromPersonId: spouse.id,
