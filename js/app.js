@@ -3176,7 +3176,7 @@ class GenogramApp {
      * 匯出 JPEG
      */
     exportJPEG() {
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || []);
+        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -3191,7 +3191,7 @@ class GenogramApp {
     exportSVG() {
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || []);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -3219,7 +3219,7 @@ class GenogramApp {
      * 匯出 PDF
      */
     exportPDF() {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || []);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -3242,6 +3242,7 @@ class GenogramApp {
             this.persons,
             this.relationships,
             this.households || [],
+            this.lifeCircles || [],
             `genogram_backup_${timestamp}.json`
         );
     }

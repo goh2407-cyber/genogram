@@ -1998,7 +1998,7 @@ class GenogramCanvas {
      * @param {number} quality - JPEG 品質 (0-1)
      * @returns {string|null} - Data URL 或 null
      */
-    exportToJPEG(persons, relationships, households = [], quality = 0.92) {
+    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -2019,6 +2019,20 @@ class GenogramCanvas {
                 const bounds = this.getHouseholdBounds(household, persons, relationships);
                 if (bounds && bounds.hullPoints) {
                     bounds.hullPoints.forEach(pt => {
+                        minX = Math.min(minX, pt.x);
+                        minY = Math.min(minY, pt.y);
+                        maxX = Math.max(maxX, pt.x);
+                        maxY = Math.max(maxY, pt.y);
+                    });
+                }
+            });
+        }
+
+        // 考慮 lifeCircles 的邊界
+        if (lifeCircles && lifeCircles.length > 0) {
+            lifeCircles.forEach(lc => {
+                if (lc.points) {
+                    lc.points.forEach(pt => {
                         minX = Math.min(minX, pt.x);
                         minY = Math.min(minY, pt.y);
                         maxX = Math.max(maxX, pt.x);
@@ -2060,6 +2074,11 @@ class GenogramCanvas {
 
         this.ctx.save();
         this.ctx.translate(-minX, -minY);
+
+        // 繪製生活圈
+        if (lifeCircles && lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(lifeCircles);
+        }
 
         if (households && households.length > 0) {
             this.drawHouseholds(households, persons, relationships, false, null);

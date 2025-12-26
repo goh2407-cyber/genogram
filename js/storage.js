@@ -423,15 +423,17 @@ class StorageManager {
      * @param {Array<Person>} persons
      * @param {Array<Relationship>} relationships
      * @param {Array} households
+     * @param {Array} lifeCircles
      * @param {string} filename
      */
-    exportDataJSON(persons, relationships, households = [], filename = 'genogram_backup.json') {
+    exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json') {
         const data = {
             version: '1.0',
             exportedAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
-            households: households || []
+            households: households || [],
+            lifeCircles: lifeCircles || []
         };
 
         const jsonStr = JSON.stringify(data, null, 2);
