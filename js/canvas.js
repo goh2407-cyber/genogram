@@ -534,6 +534,10 @@ class GenogramCanvas {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'bottom'; // 以底部為基準
 
+        // 為了不蓋住線條，將文字基礎位置向上偏移
+        // 假設線寬最大約 4px，向上偏移 8px 應足夠
+        const textBaseY = finalY - 8;
+
         // 處理換行
         const lines = relationship.date.split('\n');
         const lineHeight = 16;
@@ -549,12 +553,12 @@ class GenogramCanvas {
 
         // 畫半透明背景
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-        this.ctx.fillRect(finalX - maxWidth / 2 - padding, finalY - totalHeight - padding, maxWidth + padding * 2, totalHeight + padding);
+        this.ctx.fillRect(finalX - maxWidth / 2 - padding, textBaseY - totalHeight - padding, maxWidth + padding * 2, totalHeight + padding);
 
         // 畫文字
         this.ctx.fillStyle = '#333';
         lines.forEach((line, i) => {
-            const y = finalY - (lines.length - 1 - i) * lineHeight;
+            const y = textBaseY - (lines.length - 1 - i) * lineHeight;
             this.ctx.fillText(line, finalX, y - 2);
         });
 
