@@ -2727,8 +2727,30 @@ class GenogramCanvas {
                 // 單親
                 const p = parentObjs[0];
                 sourceX = p.x;
-                sourceY = p.y + this.personSize / 2;
+                // 計算備註高度偏移
+                let notesOffset = 0;
+                if (p.name) {
+                    notesOffset += this.fontSize + 8; // 姓名高度
+                    if (p.notes) {
+                        notesOffset += this.fontSize * 0.8 + 4; // 備註高度
+                    }
+                }
+                sourceY = p.y + this.personSize / 2 + notesOffset;
             }
+
+            // [Fix] 確保 sourceY 在所有父母備註之下 (避免線條穿過備註)
+            parentObjs.forEach(p => {
+                let parentBottom = p.y + this.personSize / 2;
+                if (p.name) {
+                    parentBottom += this.fontSize + 8; // 姓名高度
+                    if (p.notes) {
+                        parentBottom += this.fontSize * 0.8 + 4; // 備註高度
+                    }
+                }
+                if (sourceY < parentBottom) {
+                    sourceY = parentBottom;
+                }
+            });
 
             // 計算孩子的高度 (Bar Y position)
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
