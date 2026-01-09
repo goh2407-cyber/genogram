@@ -2232,9 +2232,16 @@ class GenogramApp {
         const medLang = document.getElementById('medLang');
         if (medLang) medLang.addEventListener('change', (e) => updateMedical('hasLanguageProblem', e.target.checked));
 
-        // 備註
+        // 備註 (最多 2 行)
         document.getElementById('personNotes').addEventListener('input', (e) => {
-            person.notes = e.target.value;
+            let value = e.target.value;
+            // 限制最多 2 行
+            const lines = value.split('\n');
+            if (lines.length > 2) {
+                value = lines.slice(0, 2).join('\n');
+                e.target.value = value;
+            }
+            person.notes = value;
             this.autoSave();
         });
     }

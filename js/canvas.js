@@ -3289,8 +3289,10 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
-            // 路徑：只包含子女的垂直線段（這是高亮顯示的部分）
-            // 編輯按鈕會顯示在這段線的中間
+            // 路徑：包含橫槓延伸 + 子女垂直線段 (更容易點擊)
+            // 橫槓往左延伸一段距離 (100px 或到父母 X 位置)
+            const barExtendLeft = Math.min(childPerson.x - 100, parentPerson.x);
+            points.push({ x: barExtendLeft, y: barY });
             points.push({ x: childPerson.x, y: barY });
             points.push({ x: childPerson.x, y: childTop });
         } else if (category === 'marriage') {
