@@ -2739,6 +2739,9 @@ class GenogramCanvas {
             }
 
             // [Fix] 確保 sourceY 在所有父母備註之下 (避免線條穿過備註)
+            // 先記錄原始連接點 (婚姻線中心或人物底部)
+            const originalSourceY = sourceY;
+
             parentObjs.forEach(p => {
                 let parentBottom = p.y + this.personSize / 2;
                 if (p.name) {
@@ -2785,6 +2788,14 @@ class GenogramCanvas {
 
                     this.ctx.restore();
                 }
+            }
+
+            // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線 (必要時才畫)
+            if (originalSourceY < sourceY) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(sourceX, originalSourceY);
+                this.ctx.lineTo(sourceX, sourceY);
+                this.ctx.stroke();
             }
 
             // 繪製 Source -> Bar 的垂直線 (預設樣式)
