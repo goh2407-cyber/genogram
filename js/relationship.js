@@ -141,6 +141,7 @@ class Relationship {
         this.toPersonId = data.toPersonId;
         this.type = data.type || Relationship.TYPES.MARRIED;
         this.notes = data.notes || '';
+        this.date = data.date || ''; // 時間/說明
     }
 
     /**
@@ -244,7 +245,8 @@ class Relationship {
             fromPersonId: this.fromPersonId,
             toPersonId: this.toPersonId,
             type: this.type,
-            notes: this.notes
+            notes: this.notes,
+            date: this.date
         };
     }
 

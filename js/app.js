@@ -1905,6 +1905,10 @@ class GenogramApp {
                         </small>
                     </div>
                     <div class="form-group">
+                        <label>時間/說明 (顯示於線上)</label>
+                        <input type="text" id="relationshipDate" value="${relationship.date || ''}" placeholder="例如：結婚 2010, 離婚 2020">
+                    </div>
+                    <div class="form-group">
                         <label>備註</label>
                         <textarea id="relationshipNotes" rows="3" placeholder="輸入備註">${relationship.notes || ''}</textarea>
                     </div>
@@ -1915,6 +1919,15 @@ class GenogramApp {
             `;
 
             // 綁定事件
+            const dateInput = document.getElementById('relationshipDate');
+            if (dateInput) {
+                dateInput.addEventListener('input', (e) => {
+                    relationship.date = e.target.value;
+                    this.autoSave();
+                    this.render(); // 重新渲染以顯示時間
+                });
+            }
+
             const notesInput = document.getElementById('relationshipNotes');
             if (notesInput) {
                 notesInput.addEventListener('input', (e) => {
@@ -1975,6 +1988,10 @@ class GenogramApp {
                         <input type="checkbox" id="personIP" ${person.isIdentifiedPatient ? 'checked' : ''}>
                         <label for="personIP">案主 / 關注對象</label>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label for="personNotes">備註</label>
+                    <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)">${person.notes || ''}</textarea>
                 </div>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
             <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
@@ -2149,6 +2166,16 @@ class GenogramApp {
             this.render();
             this.autoSave();
         });
+
+        // 備註
+        const notesInput = document.getElementById('personNotes');
+        if (notesInput) {
+            notesInput.addEventListener('input', (e) => {
+                person.notes = e.target.value;
+                this.render();
+                this.autoSave();
+            });
+        }
 
         // 性別
         document.getElementById('personGender').addEventListener('change', (e) => {

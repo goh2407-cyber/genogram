@@ -183,6 +183,15 @@ class GenogramCanvas {
             }
         });
 
+        // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
+        otherRels.forEach(rel => {
+            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
+                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+            }
+        });
+
         // 4. 繪製正在連接的線
         if (connectingFrom && connectingFrom.targetX !== undefined) {
             this.ctx.save();
@@ -461,7 +470,81 @@ class GenogramCanvas {
             this.ctx.textBaseline = 'top';
             this.ctx.fillStyle = '#333';
             this.ctx.fillText(name, x, y + halfSize + 8);
+
+            // 備註 (顯示於姓名下方)
+            if (person.notes) {
+                this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`; // 較小字體
+                this.ctx.fillStyle = '#666'; // 灰色
+                this.ctx.fillText(person.notes, x, y + halfSize + 8 + this.fontSize + 4);
+            }
         }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 繪製關係線上的日期/說明 (顯示於線上)
+     */
+    drawRelationshipDate(fromPerson, toPerson, relationship, persons, relationships) {
+        if (!relationship.date) return;
+
+        // 計算 Offset (需與 drawRelationship 邏輯保持一致)
+        const sharedRelationships = relationships.filter(r =>
+            (r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id) ||
+            (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)
+        );
+        // 過濾掉 parent-child，只保留 marriage/emotional 類型的關係參與計算 offset
+        const compareRels = sharedRelationships.filter(r => {
+            const cat = typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type);
+            return cat !== 'family';
+        });
+
+        compareRels.sort((a, b) => a.id.localeCompare(b.id));
+
+        const index = compareRels.findIndex(r => r.id === relationship.id);
+        const total = compareRels.length;
+        const gap = 30; // 假設 gap 為 30，需確認 drawRelationship 實際值
+
+        let offset = 0;
+        if (index !== -1) {
+            offset = (index - (total - 1) / 2) * gap;
+        }
+
+        // 計算中心點與偏移
+        const dx = toPerson.x - fromPerson.x;
+        const dy = toPerson.y - fromPerson.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+
+        // 單位法向量 (normal vector)
+        const nx = -dy / dist;
+        const ny = dx / dist;
+
+        // 線條中心點
+        const cx = (fromPerson.x + toPerson.x) / 2;
+        const cy = (fromPerson.y + toPerson.y) / 2;
+
+        // 應用偏移 (Offset)
+        const finalX = cx + nx * offset;
+        const finalY = cy + ny * offset;
+
+        // 繪製文字
+        this.ctx.save();
+        this.ctx.font = '12px ' + this.fontFamily;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom'; // 顯示在線上方
+
+        const textToDraw = relationship.date;
+        const textWidth = this.ctx.measureText(textToDraw).width;
+
+        // 畫半透明背景以防重疊看不清
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        // 背景位置調整 (稍微上移以蓋住線條)
+        this.ctx.fillRect(finalX - textWidth / 2 - 2, finalY - 14, textWidth + 4, 14);
+
+        // 畫文字
+        this.ctx.fillStyle = '#333';
+        this.ctx.fillText(textToDraw, finalX, finalY - 2);
 
         this.ctx.restore();
     }
