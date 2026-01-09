@@ -3191,11 +3191,31 @@ class GenogramCanvas {
 
         // 計算路徑中點
         const totalLen = this.getPathLength(path);
-        const midPoint = this.getPointAtDistance(path, totalLen / 2);
+        const info = this.getPointInfoAtDistance(path, totalLen / 2);
 
         const buttonRadius = 14;
-        const x = midPoint.x;
-        const y = midPoint.y;
+        const offsetDist = 24; // 半徑 14 + 間隙 10
+
+        // 計算法向量 (垂直於切線)
+        let nx = -info.tangent.y;
+        let ny = info.tangent.x;
+
+        // 調整方向：偏好螢幕上方 (ny < 0)
+        // 如果線條接近水平，ny 會很大（負或正）。我們強迫 ny 為負。
+        // 如果線條接近垂直，ny 接近 0。這時按鈕可以放在右側。
+        if (ny > 0) {
+            nx = -nx;
+            ny = -ny;
+        } else if (Math.abs(ny) < 0.001) {
+            // 垂直線，確保往右移
+            if (nx < 0) {
+                nx = -nx;
+                ny = -ny;
+            }
+        }
+
+        const x = info.point.x + nx * offsetDist;
+        const y = info.point.y + ny * offsetDist;
 
         // 儲存按鈕位置供點擊偵測使用
         this.lastEditButtonPosition = { x, y, radius: buttonRadius };
@@ -3249,11 +3269,32 @@ class GenogramCanvas {
 
         // 計算路徑中點
         const totalLen = this.getPathLength(path);
-        const midPoint = this.getPointAtDistance(path, totalLen / 2);
+        const info = this.getPointInfoAtDistance(path, totalLen / 2);
 
         const buttonRadius = 14;
-        const dx = px - midPoint.x;
-        const dy = py - midPoint.y;
+        const offsetDist = 24;
+
+        // 計算法向量 (垂直於切線)
+        let nx = -info.tangent.y;
+        let ny = info.tangent.x;
+
+        // 調整方向：偏好螢幕上方 (ny < 0)
+        if (ny > 0) {
+            nx = -nx;
+            ny = -ny;
+        } else if (Math.abs(ny) < 0.001) {
+            // 垂直線，確保往右移
+            if (nx < 0) {
+                nx = -nx;
+                ny = -ny;
+            }
+        }
+
+        const buttonX = info.point.x + nx * offsetDist;
+        const buttonY = info.point.y + ny * offsetDist;
+
+        const dx = px - buttonX;
+        const dy = py - buttonY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         return distance <= buttonRadius + 5; // 增加一些容差
