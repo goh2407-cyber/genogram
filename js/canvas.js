@@ -1303,25 +1303,31 @@ class GenogramCanvas {
             this.ctx.restore();
 
         } else if (style.pattern === 'physical-abuse') {
-            // 身體虐待: 藍色波浪 + 偏移黑色直線(在上方)
+            // 身體虐待: 藍色波浪 + 中央黑色直線
             // Blue Wave (Inherited color assumed Blue)
             this.drawWaveOnPath(path, totalLen);
-            // Black Line (偏移 +4 在上方)
+            // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
             this.ctx.setLineDash([]);
-            this.drawParallelPath(path, 4);
+            this.ctx.beginPath();
+            this.ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+            this.ctx.stroke();
             this.ctx.restore();
 
         } else if (style.pattern === 'emotional-abuse') {
-            // 情緒虐待: 藍色大振幅鋸齒 + 偏移黑色直線
-            // 使用更大振幅 (8) 和更長波長 (14) 來與身體虐待區分
-            this.drawZigzagOnPath(path, totalLen, 8, 14);
-            // Black Line (偏移 -4 在下方，與波浪上的黑線區分)
+            // 情緒虐待: 藍色鋸齒 + 中央黑色直線
+            // 使用較小振幅 (4) 和較短波長 (8) 讓鋸齒更密集，與波浪明顯區分
+            this.drawZigzagOnPath(path, totalLen, 4, 8);
+            // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
             this.ctx.setLineDash([]);
-            this.drawParallelPath(path, -4);
+            this.ctx.beginPath();
+            this.ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+            this.ctx.stroke();
             this.ctx.restore();
 
         } else if (style.pattern === 'sexual-abuse') {
