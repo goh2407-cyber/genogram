@@ -2792,10 +2792,13 @@ class GenogramCanvas {
                     this.ctx.lineCap = 'round';
                     this.ctx.lineJoin = 'round';
 
-                    // 繪製高亮背景 - 僅選中子女的垂直線
+                    // 繪製高亮背景 - L 形 (橫槓延伸 + 垂直線)
                     const childTop = selectedChild.y - this.personSize / 2;
+                    const barExtend = 250; // 與點擊偵測相同的延伸長度
                     this.ctx.beginPath();
-                    this.ctx.moveTo(selectedChild.x, barY);
+                    // L 形：從左邊開始，到子女 X，再往下到子女
+                    this.ctx.moveTo(selectedChild.x - barExtend, barY);
+                    this.ctx.lineTo(selectedChild.x, barY);
                     this.ctx.lineTo(selectedChild.x, childTop);
                     this.ctx.stroke();
 
