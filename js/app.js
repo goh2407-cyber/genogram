@@ -40,6 +40,7 @@ class GenogramApp {
         this.currentTool = 'select'; // select, addMale, addFemale, connect, boxSelect, household
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
+        this.editingRelationshipId = null; // 正在編輯的關係線 ID (用於修改關係類型)
         this.selectedHouseholdId = null; // 選中的圈選框 ID
         this.connectingFrom = null; // 用於建立關係的第一個人物
         this.connectingTo = null;
@@ -249,7 +250,15 @@ class GenogramApp {
             btn.addEventListener('click', (e) => {
                 // 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)
                 const type = e.currentTarget.dataset.type;
-                this.createRelationship(type);
+
+                // 判斷是編輯模式還是新建模式
+                if (this.editingRelationshipId) {
+                    // 編輯模式：更新現有關係的類型
+                    this.updateRelationshipType(type);
+                } else {
+                    // 新建模式：建立新關係
+                    this.createRelationship(type);
+                }
             });
         });
 
@@ -606,7 +615,24 @@ class GenogramApp {
 
             }
 
-            // 2. 檢查是否點擊到關係線
+            // 2. 先檢查是否點擊在編輯按鈕上（優先於關係線檢測）
+            if (this.selectedRelationshipId) {
+                const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+                if (selectedRel) {
+                    const fromPerson = this.persons.find(p => p.id === selectedRel.fromPersonId);
+                    const toPerson = this.persons.find(p => p.id === selectedRel.toPersonId);
+                    if (fromPerson && toPerson) {
+                        if (this.canvas.isPointOnEditButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
+                            // 點擊了編輯按鈕，開啟關係類型編輯選單
+                            this.editingRelationshipId = selectedRel.id;
+                            this.showRelationshipEditModal();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 3. 檢查是否點擊到關係線
             const clickedRel = this.getRelationshipAt(point.x, point.y);
             if (clickedRel) {
                 // 檢查這條線是否完全在某個家庭內 (Selected by default?)
@@ -2205,14 +2231,89 @@ class GenogramApp {
     }
 
     /**
+     * 顯示關係類型編輯對話框（修改現有關係）
+     */
+    showRelationshipEditModal() {
+        // 變更 Modal 標題為「修改關係類型」
+        const modalTitle = this.elements.relationshipModal.querySelector('.modal-title');
+        if (modalTitle) {
+            modalTitle.textContent = '修改關係類型';
+        }
+        this.elements.relationshipModal.classList.add('active');
+    }
+
+    /**
      * 關閉關係選擇對話框
      */
     closeRelationshipModal() {
         this.elements.relationshipModal.classList.remove('active');
+
+        // 恢復標題為預設
+        const modalTitle = this.elements.relationshipModal.querySelector('.modal-title');
+        if (modalTitle) {
+            modalTitle.textContent = '選擇關係類型';
+        }
+
+        // 清除新建關係狀態
         this.connectingFrom = null;
         this.connectingTo = null;
+
+        // 清除編輯模式狀態
+        this.editingRelationshipId = null;
+
         // 連接完成後切換回選取工具
         this.setTool('select');
+    }
+
+    /**
+     * 更新關係類型（編輯模式）
+     * @param {string} type - 新的關係類型
+     */
+    updateRelationshipType(type) {
+        if (!type || type === 'undefined') return;
+        if (!this.editingRelationshipId) return;
+
+        const relationship = this.relationships.find(r => r.id === this.editingRelationshipId);
+        if (!relationship) {
+            this.closeRelationshipModal();
+            return;
+        }
+
+        // 如果類型相同，不做任何變更
+        if (relationship.type === type) {
+            this.closeRelationshipModal();
+            return;
+        }
+
+        // 驗證婚姻類關係的限制規則
+        const fromPerson = this.persons.find(p => p.id === relationship.fromPersonId);
+        const toPerson = this.persons.find(p => p.id === relationship.toPersonId);
+        const category = Relationship.getCategory(type);
+
+        if (category === 'marriage') {
+            const validationResult = this.validateMarriageRelationship(fromPerson, toPerson);
+            if (!validationResult.valid) {
+                this.updateStatus(validationResult.message, 'error');
+                this.closeRelationshipModal();
+                return;
+            }
+        }
+
+        // 儲存狀態供復原使用
+        this.saveState();
+
+        // 更新關係類型
+        const oldType = relationship.type;
+        relationship.type = type;
+
+        // 顯示更新成功訊息
+        const newTypeName = Relationship.getTypeName(type);
+        const oldTypeName = Relationship.getTypeName(oldType);
+        this.updateStatus(`已將關係從「${oldTypeName}」改為「${newTypeName}」`, 'info');
+
+        this.closeRelationshipModal();
+        this.autoSave();
+        this.render();
     }
 
     /**

@@ -223,6 +223,18 @@ class GenogramCanvas {
             }
         }
 
+        // 9. 繪製關係線編輯按鈕 (選中關係線時顯示)
+        if (selectedRelationshipId) {
+            const selectedRel = relationships.find(r => r.id === selectedRelationshipId);
+            if (selectedRel) {
+                const fromPerson = persons.find(p => p.id === selectedRel.fromPersonId);
+                const toPerson = persons.find(p => p.id === selectedRel.toPersonId);
+                if (fromPerson && toPerson) {
+                    this.drawRelationshipEditButton(selectedRel, fromPerson, toPerson, relationships);
+                }
+            }
+        }
+
         this.ctx.restore();
     }
 
@@ -1241,12 +1253,12 @@ class GenogramCanvas {
         const totalLen = this.getPathLength(path);
 
         if (style.pattern === 'double') {
-            this.drawParallelPath(path, 2);
-            this.drawParallelPath(path, -2);
+            this.drawParallelPath(path, 4);
+            this.drawParallelPath(path, -4);
         } else if (style.pattern === 'triple') {
             this.drawParallelPath(path, 0);
-            this.drawParallelPath(path, 3);
-            this.drawParallelPath(path, -3);
+            this.drawParallelPath(path, 5);
+            this.drawParallelPath(path, -5);
         } else if (style.pattern === 'wave') {
             const lines = style.lines || 1;
             this.drawWaveOnPath(path, totalLen, lines);
@@ -1291,33 +1303,25 @@ class GenogramCanvas {
             this.ctx.restore();
 
         } else if (style.pattern === 'physical-abuse') {
-            // 身體虐待: 藍色波浪 + 黑色直線
+            // 身體虐待: 藍色波浪 + 偏移黑色直線(在上方)
             // Blue Wave (Inherited color assumed Blue)
             this.drawWaveOnPath(path, totalLen);
-            // Black Line
+            // Black Line (偏移 +4 在上方)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
             this.ctx.setLineDash([]);
-            this.ctx.beginPath();
-            this.ctx.moveTo(path[0].x, path[0].y);
-            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
-            this.ctx.stroke();
+            this.drawParallelPath(path, 4);
             this.ctx.restore();
 
         } else if (style.pattern === 'emotional-abuse') {
-            // 情緒虐待: 藍色鋸齒 + 黑色直線
-            // Blue Zigzag (Inherited color assumed Blue)
-            // Use sawtooth-like parameters? Legend looks like standard zigzag.
-            // Or maybe smaller? Let's use standard zigzag first.
-            this.drawZigzagOnPath(path, totalLen);
-            // Black Line
+            // 情緒虐待: 藍色大振幅鋸齒 + 偏移黑色直線
+            // 使用更大振幅 (8) 和更長波長 (14) 來與身體虐待區分
+            this.drawZigzagOnPath(path, totalLen, 8, 14);
+            // Black Line (偏移 -4 在下方，與波浪上的黑線區分)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
             this.ctx.setLineDash([]);
-            this.ctx.beginPath();
-            this.ctx.moveTo(path[0].x, path[0].y);
-            for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
-            this.ctx.stroke();
+            this.drawParallelPath(path, -4);
             this.ctx.restore();
 
         } else if (style.pattern === 'sexual-abuse') {
@@ -3172,6 +3176,87 @@ class GenogramCanvas {
         }
 
         return false;
+    }
+
+    /**
+     * 繪製關係線編輯按鈕
+     * @param {Object} relationship - 選中的關係
+     * @param {Person} fromPerson - 起點人物
+     * @param {Person} toPerson - 終點人物
+     * @param {Array} allRelationships - 所有關係（用於計算路徑）
+     */
+    drawRelationshipEditButton(relationship, fromPerson, toPerson, allRelationships = []) {
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
+        if (path.length < 2) return null;
+
+        // 計算路徑中點
+        const totalLen = this.getPathLength(path);
+        const midPoint = this.getPointAtDistance(path, totalLen / 2);
+
+        const buttonRadius = 14;
+        const x = midPoint.x;
+        const y = midPoint.y;
+
+        // 儲存按鈕位置供點擊偵測使用
+        this.lastEditButtonPosition = { x, y, radius: buttonRadius };
+
+        // 繪製按鈕背景（白色圓形 + 陰影）
+        this.ctx.save();
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.shadowBlur = 4;
+        this.ctx.shadowOffsetX = 1;
+        this.ctx.shadowOffsetY = 1;
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, buttonRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // 繪製邊框
+        this.ctx.strokeStyle = '#4a90d9';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        // 關閉陰影
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+
+        // 繪製鉛筆圖示
+        this.ctx.fillStyle = '#4a90d9';
+        this.ctx.font = 'bold 14px Arial, sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('✏', x, y);
+
+        this.ctx.restore();
+
+        return { x, y, radius: buttonRadius };
+    }
+
+    /**
+     * 檢查點是否在關係線編輯按鈕上
+     * @param {number} px - 點 X 座標
+     * @param {number} py - 點 Y 座標
+     * @param {Object} relationship - 選中的關係
+     * @param {Person} fromPerson - 起點人物
+     * @param {Person} toPerson - 終點人物
+     * @param {Array} allRelationships - 所有關係
+     * @returns {boolean}
+     */
+    isPointOnEditButton(px, py, relationship, fromPerson, toPerson, allRelationships = []) {
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
+        if (path.length < 2) return false;
+
+        // 計算路徑中點
+        const totalLen = this.getPathLength(path);
+        const midPoint = this.getPointAtDistance(path, totalLen / 2);
+
+        const buttonRadius = 14;
+        const dx = px - midPoint.x;
+        const dy = py - midPoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        return distance <= buttonRadius + 5; // 增加一些容差
     }
 
     /**
