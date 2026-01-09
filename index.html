@@ -98,6 +98,14 @@
                         <span class="icon export-icon">🖼</span>
                         <span class="tool-label">匯出</span>
                     </button>
+                    <button class="tool-btn" id="copyImageBtn" title="複製圖片到剪貼簿">
+                        <span class="icon">📋</span>
+                        <span class="tool-label">複製圖片</span>
+                    </button>
+                    <button class="tool-btn" id="clearAllBtn" title="清空畫布">
+                        <span class="icon" style="color: #d32f2f;">🗑</span>
+                        <span class="tool-label">清空</span>
+                    </button>
                     <button class="tool-btn" id="helpBtn" title="使用說明">
                         <span class="icon">❓</span>
                         <span class="tool-label">說明</span>
@@ -387,6 +395,14 @@
         <div class="modal">
             <h3 class="modal-title">選擇匯出格式</h3>
             <div class="modal-content">
+                <div class="export-settings"
+                    style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 8px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="exportShowNotes" checked
+                            style="margin-right: 8px; width: 18px; height: 18px;">
+                        <span>顯示備註 (人物備註 + 關係線時間/說明)</span>
+                    </label>
+                </div>
                 <div class="export-options">
                     <button class="export-option-btn" data-format="png">
                         <span class="export-icon">🖼</span>

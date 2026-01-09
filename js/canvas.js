@@ -483,6 +483,22 @@ class GenogramCanvas {
     }
 
     /**
+     * 匯出專用的人物繪製 (可選擇是否繪製備註)
+     * @param {Object} person - 人物物件
+     * @param {boolean} showNotes - 是否顯示備註
+     */
+    drawPersonForExport(person, showNotes = true) {
+        // 如果不顯示備註，暫時清空 notes 然後重宫
+        const originalNotes = person.notes;
+        if (!showNotes) {
+            person.notes = '';
+        }
+        this.drawPerson(person, false, false, false);
+        // 還原
+        person.notes = originalNotes;
+    }
+
+    /**
      * 繪製關係線上的日期/說明 (顯示於線上)
      */
     drawRelationshipDate(fromPerson, toPerson, relationship, persons, relationships) {
@@ -1960,8 +1976,13 @@ class GenogramCanvas {
 
     /**
      * 匯出為 PNG 圖片（含關係圖例）
+     * @param {Array} persons - 人物陣列
+     * @param {Array} relationships - 關係陣列
+     * @param {Array} households - 同住家庭陣列
+     * @param {Array} lifeCircles - 生活圈陣列
+     * @param {boolean} showNotes - 是否顯示備註 (人物備註 + 關係線時間/說明)
      */
-    exportToPNG(persons, relationships, households = [], lifeCircles = []) {
+    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -2071,18 +2092,20 @@ class GenogramCanvas {
             }
         });
 
-        // 3.5 繪製關係線說明 (日期/備註)
-        relationships.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
-            if (fromPerson && toPerson) {
-                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
-            }
-        });
+        // 3.5 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
+        if (showNotes) {
+            relationships.forEach(rel => {
+                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                if (fromPerson && toPerson) {
+                    this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+                }
+            });
+        }
 
-        // 4. 繪製人物
+        // 4. 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPerson(person, false, false, false);
+            this.drawPersonForExport(person, showNotes);
         });
 
         this.ctx.restore();
@@ -2103,10 +2126,12 @@ class GenogramCanvas {
      * @param {Array} persons - 人物陣列
      * @param {Array} relationships - 關係陣列
      * @param {Array} households - 同住家庭陣列
+     * @param {Array} lifeCircles - 生活圈陣列
      * @param {number} quality - JPEG 品質 (0-1)
+     * @param {boolean} showNotes - 是否顯示備註
      * @returns {string|null} - Data URL 或 null
      */
-    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92) {
+    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -2205,17 +2230,20 @@ class GenogramCanvas {
             }
         });
 
-        // 繪製關係線說明 (日期/備註)
-        relationships.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
-            if (fromPerson && toPerson) {
-                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
-            }
-        });
+        // 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
+        if (showNotes) {
+            relationships.forEach(rel => {
+                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                if (fromPerson && toPerson) {
+                    this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+                }
+            });
+        }
 
+        // 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPerson(person, false, false, false);
+            this.drawPersonForExport(person, showNotes);
         });
 
         this.ctx.restore();

@@ -137,6 +137,8 @@ class GenogramApp {
             downloadBtn: document.getElementById('downloadBtn'),
             loadBtn: document.getElementById('loadBtn'),
             exportBtn: document.getElementById('exportBtn'),
+            copyImageBtn: document.getElementById('copyImageBtn'),
+            clearAllBtn: document.getElementById('clearAllBtn'),
             autoLayoutBtn: document.getElementById('autoLayoutBtn'),
 
             // 面板
@@ -193,6 +195,12 @@ class GenogramApp {
         this.elements.fileInput.addEventListener('change', (e) => this.loadFromFile(e));
         if (this.elements.exportBtn) {
             this.elements.exportBtn.addEventListener('click', () => this.showExportModal());
+        }
+        if (this.elements.copyImageBtn) {
+            this.elements.copyImageBtn.addEventListener('click', () => this.copyImageToClipboard());
+        }
+        if (this.elements.clearAllBtn) {
+            this.elements.clearAllBtn.addEventListener('click', () => this.clearAll());
         }
 
         if (this.elements.helpBtn) {
@@ -3235,8 +3243,8 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    exportPNG() {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+    exportPNG(showNotes = true) {
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -3288,26 +3296,30 @@ class GenogramApp {
             return;
         }
 
+        // 讀取是否顯示備註的設定
+        const showNotesCheckbox = document.getElementById('exportShowNotes');
+        const showNotes = showNotesCheckbox ? showNotesCheckbox.checked : true;
+
         const timestamp = new Date().toISOString().slice(0, 10);
 
         switch (format) {
             case 'png':
-                this.exportPNG();
+                this.exportPNG(showNotes);
                 this.updateStatus('已匯出 PNG 圖片', 'success');
                 break;
 
             case 'jpeg':
-                this.exportJPEG();
+                this.exportJPEG(showNotes);
                 this.updateStatus('已匯出 JPEG 圖片', 'success');
                 break;
 
             case 'svg':
-                this.exportSVG();
+                this.exportSVG(showNotes);
                 this.updateStatus('已匯出 SVG 向量圖', 'success');
                 break;
 
             case 'pdf':
-                this.exportPDF();
+                this.exportPDF(showNotes);
                 this.updateStatus('已匯出 PDF 文件', 'success');
                 break;
 
@@ -3324,8 +3336,8 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    exportJPEG() {
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+    exportJPEG(showNotes = true) {
+        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -3337,10 +3349,10 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    exportSVG() {
+    exportSVG(showNotes = true) {
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -3367,8 +3379,8 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    exportPDF() {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+    exportPDF(showNotes = true) {
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -3396,6 +3408,72 @@ class GenogramApp {
         );
     }
 
+    /**
+     * 清空畫布 (清除所有人物、關係、圈選)
+     */
+    clearAll() {
+        if (this.persons.length === 0 && this.relationships.length === 0) {
+            this.updateStatus('畫布已經是空的', 'info');
+            return;
+        }
+
+        const confirmed = confirm('確定要清空畫布嗎？\n\n此操作將刪除所有人物、關係線、同住框和生活圈。\n您可以使用「復原」功能復原。');
+        if (!confirmed) return;
+
+        this.saveState();
+        this.persons = [];
+        this.relationships = [];
+        this.households = [];
+        this.lifeCircles = [];
+        this.selectedPersonId = null;
+        this.selectedRelationshipId = null;
+        this.selectedHouseholdId = null;
+        this.updatePropertyPanel();
+        this.autoSave();
+        this.render();
+        this.updateStatus('畫布已清空', 'success');
+    }
+
+    /**
+     * 複製圖片到剪貼簿
+     */
+    async copyImageToClipboard() {
+        if (this.persons.length === 0) {
+            this.updateStatus('沒有內容可複製', 'error');
+            return;
+        }
+
+        try {
+            // 讀取是否顯示備註的設定 (預設顯示)
+            const showNotesCheckbox = document.getElementById('exportShowNotes');
+            const showNotes = showNotesCheckbox ? showNotesCheckbox.checked : true;
+
+            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
+            if (!dataUrl) {
+                this.updateStatus('產生圖片失敗', 'error');
+                return;
+            }
+
+            // 將 dataUrl 轉換為 Blob
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+
+            // 使用 Clipboard API 複製圖片
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+
+            this.updateStatus('圖片已複製到剪貼簿，可直接貼上', 'success');
+        } catch (err) {
+            console.error('複製圖片失敗:', err);
+            // 如果 Clipboard API 不支援，提供替代方案
+            if (err.name === 'NotAllowedError') {
+                this.updateStatus('無法複製：請允許剪貼簿存取權限', 'error');
+            } else {
+                this.updateStatus('複製失敗，請使用匯出功能', 'error');
+            }
+        }
+    }
 
 
     /**
