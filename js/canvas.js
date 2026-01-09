@@ -3082,7 +3082,7 @@ class GenogramCanvas {
         }
 
         if (category === 'family') {
-            // 親子關係：計算與 drawFamilies 一致的垂直線路徑 (橫槓 → 子女)
+            // 親子關係：計算完整的樹狀路徑（父母 → 橫槓 → 子女）
             // 確定父母和子女
             let parentPerson, childPerson;
             if (fromPerson.y < toPerson.y) {
@@ -3093,23 +3093,26 @@ class GenogramCanvas {
                 childPerson = fromPerson;
             }
 
-            // 計算 sourceY (父母底部或中間位置)
-            const sourceY = parentPerson.y + this.personSize / 2;
+            // 計算 sourceY (父母底部)
+            const parentBottom = parentPerson.y + this.personSize / 2;
 
             // 計算 barY (與 drawFamilies 使用相同邏輯)
             const childTop = childPerson.y - this.personSize / 2;
-            let barY = (sourceY + childTop) / 2;
+            let barY = (parentBottom + childTop) / 2;
 
             // 防呆處理
-            if (barY < sourceY + 20) barY = sourceY + 20;
+            if (barY < parentBottom + 20) barY = parentBottom + 20;
             if (barY > childTop - 20) barY = childTop - 20;
-            if (sourceY >= childTop - 10) {
-                barY = sourceY + 30;
+            if (parentBottom >= childTop - 10) {
+                barY = parentBottom + 30;
             }
 
-            // 路徑：從橫槓位置垂直連到子女頂部 (這是可點擊的部分)
-            points.push({ x: childPerson.x, y: barY });
-            points.push({ x: childPerson.x, y: childTop });
+            // 完整路徑：父母底部 → 橫槓（在父母位置）→ 橫槓（在子女位置）→ 子女頂部
+            // 這樣整條線都可以點擊
+            points.push({ x: parentPerson.x, y: parentBottom }); // 父母底部
+            points.push({ x: parentPerson.x, y: barY });          // 橫槓（父母側）
+            points.push({ x: childPerson.x, y: barY });           // 橫槓（子女側）
+            points.push({ x: childPerson.x, y: childTop });       // 子女頂部
         } else if (category === 'marriage') {
             // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
             const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
