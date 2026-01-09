@@ -3292,11 +3292,27 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
-            // 路徑：包含橫槓延伸 + 子女垂直線段 (更容易點擊)
-            // 橫槓往左延伸一段距離 (100px 或到父母 X 位置)
-            const barExtendLeft = Math.min(childPerson.x - 100, parentPerson.x);
-            points.push({ x: barExtendLeft, y: barY });
-            points.push({ x: childPerson.x, y: barY });
+            // 路徑：包含完整的親子結構 (更容易點擊)
+            // 1. 從父母中心下延到 barY
+            // 2. 橫槓從父母 X 到子女 X
+            // 3. 從 barY 到子女頂部
+
+            // 計算父母連接點 (如果是雙親，用中間點)
+            const parentX = parentPerson.x;
+
+            // 路徑包含：父母到bar的垂直線 + 整條橫槓 + 到子女的垂直線
+            const barMinX = Math.min(parentX, childPerson.x);
+            const barMaxX = Math.max(parentX, childPerson.x);
+
+            // 從父母位置開始
+            points.push({ x: parentX, y: sourceY });
+            // 到橫槓
+            points.push({ x: parentX, y: barY });
+            // 橫槓往子女方向
+            if (childPerson.x !== parentX) {
+                points.push({ x: childPerson.x, y: barY });
+            }
+            // 到子女
             points.push({ x: childPerson.x, y: childTop });
         } else if (category === 'marriage') {
             // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
