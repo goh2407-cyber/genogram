@@ -324,29 +324,6 @@ class GenogramCanvas {
 
         this.ctx.save();
 
-        // 案主虛線外框
-        if (isIdentifiedPatient) {
-            this.ctx.strokeStyle = '#333';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 3]);
-
-            if (gender === 'female') {
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, halfSize + 8, 0, Math.PI * 2);
-                this.ctx.stroke();
-            } else if (gender === 'pregnancy') {
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, y - halfSize - 8);
-                this.ctx.lineTo(x + halfSize + 8, y + halfSize + 8);
-                this.ctx.lineTo(x - halfSize - 8, y + halfSize + 8);
-                this.ctx.closePath();
-                this.ctx.stroke();
-            } else {
-                this.ctx.strokeRect(x - halfSize - 8, y - halfSize - 8, size + 16, size + 16);
-            }
-            this.ctx.setLineDash([]);
-        }
-
         // 選取或連接中的高亮效果
         if (isSelected || isConnecting) {
             this.ctx.shadowColor = '#4a90d9';
@@ -360,14 +337,22 @@ class GenogramCanvas {
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#333';
 
-        // 根據文檔規範：案主用灰色填充，一般人物用白色填充，死亡用黑色填充
-        if (isDeceased) {
-            this.ctx.fillStyle = '#333'; // 死亡：黑色填充
-        } else if (isIdentifiedPatient) {
-            this.ctx.fillStyle = '#cccccc'; // 案主：灰色填充
+        // 根據用戶要求修改：
+        // 案主：黑底，去除虛線
+        // 死亡：白底，黑 X
+
+        // 決定填充顏色
+        let fillColor = '#fff';
+        if (isIdentifiedPatient) {
+            fillColor = '#333'; // 案主：黑底
         } else {
-            this.ctx.fillStyle = '#fff'; // 一般人物：白色填充
+            fillColor = '#fff'; // 其他（含普通死亡）：白底
         }
+
+        // 如果是死亡但不是案主，背景是白的；如果是案主，背景是黑的
+        // 注意：原本邏輯死亡是黑底，現在改成白底
+
+        this.ctx.fillStyle = fillColor;
 
         if (gender === 'female') {
             this.ctx.beginPath();
@@ -391,6 +376,8 @@ class GenogramCanvas {
         }
 
         // 重新繪製邊框 (確保清晰)
+        // 如果是黑底，邊框也用黑色可能看不出來，但實際上填充 #333 邊框也是 #333 是一樣的。
+        // 為了確保邊界清晰，如果內容是黑的，外部背景是白的，所以沒問題。
         if (gender === 'female') {
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
@@ -440,7 +427,9 @@ class GenogramCanvas {
 
         // 過世標記 X
         if (isDeceased) {
-            this.ctx.strokeStyle = '#fff';
+            // 如果是案主（黑底），X 要用白色
+            // 如果是普通死亡（白底），X 要用黑色
+            this.ctx.strokeStyle = isIdentifiedPatient ? '#fff' : '#333';
             this.ctx.lineWidth = 3;
             const offset = halfSize * 0.6;
             this.ctx.beginPath();
@@ -457,7 +446,8 @@ class GenogramCanvas {
             this.ctx.font = `bold ${this.fontSize}px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillStyle = isDeceased ? '#fff' : '#333';
+            // 案主是黑底，所以文字要白；其他（含死亡）是白底，文字要黑
+            this.ctx.fillStyle = isIdentifiedPatient ? '#fff' : '#333';
             // 如果只有中心點，可以畫旁邊？或是覆蓋？
             // 這裡保持覆蓋，由使用者決定
             this.ctx.fillText(String(age), x, y);
