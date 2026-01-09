@@ -3292,18 +3292,17 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
-            // 路徑：只包含該子女專屬的部分 (避免多個子女路徑重疊)
-            // 橫槓上該子女附近的一小段 + 往下到子女的垂直線
-            // 這樣每個子女的點擊區域是獨立的
+            // 路徑：L 形狀 (橫槓延伸到左邊 + 垂直到子女)
+            // 這樣每個子女有自己的 L 形點擊區域
 
-            // 橫槓上，在子女 X 位置左右各延伸 60px
-            const barSegmentLeft = childPerson.x - 60;
-            const barSegmentRight = childPerson.x + 60;
+            // L 形：從子女位置往左延伸 100px，然後垂直往下到子女
+            const barExtend = 100; // 往左延伸的長度
 
-            // 路徑：橫槓段 + 垂直到子女
-            points.push({ x: barSegmentLeft, y: barY });
-            points.push({ x: barSegmentRight, y: barY });
-            // 再加上從子女 X 往下的垂直段
+            // 3 個點形成 L 形：
+            // 1. 橫槓左端 (barY 高度)
+            // 2. 子女 X 位置的橫槓交點 (L 的轉角)
+            // 3. 子女頂部
+            points.push({ x: childPerson.x - barExtend, y: barY });
             points.push({ x: childPerson.x, y: barY });
             points.push({ x: childPerson.x, y: childTop });
         } else if (category === 'marriage') {
