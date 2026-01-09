@@ -471,11 +471,12 @@ class GenogramCanvas {
             this.ctx.fillStyle = '#333';
             this.ctx.fillText(name, x, y + halfSize + 8);
 
-            // 備註 (顯示於姓名下方，支援換行)
+            // 備註 (顯示於姓名下方，支援換行，最多2行)
             if (person.notes) {
                 this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`; // 較小字體
                 this.ctx.fillStyle = '#666'; // 灰色
-                const noteLines = person.notes.split('\n');
+                // 過濾空行，最多顯示2行
+                const noteLines = person.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
                 const noteLineHeight = this.fontSize * 0.8 + 2;
                 noteLines.forEach((line, i) => {
                     this.ctx.fillText(line, x, y + halfSize + 8 + this.fontSize + 4 + i * noteLineHeight);
@@ -2736,10 +2737,11 @@ class GenogramCanvas {
                 if (p.name) {
                     notesOffset += this.fontSize + 8; // 姓名高度
                     if (p.notes) {
-                        // [Fix] 支援多行備註：計算行數 * 每行高度
-                        const noteLines = p.notes.split('\n').length;
+                        // [Fix] 支援多行備註：使用實際行數計算
+                        const lines = p.notes.split('\n');
+                        const actualLines = lines.filter(l => l.length > 0).length || 1;
                         const noteLineHeight = this.fontSize * 0.8 + 2;
-                        notesOffset += noteLines * noteLineHeight + 4;
+                        notesOffset += actualLines * noteLineHeight + 4;
                     }
                 }
                 sourceY = p.y + this.personSize / 2 + notesOffset;
@@ -2754,10 +2756,11 @@ class GenogramCanvas {
                 if (p.name) {
                     parentBottom += this.fontSize + 8; // 姓名高度
                     if (p.notes) {
-                        // [Fix] 支援多行備註：計算行數 * 每行高度
-                        const noteLines = p.notes.split('\n').length;
+                        // [Fix] 支援多行備註：使用實際行數計算
+                        const lines = p.notes.split('\n');
+                        const actualLines = lines.filter(l => l.length > 0).length || 1;
                         const noteLineHeight = this.fontSize * 0.8 + 2;
-                        parentBottom += noteLines * noteLineHeight + 4;
+                        parentBottom += actualLines * noteLineHeight + 4;
                     }
                 }
                 if (sourceY < parentBottom) {
