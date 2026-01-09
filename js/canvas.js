@@ -3295,8 +3295,8 @@ class GenogramCanvas {
             // 路徑：T 形狀 (橫槓左右延伸 + 垂直到子女)
             // 這樣每個子女有更大的點擊區域
 
-            // T 形：從子女位置往左右各延伸 150px，然後垂直往下到子女
-            const barExtend = 150; // 左右各延伸的長度
+            // T 形：從子女位置往左右各延伸 50px (避免重疊)
+            const barExtend = 50; // 左右各延伸的長度
 
             // 4 個點形成 T 形 (倒T)：
             // 1. 橫槓左端
@@ -3363,7 +3363,7 @@ class GenogramCanvas {
         // - 其他 (emotional): 使用預設 tolerance
         let effectiveTolerance = tolerance;
         if (category === 'family') {
-            effectiveTolerance = 30; // 增加容差，更容易點擊
+            effectiveTolerance = 20; // 調整回 20 避免過度重疊
         } else if (category === 'marriage') {
             effectiveTolerance = 15;
         }
