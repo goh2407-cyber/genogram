@@ -1906,12 +1906,9 @@ class GenogramApp {
                     </div>
                     <div class="form-group">
                         <label>時間/說明 (顯示於線上)</label>
-                        <input type="text" id="relationshipDate" value="${relationship.date || ''}" placeholder="例如：結婚 2010, 離婚 2020">
+                        <textarea id="relationshipDate" rows="2" placeholder="例如：結婚 2010 (換行) 離婚 2020">${relationship.date || ''}</textarea>
                     </div>
-                    <div class="form-group">
-                        <label>備註</label>
-                        <textarea id="relationshipNotes" rows="3" placeholder="輸入備註">${relationship.notes || ''}</textarea>
-                    </div>
+
                     <div style="margin-top: 12px;">
                         <button class="btn-cancel" id="deleteRelationshipBtn" style="width: 100%;">刪除此關係</button>
                     </div>
@@ -2038,10 +2035,7 @@ class GenogramApp {
 
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
 
-            <div class="form-group">
-                <label for="personNotes">備註</label>
-                    <textarea id="personNotes" rows="3" placeholder="輸入備註">${person.notes}</textarea>
-                </div>
+
             </form>
         `;
 

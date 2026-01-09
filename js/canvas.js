@@ -528,23 +528,35 @@ class GenogramCanvas {
         const finalX = cx + nx * offset;
         const finalY = cy + ny * offset;
 
-        // 繪製文字
+        // 繪製文字 (支援換行)
         this.ctx.save();
         this.ctx.font = '12px ' + this.fontFamily;
         this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'bottom'; // 顯示在線上方
+        this.ctx.textBaseline = 'bottom'; // 以底部為基準
 
-        const textToDraw = relationship.date;
-        const textWidth = this.ctx.measureText(textToDraw).width;
+        // 處理換行
+        const lines = relationship.date.split('\n');
+        const lineHeight = 16;
 
-        // 畫半透明背景以防重疊看不清
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const w = this.ctx.measureText(line).width;
+            if (w > maxWidth) maxWidth = w;
+        });
+
+        const totalHeight = lines.length * lineHeight;
+        const padding = 4;
+
+        // 畫半透明背景
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-        // 背景位置調整 (稍微上移以蓋住線條)
-        this.ctx.fillRect(finalX - textWidth / 2 - 2, finalY - 14, textWidth + 4, 14);
+        this.ctx.fillRect(finalX - maxWidth / 2 - padding, finalY - totalHeight - padding, maxWidth + padding * 2, totalHeight + padding);
 
         // 畫文字
         this.ctx.fillStyle = '#333';
-        this.ctx.fillText(textToDraw, finalX, finalY - 2);
+        lines.forEach((line, i) => {
+            const y = finalY - (lines.length - 1 - i) * lineHeight;
+            this.ctx.fillText(line, finalX, y - 2);
+        });
 
         this.ctx.restore();
     }
