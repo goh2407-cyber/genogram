@@ -3292,17 +3292,19 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
-            // 路徑：L 形狀 (橫槓延伸到左邊 + 垂直到子女)
-            // 這樣每個子女有自己的 L 形點擊區域
+            // 路徑：T 形狀 (橫槓左右延伸 + 垂直到子女)
+            // 這樣每個子女有更大的點擊區域
 
-            // L 形：從子女位置往左延伸 250px，然後垂直往下到子女
-            const barExtend = 250; // 往左延伸的長度 (增加以便更容易點擊)
+            // T 形：從子女位置往左右各延伸 150px，然後垂直往下到子女
+            const barExtend = 150; // 左右各延伸的長度
 
-            // 3 個點形成 L 形：
-            // 1. 橫槓左端 (barY 高度)
-            // 2. 子女 X 位置的橫槓交點 (L 的轉角)
-            // 3. 子女頂部
+            // 4 個點形成 T 形 (倒T)：
+            // 1. 橫槓左端
+            // 2. 橫槓右端
+            // 3. (返回) 子女 X 位置
+            // 4. 子女頂部
             points.push({ x: childPerson.x - barExtend, y: barY });
+            points.push({ x: childPerson.x + barExtend, y: barY });
             points.push({ x: childPerson.x, y: barY });
             points.push({ x: childPerson.x, y: childTop });
         } else if (category === 'marriage') {
@@ -3361,7 +3363,7 @@ class GenogramCanvas {
         // - 其他 (emotional): 使用預設 tolerance
         let effectiveTolerance = tolerance;
         if (category === 'family') {
-            effectiveTolerance = 20;
+            effectiveTolerance = 30; // 增加容差，更容易點擊
         } else if (category === 'marriage') {
             effectiveTolerance = 15;
         }
