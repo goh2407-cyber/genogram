@@ -2071,6 +2071,15 @@ class GenogramCanvas {
             }
         });
 
+        // 3.5 繪製關係線說明 (日期/備註)
+        relationships.forEach(rel => {
+            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            if (fromPerson && toPerson) {
+                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+            }
+        });
+
         // 4. 繪製人物
         persons.forEach(person => {
             this.drawPerson(person, false, false, false);
@@ -2193,6 +2202,15 @@ class GenogramCanvas {
             const toPerson = persons.find(p => p.id === rel.toPersonId);
             if (fromPerson && toPerson) {
                 this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
+            }
+        });
+
+        // 繪製關係線說明 (日期/備註)
+        relationships.forEach(rel => {
+            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            if (fromPerson && toPerson) {
+                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
             }
         });
 
