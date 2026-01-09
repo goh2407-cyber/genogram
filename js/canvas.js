@@ -488,26 +488,44 @@ class GenogramCanvas {
     drawRelationshipDate(fromPerson, toPerson, relationship, persons, relationships) {
         if (!relationship.date) return;
 
-        // 計算 Offset (需與 drawRelationship 邏輯保持一致)
-        const sharedRelationships = relationships.filter(r =>
+        // [Fix] 計算 Offset (需與 drawRelationship 邏輯完全一致)
+        let offset = 0;
+        const category = typeof relationship.getCategory === 'function' ? relationship.getCategory() : Relationship.getCategory(relationship.type);
+
+        const samePairRels = relationships.filter(r =>
             (r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id) ||
             (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)
         );
-        // 過濾掉 parent-child，只保留 marriage/emotional 類型的關係參與計算 offset
-        const compareRels = sharedRelationships.filter(r => {
-            const cat = typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type);
-            return cat !== 'family';
-        });
 
-        compareRels.sort((a, b) => a.id.localeCompare(b.id));
+        if (samePairRels.length > 1) {
+            const structuralRel = samePairRels.find(r => {
+                const cat = typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type);
+                return ['marriage', 'family'].includes(cat);
+            });
+            const emotionalRels = samePairRels.filter(r => {
+                const cat = typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type);
+                return cat === 'emotional';
+            });
 
-        const index = compareRels.findIndex(r => r.id === relationship.id);
-        const total = compareRels.length;
-        const gap = 30; // 假設 gap 為 30，需確認 drawRelationship 實際值
+            // 確保排序穩定
+            emotionalRels.sort((a, b) => a.id.localeCompare(b.id));
 
-        let offset = 0;
-        if (index !== -1) {
-            offset = (index - (total - 1) / 2) * gap;
+            if (category === 'emotional') {
+                const myIdx = emotionalRels.findIndex(r => r.id === relationship.id);
+                if (structuralRel) {
+                    // 結構線在 0，情感線在兩側交替分佈
+                    const gap = 18;
+                    offset = (myIdx % 2 === 0) ? (Math.floor(myIdx / 2) + 1) * gap : -(Math.floor(myIdx / 2) + 1) * gap;
+                } else {
+                    // 如果沒有結構線，則情感線對齊中央分佈
+                    const gap = 18;
+                    const total = emotionalRels.length;
+                    offset = (myIdx - (total - 1) / 2) * gap;
+                }
+            } else {
+                // Structural line is always at 0
+                offset = 0;
+            }
         }
 
         // 計算中心點與偏移
@@ -532,11 +550,10 @@ class GenogramCanvas {
         this.ctx.save();
         this.ctx.font = '12px ' + this.fontFamily;
         this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'bottom'; // 以底部為基準
 
-        // 為了不蓋住線條，將文字基礎位置向上偏移
-        // 假設線寬最大約 4px，向上偏移 8px 應足夠
-        const textBaseY = finalY - 8;
+        // [Fix] 改為垂直居中 (Inline Style)，背景蓋過線條，避免遮擋相鄰線條
+        this.ctx.textBaseline = 'middle';
+        const textBaseY = finalY;
 
         // 處理換行
         const lines = relationship.date.split('\n');
@@ -551,15 +568,22 @@ class GenogramCanvas {
         const totalHeight = lines.length * lineHeight;
         const padding = 4;
 
-        // 畫半透明背景
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-        this.ctx.fillRect(finalX - maxWidth / 2 - padding, textBaseY - totalHeight - padding, maxWidth + padding * 2, totalHeight + padding);
+        // 計算背景框起始位置 (垂直居中)
+        const boxTop = textBaseY - totalHeight / 2 - padding;
+
+        // 畫半透明背景 (不透明度提高以遮擋線條)
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        this.ctx.fillRect(finalX - maxWidth / 2 - padding, boxTop, maxWidth + padding * 2, totalHeight + padding * 2);
 
         // 畫文字
         this.ctx.fillStyle = '#333';
         lines.forEach((line, i) => {
-            const y = textBaseY - (lines.length - 1 - i) * lineHeight;
-            this.ctx.fillText(line, finalX, y - 2);
+            // 計算每一行的 Y (從中央向上排開? 不，從上往下排)
+            // totalHeight / 2 -> top (half height)
+            // first line y = textBaseY - (totalHeight/2) + lineHeight/2
+            // simpler: start from top
+            const lineTop = boxTop + padding + i * lineHeight + lineHeight / 2;
+            this.ctx.fillText(line, finalX, lineTop);
         });
 
         this.ctx.restore();
