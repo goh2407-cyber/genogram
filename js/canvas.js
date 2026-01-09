@@ -471,11 +471,15 @@ class GenogramCanvas {
             this.ctx.fillStyle = '#333';
             this.ctx.fillText(name, x, y + halfSize + 8);
 
-            // 備註 (顯示於姓名下方)
+            // 備註 (顯示於姓名下方，支援換行)
             if (person.notes) {
                 this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`; // 較小字體
                 this.ctx.fillStyle = '#666'; // 灰色
-                this.ctx.fillText(person.notes, x, y + halfSize + 8 + this.fontSize + 4);
+                const noteLines = person.notes.split('\n');
+                const noteLineHeight = this.fontSize * 0.8 + 2;
+                noteLines.forEach((line, i) => {
+                    this.ctx.fillText(line, x, y + halfSize + 8 + this.fontSize + 4 + i * noteLineHeight);
+                });
             }
         }
 
@@ -2732,7 +2736,10 @@ class GenogramCanvas {
                 if (p.name) {
                     notesOffset += this.fontSize + 8; // 姓名高度
                     if (p.notes) {
-                        notesOffset += this.fontSize * 0.8 + 4; // 備註高度
+                        // [Fix] 支援多行備註：計算行數 * 每行高度
+                        const noteLines = p.notes.split('\n').length;
+                        const noteLineHeight = this.fontSize * 0.8 + 2;
+                        notesOffset += noteLines * noteLineHeight + 4;
                     }
                 }
                 sourceY = p.y + this.personSize / 2 + notesOffset;
@@ -2747,7 +2754,10 @@ class GenogramCanvas {
                 if (p.name) {
                     parentBottom += this.fontSize + 8; // 姓名高度
                     if (p.notes) {
-                        parentBottom += this.fontSize * 0.8 + 4; // 備註高度
+                        // [Fix] 支援多行備註：計算行數 * 每行高度
+                        const noteLines = p.notes.split('\n').length;
+                        const noteLineHeight = this.fontSize * 0.8 + 2;
+                        parentBottom += noteLines * noteLineHeight + 4;
                     }
                 }
                 if (sourceY < parentBottom) {
