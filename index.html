@@ -8,7 +8,7 @@
     <meta name="description" content="專為社工家庭評估設計的專業家系圖繪製工具">
     <link rel="stylesheet" href="css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="manifest" href="manifest.json">
+    <!-- <link rel="manifest" href="manifest.json"> -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -127,6 +127,14 @@
                     <span class="zoom-level" id="zoomLevel">100%</span>
                     <button class="zoom-btn" id="zoomOut" title="縮小">−</button>
                     <button class="zoom-btn" id="zoomReset" title="重置縮放">⊙</button>
+                </div>
+                <!-- [NEW - G 方案] 自動排列預覽確認浮動欄 -->
+                <div class="layout-preview-bar" id="layoutPreviewBar" style="display: none;">
+                    <span class="preview-message">📐 排列預覽中 — 確認套用或取消？</span>
+                    <div class="preview-actions">
+                        <button class="btn-apply" id="applyLayoutBtn" title="套用排列">✓ 套用</button>
+                        <button class="btn-cancel-preview" id="cancelLayoutBtn" title="取消排列">✕ 取消</button>
+                    </div>
                 </div>
             </div>
 

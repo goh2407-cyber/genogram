@@ -331,6 +331,80 @@ body {
     color: var(--text-secondary);
 }
 
+/* [NEW - G 方案] 自動排列預覽確認浮動欄 */
+.layout-preview-bar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, var(--primary-color) 0%, #357abd 100%);
+    border-radius: 30px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateX(-50%) translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+.layout-preview-bar .preview-message {
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.layout-preview-bar .preview-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.layout-preview-bar .btn-apply {
+    padding: 8px 16px;
+    background: white;
+    color: var(--primary-color);
+    border: none;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.layout-preview-bar .btn-apply:hover {
+    background: var(--primary-light);
+    transform: scale(1.05);
+}
+
+.layout-preview-bar .btn-cancel-preview {
+    padding: 8px 16px;
+    background: transparent;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.layout-preview-bar .btn-cancel-preview:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: white;
+}
+
 /* ===================================
    右側面板
    =================================== */
