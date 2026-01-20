@@ -1696,9 +1696,8 @@ class GenogramApp {
             const cohabitRel = new Relationship({
                 fromPersonId: basePerson.id,
                 toPersonId: partner.id,
-                type: 'marriage' // 普通伴侶預設用婚姻線 (實線) 比較符合直覺? 或者 cohabiting? 
-                // 之前代碼用 cohabiting, 但 user 需求可能是婚姻. 
-                // 無論如何, 先用 'marriage' 較通用，之後可改
+                type: 'married' // [Bug Fix] 使用 'married' 以符合 MARRIAGE_TYPES 定義，確保 findSpouse 能正確找到配偶
+
             });
             this.relationships.push(cohabitRel);
 
