@@ -327,7 +327,7 @@ class GenogramCanvas {
      * 繪製人物
      */
     drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
-        const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical } = person;
+        const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
         const size = this.personSize;
         const halfSize = size / 2;
 
@@ -353,7 +353,7 @@ class GenogramCanvas {
         // 決定填充顏色
         let fillColor = '#fff';
         if (isIdentifiedPatient) {
-            fillColor = '#333'; // 案主：黑底
+            fillColor = '#808080'; // 案主：灰底（方便看清醫學狀態）
         } else {
             fillColor = '#fff'; // 其他（含普通死亡）：白底
         }
@@ -363,7 +363,18 @@ class GenogramCanvas {
 
         this.ctx.fillStyle = fillColor;
 
-        if (gender === 'female') {
+        // [NEW] 根據 transgender 屬性決定是否繪製特殊跨性別形狀
+        if (transgender === 'ftm') {
+            // 女跨男 (FTM): 外方 inner 圓 (圓貼齊方形邊緣)
+            this.ctx.fillRect(x - halfSize, y - halfSize, size, size);
+            // 內圓僅由 stroke 繪製，不填充，避免覆蓋背景色
+        } else if (transgender === 'mtf') {
+            // 男跨女 (MTF): 外圓 inner 方 (方形四角貼齊圓周)
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
+            this.ctx.fill();
+            // 內方僅由 stroke 繪製，不填充
+        } else if (gender === 'female') {
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
             this.ctx.fill();
@@ -375,7 +386,19 @@ class GenogramCanvas {
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
             this.ctx.fill();
+        } else if (gender === 'same') {
+            // 同性別：圓頂方底 (Tombstone shape)
+            this.ctx.beginPath();
+            // 上半部半圓，圓心在 (x, y)，半徑 halfSize
+            this.ctx.arc(x, y, halfSize, Math.PI, 0);
+            // 右下角
+            this.ctx.lineTo(x + halfSize, y + halfSize);
+            // 左下角
+            this.ctx.lineTo(x - halfSize, y + halfSize);
+            this.ctx.closePath();
+            this.ctx.fill();
         } else {
+            // Default: male (square)
             this.ctx.fillRect(x - halfSize, y - halfSize, size, size);
         }
 
@@ -387,7 +410,39 @@ class GenogramCanvas {
         // 重新繪製邊框 (確保清晰)
         // 如果是黑底，邊框也用黑色可能看不出來，但實際上填充 #333 邊框也是 #333 是一樣的。
         // 為了確保邊界清晰，如果內容是黑的，外部背景是白的，所以沒問題。
-        if (gender === 'female') {
+        // 重新繪製邊框 (確保清晰)
+        if (transgender === 'ftm') {
+            // FTM: 方框 + 內圓
+            this.ctx.strokeRect(x - halfSize, y - halfSize, size, size);
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            if (isHighlighted) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#28a745';
+                this.ctx.lineWidth = 3;
+                this.ctx.strokeRect(x - halfSize - 5, y - halfSize - 5, size + 10, size + 10);
+                this.ctx.restore();
+            }
+        } else if (transgender === 'mtf') {
+            // MTF: 圓框 + 內方
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
+            this.ctx.stroke();
+            const innerSize = size * 0.7071;
+            this.ctx.strokeRect(x - innerSize / 2, y - innerSize / 2, innerSize, innerSize);
+
+            if (isHighlighted) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#28a745';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, halfSize + 5, 0, Math.PI * 2);
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+        } else if (gender === 'female') {
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -418,6 +473,26 @@ class GenogramCanvas {
                 this.ctx.lineTo(x + halfSize + 5, y + halfSize + 5);
                 this.ctx.lineTo(x - halfSize - 5, y + halfSize + 5);
                 this.ctx.closePath();
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+        } else if (gender === 'same') {
+            // 同性別：圓頂方底
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, halfSize, Math.PI, 0);
+            this.ctx.lineTo(x + halfSize, y + halfSize);
+            this.ctx.lineTo(x - halfSize, y + halfSize);
+            this.ctx.closePath();
+            this.ctx.stroke();
+
+            if (isHighlighted) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#28a745';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, halfSize + 5, Math.PI, 0);
+                this.ctx.lineTo(x + halfSize + 5, y + halfSize + 5);
+                this.ctx.lineTo(x - halfSize - 5, y + halfSize + 5);
                 this.ctx.stroke();
                 this.ctx.restore();
             }
@@ -455,11 +530,21 @@ class GenogramCanvas {
             this.ctx.font = `bold ${this.fontSize}px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
+
             // 案主是黑底，所以文字要白；其他（含死亡）是白底，文字要黑
             this.ctx.fillStyle = isIdentifiedPatient ? '#fff' : '#333';
-            // 如果只有中心點，可以畫旁邊？或是覆蓋？
-            // 這裡保持覆蓋，由使用者決定
+
+            // [New] 增加描邊以提高可讀性（特別是當 X 標記重疊時）
+            this.ctx.lineWidth = 3;
+            // 如果是案主(白字)，用深色描邊；如果是普通(黑字)，用白色描邊
+            this.ctx.strokeStyle = isIdentifiedPatient ? '#333' : '#fff';
+            this.ctx.strokeText(String(age), x, y);
+
             this.ctx.fillText(String(age), x, y);
+        }
+
+        if (person.sexualOrientation) {
+            this.drawSexualOrientationMarker(x, y, halfSize);
         }
 
         // 姓名
@@ -469,6 +554,12 @@ class GenogramCanvas {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'top';
             this.ctx.fillStyle = '#333';
+
+            // [New] 姓名也加一點描邊，避免被背景線條干擾
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            this.ctx.strokeText(name, x, y + halfSize + 8);
+
             this.ctx.fillText(name, x, y + halfSize + 8);
 
             // 備註 (顯示於姓名下方，支援換行，最多2行)
@@ -478,13 +569,48 @@ class GenogramCanvas {
                 // 過濾空行，最多顯示2行
                 const noteLines = person.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
                 const noteLineHeight = this.fontSize * 0.8 + 2;
+
                 noteLines.forEach((line, i) => {
-                    this.ctx.fillText(line, x, y + halfSize + 8 + this.fontSize + 4 + i * noteLineHeight);
+                    const lineY = y + halfSize + 8 + (this.fontSize + 4) + i * noteLineHeight;
+
+                    // [New] 增加白色描邊，避免被線條遮擋
+                    this.ctx.lineWidth = 4; // 描邊粗一點
+                    this.ctx.strokeStyle = '#fff';
+                    this.ctx.strokeText(line, x, lineY);
+
+                    this.ctx.fillText(line, x, lineY);
                 });
             }
         }
 
         this.ctx.restore();
+    }
+
+    /**
+     * 繪製性別取向標記 (倒三角)
+     */
+    drawSexualOrientationMarker(x, y, halfSize) {
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 2; // 線條寬度
+        this.ctx.beginPath();
+        // 倒三角大小：約 halfSize 的 0.7 倍 (稍微大一點清楚)
+        const s = halfSize * 0.7;
+        const cy = y; // 中心點 Y
+
+        // 倒三角頂點向下
+        // 計算三角形高度 h = s * sqrt(3) / 2 ??? No, let's just use simple coordinates.
+        // Assuming s is "radius" or half-width? 
+        // Let's keep existing logic but adjust coordinates for a centered equilateral-ish triangle.
+
+        // 頂點 A (左上)
+        this.ctx.moveTo(x - s, cy - s * 0.6);
+        // 頂點 B (右上)
+        this.ctx.lineTo(x + s, cy - s * 0.6);
+        // 頂點 C (下中)
+        this.ctx.lineTo(x, cy + s * 0.8);
+
+        this.ctx.closePath();
+        this.ctx.stroke(); // 改為空心描邊
     }
 
     /**
@@ -537,6 +663,9 @@ class GenogramCanvas {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist === 0) return;
 
+        // 計算線條角度
+        let angle = Math.atan2(dy, dx);
+
         // 單位法向量 (normal vector)
         const nx = -dy / dist;
         const ny = dx / dist;
@@ -549,15 +678,11 @@ class GenogramCanvas {
         const finalX = cx + nx * offset;
         const finalY = cy + ny * offset;
 
-        // 繪製文字 (支援換行)
+        // 繪製文字 (支援換行，沿線條方向)
         this.ctx.save();
         this.ctx.font = '12px ' + this.fontFamily;
         this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'bottom'; // 以底部為基準
-
-        // 為了不蓋住線條，將文字基礎位置向上偏移
-        // 假設線寬最大約 4px，向上偏移 8px 應足夠
-        const textBaseY = finalY - 8;
+        this.ctx.textBaseline = 'bottom';
 
         // 處理換行
         const lines = relationship.date.split('\n');
@@ -572,15 +697,41 @@ class GenogramCanvas {
         const totalHeight = lines.length * lineHeight;
         const padding = 4;
 
+        // 移動到文字位置並旋轉
+        this.ctx.translate(finalX, finalY);
+
+        // 如果角度使文字顛倒（超過 90° 或小於 -90°），翻轉 180°
+        if (angle > Math.PI / 2) {
+            angle -= Math.PI;
+        } else if (angle < -Math.PI / 2) {
+            angle += Math.PI;
+        }
+
+        this.ctx.rotate(angle);
+
+        // 文字在線條上方的偏移
+        let textOffsetY = -8;
+
+        // 判斷是否為垂直線（或接近垂直）
+        // 如果是垂直線，增加偏移量以避免遮擋人物下方的備註
+        if (Math.abs(dy) > Math.abs(dx) * 2) {
+            textOffsetY = -25; // 增加偏移量，讓文字水平移動更多
+        }
+
         // 畫半透明背景
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-        this.ctx.fillRect(finalX - maxWidth / 2 - padding, textBaseY - totalHeight - padding, maxWidth + padding * 2, totalHeight + padding);
+        this.ctx.fillRect(
+            -maxWidth / 2 - padding,
+            textOffsetY - totalHeight - padding,
+            maxWidth + padding * 2,
+            totalHeight + padding
+        );
 
         // 畫文字
         this.ctx.fillStyle = '#333';
         lines.forEach((line, i) => {
-            const y = textBaseY - (lines.length - 1 - i) * lineHeight;
-            this.ctx.fillText(line, finalX, y - 2);
+            const y = textOffsetY - (lines.length - 1 - i) * lineHeight - 2;
+            this.ctx.fillText(line, 0, y);
         });
 
         this.ctx.restore();
@@ -1027,7 +1178,23 @@ class GenogramCanvas {
     getSmartPath(fromPerson, toPerson, persons) {
         // 設定起點和終點（考慮圓半徑，讓線條從圓周出發）
         const radius = this.personSize / 2 + 5;
-        const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);
+        const dx = toPerson.x - fromPerson.x;
+        const dy = toPerson.y - fromPerson.y;
+        const angle = Math.atan2(dy, dx);
+
+        // [New] 垂直線避讓優化：如果是垂直線，強制改為從右側連接
+        // 這樣可以避開人物正下方的備註文字
+        if (Math.abs(dy) > Math.abs(dx) * 3) {
+            const start = {
+                x: fromPerson.x + radius, // 右側 (0度)
+                y: fromPerson.y
+            };
+            const end = {
+                x: toPerson.x + radius,   // 右側
+                y: toPerson.y
+            };
+            return [start, end];
+        }
 
         const start = {
             x: fromPerson.x + Math.cos(angle) * radius,
@@ -2803,38 +2970,105 @@ class GenogramCanvas {
                 }
             }
 
-            // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線 (必要時才畫)
-            if (originalSourceY < sourceY) {
+            // === 多胞胎分組（需要先分組才能判斷是否需要畫垂直線）===
+            const twinGroups = {};
+            const nonTwins = [];
+
+            childObjs.forEach(child => {
+                if (child.twinGroup) {
+                    if (!twinGroups[child.twinGroup]) {
+                        twinGroups[child.twinGroup] = [];
+                    }
+                    twinGroups[child.twinGroup].push(child);
+                } else {
+                    nonTwins.push(child);
+                }
+            });
+
+            // 判斷是否所有子女都是同一個多胞胎群組
+            const allSameTwinGroup = childObjs.length > 0 &&
+                nonTwins.length === 0 &&
+                Object.keys(twinGroups).length === 1;
+
+            // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線（如果全是多胞胎則跳過）
+            if (!allSameTwinGroup && originalSourceY < sourceY) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(sourceX, originalSourceY);
                 this.ctx.lineTo(sourceX, sourceY);
                 this.ctx.stroke();
             }
 
-            // 繪製 Source -> Bar 的垂直線 (預設樣式)
-            this.ctx.beginPath();
-            this.ctx.moveTo(sourceX, sourceY);
-            if (barY > sourceY) {
-                this.ctx.lineTo(sourceX, barY);
-            } else {
-                this.ctx.lineTo(sourceX, sourceY + 10);
+            // 繪製 Source -> Bar 的垂直線（如果全是多胞胎則跳過）
+            if (!allSameTwinGroup) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(sourceX, sourceY);
+                if (barY > sourceY) {
+                    this.ctx.lineTo(sourceX, barY);
+                } else {
+                    this.ctx.lineTo(sourceX, sourceY + 10);
+                }
+                this.ctx.stroke();
             }
-            this.ctx.stroke();
 
-            // 繪製橫槓 (涵蓋所有孩子 X 範圍 + 父母來源點)
-            const allX = [...childObjs.map(c => c.x), sourceX];
-            const minX = Math.min(...allX);
-            const maxX = Math.max(...allX);
+            // 計算橫槓 X 範圍
+            // 非雙胞胎：使用各自的 X 座標
+            // 雙胞胎群組：使用群組中心點
+            const barXPositions = [sourceX];
 
-            this.ctx.beginPath();
-            this.ctx.moveTo(minX, barY);
-            this.ctx.lineTo(maxX, barY);
-            this.ctx.stroke();
+            // 非雙胞胎的 X 座標
+            nonTwins.forEach(child => {
+                barXPositions.push(child.x);
+            });
 
-            // 繪製 Bar -> 每个孩子 的垂直線
+            // 雙胞胎群組的中心 X 座標
+            Object.values(twinGroups).forEach(twins => {
+                if (twins.length >= 2) {
+                    const leftmost = Math.min(...twins.map(t => t.x));
+                    const rightmost = Math.max(...twins.map(t => t.x));
+                    const centerX = (leftmost + rightmost) / 2;
+                    barXPositions.push(centerX);
+                } else {
+                    // 單個人（不算雙胞胎）
+                    twins.forEach(t => barXPositions.push(t.x));
+                }
+            });
+
+            const minX = Math.min(...barXPositions);
+            const maxX = Math.max(...barXPositions);
+
+            // 如果不是全部都是多胞胎，才繪製橫槓（allSameTwinGroup 已在上面計算）
+            if (!allSameTwinGroup) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(minX, barY);
+                this.ctx.lineTo(maxX, barY);
+                this.ctx.stroke();
+            }
+
+            // 繪製多胞胎連接線
+            // 如果所有子女都是多胞胎，V 形從婚姻線中心開始（originalSourceY）
+            // 否則從 barY 開始
+            Object.values(twinGroups).forEach(twins => {
+                if (twins.length >= 2) {
+                    // 使用 originalSourceY 讓 V 形直接連到婚姻線
+                    const connectY = allSameTwinGroup ? originalSourceY : barY;
+                    const connectX = allSameTwinGroup ? sourceX : null;
+                    this.drawTwinConnector(twins, connectY, selectedChildId, connectX);
+                }
+            });
+
+            // 繪製 Bar -> 每個孩子 的垂直線
+            // 注意：多胞胎的連線已在 drawTwinConnector 中用 V 形處理
             childObjs.forEach(child => {
                 const childTop = child.y - this.personSize / 2;
                 const isThisChildSelected = selectedChildId === child.id;
+
+                // 如果是多胞胎且有有效群組，V 形連線已處理，跳過
+                if (child.twinGroup) {
+                    const twins = twinGroups[child.twinGroup];
+                    if (twins && twins.length >= 2) {
+                        return; // V 形已連接到子女頂部，不需要再畫
+                    }
+                }
 
                 // 如果這個子女被選中，使用高亮樣式
                 if (isThisChildSelected) {
@@ -2852,6 +3086,37 @@ class GenogramCanvas {
                     this.ctx.restore();
                 }
             });
+        });
+    }
+
+    /**
+     * 繪製多胞胎連接線
+     * @param {Array} twins - 多胞胎成員列表
+     * @param {number} parentBarY - 父母橫槓的 Y 座標
+     * @param {string} selectedChildId - 當前選中的子女 ID (用於高亮)
+     * @param {number} parentX - 可選，父母連接點的 X 座標（當所有子女都是多胞胎時使用）
+     */
+    drawTwinConnector(twins, parentBarY, selectedChildId = null, parentX = null) {
+        if (twins.length < 2) return;
+
+        // 按 X 座標排序多胞胎
+        const sortedTwins = [...twins].sort((a, b) => a.x - b.x);
+
+        // 計算連接點位置（中心）
+        const leftmost = sortedTwins[0].x;
+        const rightmost = sortedTwins[sortedTwins.length - 1].x;
+
+        // 如果有指定父母 X 座標，使用它；否則用多胞胎中心
+        const centerX = parentX !== null ? parentX : (leftmost + rightmost) / 2;
+
+        // V 形連接：從連接點往下斜線到各子女頂部
+        sortedTwins.forEach(twin => {
+            const twinTop = twin.y - this.personSize / 2;
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(centerX, parentBarY);
+            this.ctx.lineTo(twin.x, twinTop);
+            this.ctx.stroke();
         });
     }
 
@@ -2877,10 +3142,68 @@ class GenogramCanvas {
             const bounds = this.getHouseholdBounds(household, persons, relationships);
             if (!bounds || !bounds.hullPoints) return;
 
-            const { hullPoints } = bounds;
+            const { hullPoints, minX, minY, maxX, maxY, width, height } = bounds;
             const isSelected = selectedHouseholdId === household.id;
 
-            // 繪製路徑
+            // 判斷是否應該使用狗骨頭形狀（膠囊狀）
+            // 寬度 > 高度 * 1.2 且 寬度足夠容納兩個半圓時嘗試使用
+            const aspectRatio = width / height;
+            const isDogBone = aspectRatio > 1.2;
+
+            // 繪製狗骨頭形狀（膠囊狀，上下平直）
+            const drawDogBone = () => {
+                const padding = 25;
+
+                // 邊界（含 padding）
+                const left = minX - padding;
+                const right = maxX + padding;
+                const top = minY - padding;
+                const bottom = maxY + padding;
+
+                // 計算高度
+                const totalHeight = bottom - top;
+
+                // 半圓的半徑 = 高度的一半
+                const arcRadius = totalHeight / 2;
+
+                // 左右圓心的 Y 座標（在中間）
+                const centerY = (top + bottom) / 2;
+
+                // 左圓心 X
+                const leftArcX = left + arcRadius;
+                // 右圓心 X
+                const rightArcX = right - arcRadius;
+
+                // 確保左右圓心不會交叉（如果交叉代表寬度不足以畫兩個完整半圓，回退到凹包）
+                // 稍微寬容一點 (-10) 避免浮點數誤差導致閃爍
+                if (leftArcX > rightArcX + 10) {
+                    return false;
+                }
+
+                this.ctx.beginPath();
+
+                // 畫左邊半圓 ( Left Cap )
+                // MDN arc: (x, y, radius, startAngle, endAngle, anticlockwise)
+                // 我們要畫左邊的 C 形：從底部 (PI/2) 到頂部 (-PI/2)
+                // 順時針 (false): PI/2 -> PI -> -PI/2
+                this.ctx.arc(leftArcX, centerY, arcRadius, Math.PI / 2, -Math.PI / 2, false);
+
+                // 上方水平線到右邊
+                this.ctx.lineTo(rightArcX, top);
+
+                // 畫右邊半圓 ( Right Cap )
+                // 我們要畫右邊的 D 形：從頂部 (-PI/2) 到底部 (PI/2)
+                // 順時針 (false): -PI/2 -> 0 -> PI/2
+                this.ctx.arc(rightArcX, centerY, arcRadius, -Math.PI / 2, Math.PI / 2, false);
+
+                // 下方水平線回到左邊
+                this.ctx.lineTo(leftArcX, bottom);
+
+                this.ctx.closePath();
+                return true;
+            };
+
+            // 繪製凹包路徑
             const drawHull = (isGlow = false) => {
                 this.ctx.beginPath();
                 if (hullPoints.length < 3) return;
@@ -2910,6 +3233,15 @@ class GenogramCanvas {
                 this.ctx.closePath();
             };
 
+            // 選擇繪製方式
+            const tryDrawDogBone = () => {
+                if (isDogBone) {
+                    const success = drawDogBone();
+                    if (success) return;
+                }
+                drawHull();
+            };
+
             // 如果被選中，先繪製高亮外框
             if (isSelected) {
                 this.ctx.save();
@@ -2917,14 +3249,14 @@ class GenogramCanvas {
                 this.ctx.lineWidth = 6;
                 this.ctx.strokeStyle = '#4a90d9';
                 this.ctx.globalAlpha = 0.3;
-                drawHull();
+                tryDrawDogBone();
                 this.ctx.stroke();
                 this.ctx.restore();
             }
 
             // 繪製實際的圈選框
             this.ctx.strokeStyle = isSelected ? '#4a90d9' : '#333';
-            drawHull();
+            tryDrawDogBone();
             this.ctx.stroke();
         });
 
@@ -3159,7 +3491,47 @@ class GenogramCanvas {
         const bounds = this.getHouseholdBounds(household, persons, relationships);
         if (!bounds || !bounds.hullPoints) return false;
 
-        const { hullPoints, minX, minY, maxX, maxY } = bounds;
+        const { hullPoints, minX, minY, maxX, maxY, width, height } = bounds;
+
+        // 判斷是否為狗骨頭形狀 (需與 drawHouseholds 邏輯一致)
+        const aspectRatio = width / height;
+        const isDogBone = aspectRatio > 1.2;
+
+        if (isDogBone) {
+            const padding = 25;
+            // 邊界（含 padding）
+            const left = minX - padding;
+            const right = maxX + padding;
+            const top = minY - padding;
+            const bottom = maxY + padding;
+
+            const totalHeight = bottom - top;
+            const arcRadius = totalHeight / 2;
+            const centerY = (top + bottom) / 2;
+
+            const leftArcX = left + arcRadius;
+            const rightArcX = right - arcRadius;
+
+            // 確保沒有交叉，才視為有效狗骨頭
+            if (leftArcX <= rightArcX + 10) {
+                // 1. 檢查是否在左半圓內 (距離檢查)
+                const distLeft = Math.sqrt((px - leftArcX) ** 2 + (py - centerY) ** 2);
+                if (distLeft <= arcRadius + tolerance && px <= leftArcX + tolerance) return true;
+
+                // 2. 檢查是否在右半圓內
+                const distRight = Math.sqrt((px - rightArcX) ** 2 + (py - centerY) ** 2);
+                if (distRight <= arcRadius + tolerance && px >= rightArcX - tolerance) return true;
+
+                // 3. 檢查是否在中間矩形區域內
+                if (px >= leftArcX && px <= rightArcX &&
+                    py >= top - tolerance && py <= bottom + tolerance) {
+                    return true;
+                }
+
+                // 如果是狗骨頭但不符合上述條件，且也不在凹包內（後面會檢查），則回傳 false
+                // 但為了保險起見，如果狗骨頭邏輯判斷沒中，我們還是讓它跑一下凹包檢查作為 Fallback
+            }
+        }
 
         // 1. 快速過濾：如果連外接矩形都沒進去，直接回傳 false
         if (px < minX - tolerance || px > maxX + tolerance ||
@@ -3526,9 +3898,9 @@ class GenogramCanvas {
         const btnRadius = 18;
 
         Object.entries(GenogramCanvas.QUICK_BUTTONS).forEach(([type, btn]) => {
-            // 跳過懷孕按鈕：男性、懷孕、死亡者
+            // 跳過懷孕按鈕：男性、懷孕、死亡者、男跨女 (MTF)
             if (type === 'pregnancy') {
-                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased) {
+                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased || person.transgender === 'mtf') {
                     return; // 跳過不繪製
                 }
             }
@@ -3586,9 +3958,9 @@ class GenogramCanvas {
         const btnRadius = 18;
 
         for (const [type, btn] of Object.entries(GenogramCanvas.QUICK_BUTTONS)) {
-            // 跳過懷孕按鈕：男性、懷孕、死亡者
+            // 跳過懷孕按鈕：男性、懷孕、死亡者、男跨女 (MTF)
             if (type === 'pregnancy') {
-                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased) {
+                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased || person.transgender === 'mtf') {
                     continue;
                 }
             }

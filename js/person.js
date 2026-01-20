@@ -27,10 +27,16 @@ class Person {
             isObese: false,
             hasLanguageProblem: false
         };
+        // [NEW] 性別取向標記 (是否顯示倒三角)
+        this.sexualOrientation = data.sexualOrientation || false;
+        // [NEW] 跨性別標記 ('ftm', 'mtf', 或 null)
+        this.transgender = data.transgender || null;
+
         this.x = data.x || 100;
         this.y = data.y || 100;
         this.notes = data.notes || '';
         this.generation = data.generation || null; // 'grandparent', 'parent', 'child', 'grandchild'
+        this.twinGroup = data.twinGroup || null; // 多胞胎群組ID，null表示非多胞胎
     }
 
     /**
@@ -114,10 +120,13 @@ class Person {
             isDeceased: this.isDeceased,
             isIdentifiedPatient: this.isIdentifiedPatient,
             medical: this.medical,
+            sexualOrientation: this.sexualOrientation,
+            transgender: this.transgender,
             x: this.x,
             y: this.y,
             notes: this.notes,
-            generation: this.generation
+            generation: this.generation,
+            twinGroup: this.twinGroup
         };
     }
 

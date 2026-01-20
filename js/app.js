@@ -167,7 +167,13 @@ class GenogramApp {
             childrenModal: document.getElementById('childrenModal'),
             childrenList: document.getElementById('childrenList'),
             skipChildren: document.getElementById('skipChildren'),
-            confirmChildren: document.getElementById('confirmChildren')
+            confirmChildren: document.getElementById('confirmChildren'),
+
+            // 多元性別 UI
+            toggleDiversityBtn: document.getElementById('toggleDiversityBtn'),
+            backToBasicBtn: document.getElementById('backToBasicBtn'),
+            diversitySection: document.getElementById('diversitySection'),
+            basicGenderSection: document.querySelector('.gender-selection') // 捕捉原本的性別按鈕區
         };
     }
 
@@ -240,15 +246,35 @@ class GenogramApp {
         this.elements.cancelGender.addEventListener('click', () => this.closeGenderModal());
         document.querySelectorAll('.gender-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const gender = e.currentTarget.dataset.gender;
-                // 檢查是否為快速新增模式 (手足/伴侶)
+                const button = e.currentTarget;
+                const gender = button.dataset.gender;
+                const orientation = button.dataset.orientation; // 'true' or undefined
+                const transgender = button.dataset.transgender || null; // 'ftm', 'mtf', or null
+
                 if (this.quickAddContext) {
-                    this.createQuickPersonWithGender(gender);
+                    this.createQuickPersonWithGender(gender, orientation === 'true', transgender);
                 } else {
-                    this.createPersonWithGeneration(gender);
+                    this.createPersonWithGeneration(gender, orientation === 'true', transgender);
                 }
             });
         });
+
+        // 多元性別切換與返回事件
+        if (this.elements.toggleDiversityBtn) {
+            this.elements.toggleDiversityBtn.addEventListener('click', () => {
+                this.elements.basicGenderSection.style.display = 'none';
+                this.elements.toggleDiversityBtn.style.display = 'none';
+                this.elements.diversitySection.style.display = 'block';
+            });
+        }
+
+        if (this.elements.backToBasicBtn) {
+            this.elements.backToBasicBtn.addEventListener('click', () => {
+                this.elements.diversitySection.style.display = 'none';
+                this.elements.basicGenderSection.style.display = 'flex';
+                this.elements.toggleDiversityBtn.style.display = 'flex';
+            });
+        }
 
         // 關係對話框取消
         this.elements.cancelRelationship.addEventListener('click', () => this.closeRelationshipModal());
@@ -1588,19 +1614,27 @@ class GenogramApp {
 
         this.autoSave();
         this.render();
-        const genderName = gender === 'male' ? '兒子' : (gender === 'female' ? '女兒' : '懷孕');
+        let genderName = '成員';
+        if (gender === 'male') genderName = '兒子';
+        else if (gender === 'female') genderName = '女兒';
+        else if (gender === 'pregnancy') genderName = '懷孕';
+        else if (gender === 'female-to-male') genderName = '跨性別兒子';
+        else if (gender === 'male-to-female') genderName = '跨性別女兒';
+        else genderName = '子女';
         const spouseNote = spouse ? '（雙親）' : '';
         this.updateStatus(`已建立${genderName}並建立親子關係${spouseNote}`, 'success');
     }
 
     /**
-     * 處理快速新增的性別選擇（手足/伴侶）
+     * 快速建立人物（伴侶或手足）
      */
-    createQuickPersonWithGender(gender) {
+
+    createQuickPersonWithGender(gender, sexualOrientation = false, transgender = null) {
         if (!this.quickAddContext) return;
 
         const { personId, type } = this.quickAddContext;
         const basePerson = this.persons.find(p => p.id === personId);
+
         if (!basePerson) {
             this.closeGenderModal();
             return;
@@ -1624,6 +1658,8 @@ class GenogramApp {
                 x: siblingX,
                 y: basePerson.y,
                 gender: gender,
+                sexualOrientation: sexualOrientation,
+                transgender: transgender,
                 generation: basePerson.generation
             });
             this.persons.push(sibling);
@@ -1643,26 +1679,30 @@ class GenogramApp {
 
             this.updateStatus('已建立手足', 'success');
         } else if (type === 'partner') {
-            // 建立伴侶（同居關係）
+            // 建立伴侶
             const partnerX = basePerson.x + grid.CELL_WIDTH;
 
             const partner = new Person({
                 x: partnerX,
                 y: basePerson.y,
                 gender: gender,
+                sexualOrientation: sexualOrientation,
+                transgender: transgender,
                 generation: basePerson.generation
             });
             this.persons.push(partner);
 
-            // 建立同居關係
+            // 建立關係 (預設為 cohabiting，或可改為 marriage)
             const cohabitRel = new Relationship({
                 fromPersonId: basePerson.id,
                 toPersonId: partner.id,
-                type: 'cohabiting'
+                type: 'marriage' // 普通伴侶預設用婚姻線 (實線) 比較符合直覺? 或者 cohabiting? 
+                // 之前代碼用 cohabiting, 但 user 需求可能是婚姻. 
+                // 無論如何, 先用 'marriage' 較通用，之後可改
             });
             this.relationships.push(cohabitRel);
 
-            this.updateStatus('已建立伴侶並建立同居關係', 'success');
+            this.updateStatus('已建立伴侶關係', 'success');
         }
 
         this.closeGenderModal();
@@ -1692,7 +1732,7 @@ class GenogramApp {
      * 使用輩分和性別建立人物 (自動計算座標 並支援自動連線與防交織排列)
      * @param {string} gender - 性別 ('male', 'female')
      */
-    createPersonWithGeneration(gender) {
+    createPersonWithGeneration(gender, sexualOrientation = false, transgender = null) {
         if (!this.pendingGeneration) return;
 
         const genMap = {
@@ -1810,7 +1850,14 @@ class GenogramApp {
         // [Bug Fix] 將數字 generation 轉換為字串格式，與系統其他部分保持一致
         const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
         const generationStr = genNames[genIndex] || 'parent';
-        const person = new Person({ x, y, gender, generation: generationStr });
+        const person = new Person({
+            x,
+            y,
+            gender,
+            sexualOrientation: sexualOrientation,
+            transgender: transgender,
+            generation: generationStr
+        });
         this.persons.push(person);
 
         // 自動建立關係
@@ -1886,6 +1933,113 @@ class GenogramApp {
     /**
      * 更新屬性面板
      */
+    /**
+     * 找出與指定人物有相同父母的兄弟姊妹
+     * @param {Person} person 
+     * @returns {Array} 兄弟姊妹列表
+     */
+    getSiblings(person) {
+        // 找出此人物的父母（透過 parent-child 關係，用 Y 軸位置判斷）
+        const parentIds = [];
+        this.relationships.forEach(rel => {
+            if (rel.type !== 'parent-child') return;
+
+            const p1 = this.persons.find(p => p.id === rel.fromPersonId);
+            const p2 = this.persons.find(p => p.id === rel.toPersonId);
+            if (!p1 || !p2) return;
+
+            // Y 軸較小（較高）的是父母
+            let parentId, childId;
+            if (p1.y < p2.y) {
+                parentId = p1.id;
+                childId = p2.id;
+            } else {
+                parentId = p2.id;
+                childId = p1.id;
+            }
+
+            // 如果此 person 是子女，記錄其父母
+            if (childId === person.id) {
+                parentIds.push(parentId);
+            }
+        });
+
+        if (parentIds.length === 0) {
+            return []; // 沒有父母，無兄弟姊妹
+        }
+
+        // 找出所有與這些父母有 parent-child 關係的其他子女
+        const siblingIds = new Set();
+        this.relationships.forEach(rel => {
+            if (rel.type !== 'parent-child') return;
+
+            const p1 = this.persons.find(p => p.id === rel.fromPersonId);
+            const p2 = this.persons.find(p => p.id === rel.toPersonId);
+            if (!p1 || !p2) return;
+
+            let parentId, childId;
+            if (p1.y < p2.y) {
+                parentId = p1.id;
+                childId = p2.id;
+            } else {
+                parentId = p2.id;
+                childId = p1.id;
+            }
+
+            // 如果父母在我們的父母列表中，且子女不是當前 person
+            if (parentIds.includes(parentId) && childId !== person.id) {
+                siblingIds.add(childId);
+            }
+        });
+
+        // 轉換為 Person 物件並過濾存在的人物
+        return Array.from(siblingIds)
+            .map(id => this.persons.find(p => p.id === id))
+            .filter(p => p);
+    }
+
+    /**
+     * 生成多胞胎設定區塊的 HTML
+     * @param {Person} person 
+     * @returns {string}
+     */
+    generateTwinSettingsHTML(person) {
+        const siblings = this.getSiblings(person);
+
+        // 總是顯示區塊，即使沒有兄弟姊妹（方便除錯）
+        let html = `
+            <div class="form-group" style="margin-top: 15px;">
+                <h4 style="margin-bottom: 8px; font-size: 14px; color: var(--text-color);">多胞胎設定</h4>
+        `;
+
+        if (siblings.length === 0) {
+            html += `<div style="font-size: 12px; color: #888;">（尚無同父母的兄弟姊妹）</div>`;
+            html += '</div>';
+            return html;
+        }
+
+        const currentTwinGroupId = person.twinGroup;
+        html += `<div style="font-size: 12px; color: #666; margin-bottom: 8px;">勾選與此人是多胞胎的兄弟姊妹：</div>`;
+
+        siblings.forEach(sibling => {
+            const isChecked = currentTwinGroupId && sibling.twinGroup === currentTwinGroupId;
+            const genderSymbol = sibling.gender === 'male' ? '□' : (sibling.gender === 'female' ? '○' : '◇');
+            html += `
+                <div class="checkbox-group">
+                    <input type="checkbox" 
+                           id="twin_${sibling.id}" 
+                           data-sibling-id="${sibling.id}" 
+                           class="twin-checkbox"
+                           ${isChecked ? 'checked' : ''}>
+                    <label for="twin_${sibling.id}">${genderSymbol} ${sibling.name || '(未命名)'}</label>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        return html;
+    }
+
     updatePropertyPanel() {
         const content = this.elements.propertyContent;
 
@@ -1978,7 +2132,7 @@ class GenogramApp {
                         <select id="personGender">
                             <option value="male" ${person.gender === 'male' ? 'selected' : ''}>男性</option>
                             <option value="female" ${person.gender === 'female' ? 'selected' : ''}>女性</option>
-                            <option value="pregnancy" ${person.gender === 'pregnancy' ? 'selected' : ''}>懷孕 / 性別未定 (三角形)</option>
+                            ${person.transgender !== 'mtf' ? `<option value="pregnancy" ${person.gender === 'pregnancy' ? 'selected' : ''}>懷孕 / 性別未定 (三角形)</option>` : ''}
                         </select>
                     </div>
                 </div>
@@ -1998,6 +2152,10 @@ class GenogramApp {
                     <label for="personNotes">備註</label>
                     <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)">${person.notes || ''}</textarea>
                 </div>
+                
+                <!-- 多胞胎設定區塊 -->
+                ${this.generateTwinSettingsHTML(person)}
+                
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
             <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
             
@@ -2243,6 +2401,51 @@ class GenogramApp {
             }
             person.notes = value;
             this.autoSave();
+        });
+
+        // 多胞胎勾選框
+        const twinCheckboxes = document.querySelectorAll('.twin-checkbox');
+        twinCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const siblingId = e.target.dataset.siblingId;
+                const sibling = this.persons.find(p => p.id === siblingId);
+
+                if (!sibling) return;
+
+                this.saveState();
+
+                if (e.target.checked) {
+                    // 勾選：將此人與兄弟姊妹標記為同一多胞胎群組
+                    let twinGroupId = person.twinGroup;
+
+                    // 如果當前人物還沒有 twinGroup，建立新的
+                    if (!twinGroupId) {
+                        twinGroupId = 'twin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                        person.twinGroup = twinGroupId;
+                    }
+
+                    sibling.twinGroup = twinGroupId;
+                    this.updateStatus(`已標記 ${person.name || '此人'} 與 ${sibling.name || '兄弟姊妹'} 為多胞胎`, 'success');
+                } else {
+                    // 取消勾選：移除兄弟姊妹的 twinGroup
+                    sibling.twinGroup = null;
+
+                    // 檢查是否還有其他人在同一群組
+                    const remainingTwins = this.persons.filter(p =>
+                        p.twinGroup === person.twinGroup && p.id !== person.id && p.id !== siblingId
+                    );
+
+                    // 如果只剩下當前人物，也移除其 twinGroup
+                    if (remainingTwins.length === 0) {
+                        person.twinGroup = null;
+                    }
+
+                    this.updateStatus(`已取消 ${sibling.name || '兄弟姊妹'} 的多胞胎標記`, 'info');
+                }
+
+                this.autoSave();
+                this.render();
+            });
         });
     }
 

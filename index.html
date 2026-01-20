@@ -219,6 +219,74 @@
                             <span class="icon female-icon"></span>
                             <span>女性</span>
                         </button>
+                        <button class="gender-btn" data-gender="same">
+                            <span class="icon same-icon"></span>
+                            <span>同性別</span>
+                        </button>
+                    </div>
+
+                    <!-- 多元性別切換按鈕 -->
+                    <div style="text-align: center; margin-top: 10px;">
+                        <button id="toggleDiversityBtn"
+                            style="background:none; border:none; color: var(--primary-color); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 5px; margin: 0 auto;">
+                            <span>🌈 多元性別選項</span>
+                        </button>
+                    </div>
+
+                    <!-- 多元性別選項區域 (預設隱藏) -->
+                    <div id="diversitySection"
+                        style="display: none; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="font-size: 14px; color: var(--text-secondary); margin-bottom: 10px;">非二元 / 跨性別
+                            </h4>
+                            <div class="gender-selection" style="gap: 15px; padding: 0; flex-wrap: wrap;">
+                                <button class="gender-btn" data-gender="male" data-transgender="ftm">
+                                    <span class="icon ftm-icon"></span>
+                                    <span>女跨男</span>
+                                </button>
+                                <button class="gender-btn" data-gender="female" data-transgender="mtf">
+                                    <span class="icon mtf-icon"></span>
+                                    <span>男跨女</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 style="font-size: 14px; color: var(--text-secondary); margin-bottom: 5px;">性別取向
+                            </h4>
+
+                            <div class="gender-selection" style="gap: 10px; padding: 0; flex-wrap: wrap;">
+                                <button class="gender-btn" data-gender="male" data-orientation="true">
+                                    <span class="icon male-icon with-triangle"></span>
+                                    <span>男同性戀</span>
+                                </button>
+                                <button class="gender-btn" data-gender="female" data-orientation="true">
+                                    <span class="icon female-icon with-triangle"></span>
+                                    <span>女同性戀</span>
+                                </button>
+                                <button class="gender-btn" data-gender="female" data-transgender="mtf"
+                                    data-orientation="true">
+                                    <span class="icon mtf-icon with-triangle"></span>
+                                    <span>雙性戀</span>
+                                </button>
+                                <button class="gender-btn" data-gender="male" data-transgender="ftm"
+                                    data-orientation="true">
+                                    <span class="icon ftm-icon with-triangle"></span>
+                                    <span>酷兒</span>
+                                </button>
+                                <button class="gender-btn" data-gender="same" data-orientation="true">
+                                    <span class="icon same-icon with-triangle"></span>
+                                    <span>雙性人或無性戀者</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="text-align: center; margin-top: 20px;">
+                            <button id="backToBasicBtn"
+                                style="background:none; border:none; color: var(--text-secondary); cursor: pointer; font-size: 13px;">
+                                <span>⬆ 返回基本選項</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-actions">
