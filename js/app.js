@@ -2208,15 +2208,7 @@ class GenogramApp {
                     <option value="filled" ${(person.medical && person.medical.bottomHalf === 'filled') ? 'selected' : ''}>確診 (填滿)</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="medCenter">中心符號</label>
-                <select id="medCenter">
-                    <option value="none" ${(!person.medical || person.medical.centerSymbol === 'none') ? 'selected' : ''}>無</option>
-                    <option value="dot" ${(person.medical && person.medical.centerSymbol === 'dot') ? 'selected' : ''}>帶原者 (Dot)</option>
-                    <option value="cross" ${(person.medical && person.medical.centerSymbol === 'cross') ? 'selected' : ''}>受影響 (Cross)</option>
-                    <option value="question" ${(person.medical && person.medical.centerSymbol === 'question') ? 'selected' : ''}>可能受影響 (?)</option>
-                </select>
-            </div>
+
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="medSmoker" ${(person.medical && person.medical.isSmoker) ? 'checked' : ''}>
@@ -2409,9 +2401,6 @@ class GenogramApp {
 
         const medBottom = document.getElementById('medBottomHalf');
         if (medBottom) medBottom.addEventListener('change', (e) => updateMedical('bottomHalf', e.target.value));
-
-        const medCenter = document.getElementById('medCenter');
-        if (medCenter) medCenter.addEventListener('change', (e) => updateMedical('centerSymbol', e.target.value));
 
         // 醫學核取方塊
         const medSmoker = document.getElementById('medSmoker');
