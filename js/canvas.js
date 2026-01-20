@@ -404,7 +404,7 @@ class GenogramCanvas {
 
         // 繪製醫學符號 (若未過世)
         if (!isDeceased && medical) {
-            this.drawMedicalSymbols(x, y, size, gender, medical);
+            this.drawMedicalSymbols(x, y, size, gender, medical, transgender);
         }
 
         // 重新繪製邊框 (確保清晰)
@@ -740,19 +740,34 @@ class GenogramCanvas {
     /**
      * 繪製醫學符號
      */
-    drawMedicalSymbols(x, y, size, gender, medical) {
+    drawMedicalSymbols(x, y, size, gender, medical, transgender = null) {
         const halfSize = size / 2;
 
         this.ctx.save();
         this.ctx.beginPath();
-        if (gender === 'female') {
+
+        // 根據性別和跨性別狀態決定 clip 路徑
+        if (transgender === 'ftm') {
+            // 女跨男: 外方形，clip 用方形
+            this.ctx.rect(x - halfSize, y - halfSize, size, size);
+        } else if (transgender === 'mtf') {
+            // 男跨女: 外圓形，clip 用圓形
+            this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
+        } else if (gender === 'female') {
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
         } else if (gender === 'pregnancy') {
             this.ctx.moveTo(x, y - halfSize);
             this.ctx.lineTo(x + halfSize, y + halfSize);
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
+        } else if (gender === 'same') {
+            // 圓頂方底 (Tombstone shape)
+            this.ctx.arc(x, y, halfSize, Math.PI, 0);
+            this.ctx.lineTo(x + halfSize, y + halfSize);
+            this.ctx.lineTo(x - halfSize, y + halfSize);
+            this.ctx.closePath();
         } else {
+            // 預設男性方形
             this.ctx.rect(x - halfSize, y - halfSize, size, size);
         }
         this.ctx.clip(); // 限制繪製範圍在形狀內
@@ -775,28 +790,7 @@ class GenogramCanvas {
 
         this.ctx.restore();
 
-        // 中心符號
-        this.ctx.fillStyle = '#333';
-        this.ctx.strokeStyle = '#333';
-        if (medical.centerSymbol === 'dot') {
-            this.ctx.beginPath();
-            this.ctx.arc(x, y, 4, 0, Math.PI * 2);
-            this.ctx.fill();
-        } else if (medical.centerSymbol === 'cross') {
-            const s = 6;
-            this.ctx.lineWidth = 2;
-            this.ctx.beginPath();
-            this.ctx.moveTo(x - s, y - s);
-            this.ctx.lineTo(x + s, y + s);
-            this.ctx.moveTo(x + s, y - s);
-            this.ctx.lineTo(x - s, y + s);
-            this.ctx.stroke();
-        } else if (medical.centerSymbol === 'question') {
-            this.ctx.font = 'bold 16px sans-serif';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText('?', x, y);
-        }
+        // 已移除中心符號 (dot, cross, question)
 
         // 文字標記 (S, O, L) - 右下角
         const tags = [];
@@ -812,10 +806,13 @@ class GenogramCanvas {
             // 畫在形狀內的右下角
             let tx = x + halfSize - 2;
             let ty = y + halfSize - 2;
-            if (gender === 'female') {
+            if (gender === 'female' || transgender === 'mtf') {
                 // 圓形內縮一點
                 tx -= 4;
                 ty -= 4;
+            } else if (gender === 'same') {
+                // 圓頂方底，下半部是方形，稍微內縮
+                ty -= 2;
             }
             this.ctx.fillText(tags.join(''), tx, ty);
         }
