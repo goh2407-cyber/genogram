@@ -3975,15 +3975,12 @@ class GenogramApp {
             }
         });
 
-        // 移動生活圈
-        if (this.lifeCircles && result.lifeCircleShifts) {
+        // 更新生活圈形狀 (智慧跟隨 - 直接替換頂點)
+        if (this.lifeCircles && result.lifeCircleShapes) {
             this.lifeCircles.forEach(lc => {
-                const shift = result.lifeCircleShifts[lc.id];
-                if (shift && lc.points) {
-                    lc.points.forEach(pt => {
-                        pt.x += shift.dx;
-                        pt.y += shift.dy;
-                    });
+                const newPoints = result.lifeCircleShapes[lc.id];
+                if (newPoints && newPoints.length > 0) {
+                    lc.points = newPoints;
                 }
             });
         }

@@ -77,12 +77,83 @@ class GenogramLayout {
         // 7. 處理多 Component 的間距
         this._adjustComponentSpacing(positions, components);
 
-        // 8. 計算生活圈位移
-        const lifeCircleShifts = this._calculateLifeCircleShifts(positions);
+        // 8. 重新計算生活圈形狀 (智慧跟隨)
+        const lifeCircleShapes = this._recalculateLifeCircleShapes(positions);
 
-        return { positions, lifeCircleShifts };
+        return { positions, lifeCircleShapes };
     }
 
+    /**
+     * 重新計算生活圈形狀 (Smart Binding)
+     * 根據成員的新位置，重新產生包圍框
+     * @param {Map} positions - 新座標
+     * @returns {Object} lifeCircleId -> [{x, y}, ...] (新頂點)
+     */
+    _recalculateLifeCircleShapes(positions) {
+        const newShapes = {};
+
+        if (!this.lifeCircles || this.lifeCircles.length === 0) {
+            return newShapes;
+        }
+
+        this.lifeCircles.forEach(lc => {
+            if (!lc.points || lc.points.length === 0) return;
+
+            // 1. 找出原本在生活圈範圍內的成員
+            // 計算原始生活圈的範圍
+            const minX = Math.min(...lc.points.map(pt => pt.x));
+            const maxX = Math.max(...lc.points.map(pt => pt.x));
+            const minY = Math.min(...lc.points.map(pt => pt.y));
+            const maxY = Math.max(...lc.points.map(pt => pt.y));
+
+            const membersInCircle = this.persons.filter(p => {
+                const orig = this.originalPositions[p.id];
+                if (!orig) return false;
+                // 寬鬆判定：只要中心點在範圍內 (擴大 20px)
+                return orig.x >= minX - 20 && orig.x <= maxX + 20 &&
+                    orig.y >= minY - 20 && orig.y <= maxY + 20;
+            });
+
+            if (membersInCircle.length === 0) {
+                // 如果沒有圈到任何人，保持原狀 (或嘗試平移? 暫時保持原位，因為這通常是裝飾用)
+                // 為了避免完全錯位，我們可以嘗試找出最近的人? 不，保持原位比較安全。
+                // 這裡我們不回傳新的 points，讓外部保留原本的 points
+                return;
+            }
+
+            // 2. 獲取這些成員的新位置
+            let newMinX = Infinity, newMaxX = -Infinity;
+            let newMinY = Infinity, newMaxY = -Infinity;
+
+            membersInCircle.forEach(p => {
+                const newPos = positions.get(p.id);
+                if (newPos) {
+                    newMinX = Math.min(newMinX, newPos.x);
+                    newMaxX = Math.max(newMaxX, newPos.x);
+                    newMinY = Math.min(newMinY, newPos.y);
+                    newMaxY = Math.max(newMaxY, newPos.y);
+                }
+            });
+
+            // 3. 加上 Padding
+            const PADDING = 60; // 留出足夠空間
+            newMinX -= PADDING;
+            newMaxX += PADDING;
+            newMinY -= PADDING;
+            newMaxY += PADDING;
+
+            // 4. 重建成矩形 (四個角)
+            // Canvas 的平滑曲線功能會將其繪製為圓角矩形/橢圓
+            newShapes[lc.id] = [
+                { x: newMinX, y: newMinY }, // 左上
+                { x: newMaxX, y: newMinY }, // 右上
+                { x: newMaxX, y: newMaxY }, // 右下
+                { x: newMinX, y: newMaxY }  // 左下
+            ];
+        });
+
+        return newShapes;
+    }
     /**
      * 計算每個人的輩份 (rank)
      * @returns {Object} personId -> rank number

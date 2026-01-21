@@ -2911,6 +2911,25 @@ class GenogramCanvas {
                 sourceY = p.y + this.personSize / 2 + notesOffset;
             }
 
+            // [Optimization] 如果只有一個孩子且為雙親家庭，讓連接線對齊孩子 X 軸以呈現垂直直線
+            // 這樣使用者不需要手動微調父母或孩子位置來消除「閃電線」
+            if (childObjs.length === 1 && parentObjs.length === 2) {
+                const child = childObjs[0];
+                const p1 = parentObjs[0];
+                const p2 = parentObjs[1];
+
+                const centerX = (p1.x + p2.x) / 2;
+
+                // [Fix] 設定固定 "吸附閾值" 為 16px
+                // 1. 不使用 halfDist，避免父母距離遠時，子女放在父母下方也被吸附成垂直線 (導致誤會為單親或偏心)
+                // 2. 16px 提供足夠的緩衝區 (總寬 32px)，解決 "太近無法置中" 的操作困難
+                const snapThreshold = 16;
+
+                if (Math.abs(child.x - centerX) <= snapThreshold) {
+                    sourceX = child.x;
+                }
+            }
+
             // [Fix] 確保 sourceY 在所有父母備註之下 (避免線條穿過備註)
             // 先記錄原始連接點 (婚姻線中心或人物底部)
             const originalSourceY = sourceY;
@@ -4018,12 +4037,21 @@ class GenogramCanvas {
 
             const isSelected = selectedId === lc.id;
 
-            // 繪製填充多邊形
+            // 繪製填充多邊形 (改為平滑曲線)
             this.ctx.beginPath();
-            this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
-            for (let i = 1; i < lc.points.length; i++) {
-                this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
+
+            // 使用平滑曲線連接所有點
+            // 如果點少於3個，無法構成封閉平滑曲線，退化為直線 (雖然後面有 check length < 3 return，但防呆)
+            if (lc.points.length < 3) {
+                this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
+                for (let i = 1; i < lc.points.length; i++) {
+                    this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
+                }
+            } else {
+                // Catmull-Rom Spline 模擬
+                this.drawSmoothClosedPath(this.ctx, lc.points);
             }
+
             this.ctx.closePath();
 
             // 填充
@@ -4045,11 +4073,43 @@ class GenogramCanvas {
                     this.ctx.fill();
                 });
             }
-
-            // 標籤已移除，不再繪製
         });
 
         this.ctx.restore();
+    }
+
+    /**
+     * 繪製封閉的平滑曲線 (通過所有頂點)
+     * 使用 Cardinal Spline / Catmull-Rom 算法
+     */
+    drawSmoothClosedPath(ctx, points, tension = 0.5) {
+        if (points.length < 1) return;
+
+        ctx.moveTo(points[0].x, points[0].y);
+
+        const size = points.length;
+
+        // 為了閉合，我們需要虛擬點：
+        // 曲線段 i (p[i] 到 p[i+1]) 需要控制點 p[i-1] 和 p[i+2]
+
+        for (let i = 0; i < size; i++) {
+            const p0 = points[(i - 1 + size) % size];     // 前一點
+            const p1 = points[i];                         // 當前點 (起點)
+            const p2 = points[(i + 1) % size];            // 下一點 (終點)
+            const p3 = points[(i + 2) % size];            // 下下點
+
+            // 計算控制點 (Derivative based)
+            // 簡化係數
+            const f = tension / 3;
+
+            const cp1x = p1.x + (p2.x - p0.x) * f;
+            const cp1y = p1.y + (p2.y - p0.y) * f;
+
+            const cp2x = p2.x - (p3.x - p1.x) * f;
+            const cp2y = p2.y - (p3.y - p1.y) * f;
+
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
     }
 
     /**
