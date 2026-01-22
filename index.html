@@ -480,6 +480,24 @@
                             style="margin-right: 8px; width: 18px; height: 18px;">
                         <span>顯示備註 (人物備註 + 關係線時間/說明)</span>
                     </label>
+                    <label style="display: flex; align-items: center; cursor: pointer; margin-top: 8px;">
+                        <input type="checkbox" id="exportShowLegend" checked
+                            style="margin-right: 8px; width: 18px; height: 18px;">
+                        <span>顯示關係類型圖例</span>
+                    </label>
+                    <div style="margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px;">
+                        <span style="font-size: 14px; font-weight: bold; color: #555;">解析度 (影響檔案大小):</span>
+                        <div style="display: flex; gap: 15px; margin-top: 6px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="exportResolution" value="2" checked style="margin-right: 6px;">
+                                <span>高解析度 (2x)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="exportResolution" value="1" style="margin-right: 6px;">
+                                <span>標準解析度 (1x)</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <div class="export-options">
                     <button class="export-option-btn" data-format="png">

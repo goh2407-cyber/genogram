@@ -367,6 +367,11 @@ class GenogramApp {
      * 設定當前工具
      */
     setTool(tool) {
+        // [UX Fix] 如果正在預覽自動排列，切換工具時自動取消預覽
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+        }
+
         this.currentTool = tool;
 
         // 切換工具時清空連線暫存，避免出現「跟隨滑鼠的線」
@@ -1459,6 +1464,11 @@ class GenogramApp {
      * @param {string} generation - 輩分 ('grandparent', 'parent', 'child', 'grandchild')
      */
     showGenderModal(generation) {
+        // [UX Fix] 如果正在預覽自動排列，開啟對話框時自動取消預覽
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+        }
+
         this.pendingGeneration = generation;
         const level = GenogramApp.GENERATION_LEVELS[generation];
         const label = level ? level.label : (generation || '外部');
@@ -1891,7 +1901,13 @@ class GenogramApp {
                 idealX = grid.ORIGIN_X;
             }
         } else {
-            idealX = grid.ORIGIN_X;
+            // [NEW] 從可視區域中心開始建立角色
+            // 計算畫布可視區域中心點（考慮當前偏移量）
+            const canvasWidth = this.canvas.canvas.width / (window.devicePixelRatio || 1);
+            const canvasHeight = this.canvas.canvas.height / (window.devicePixelRatio || 1);
+            const viewCenterX = (canvasWidth / 2 - this.canvas.offsetX) / this.canvas.scale;
+            // 將 viewCenterX 對齊到格線
+            idealX = this.snapToGrid(viewCenterX, 'x');
         }
 
         // 計算空位
@@ -3019,6 +3035,12 @@ class GenogramApp {
      * 刪除選取的項目
      */
     deleteSelected() {
+        // [UX Fix] 如果正在預覽自動排列，刪除時自動取消預覽
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+            return; // 僅取消預覽，不執行刪除 (避免誤刪)
+        }
+
         // 優先權 1: 優先刪除「關係線」 (User Request: 避免被同住框攔截)
         if (this.selectedRelationshipId) {
             this.saveState();
@@ -3133,12 +3155,44 @@ class GenogramApp {
     }
 
     /**
-     * 重置縮放
+     * 重置縮放並將視圖置中於圖形中央
      */
     resetZoom() {
+        // 重置縮放為 100%
         this.canvas.scale = 1;
-        this.canvas.offsetX = 0;
-        this.canvas.offsetY = 0;
+
+        // 如果有人物，計算邊界框並置中
+        if (this.persons.length > 0) {
+            // 計算所有人物的邊界框
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            this.persons.forEach(p => {
+                minX = Math.min(minX, p.x);
+                maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y);
+                maxY = Math.max(maxY, p.y);
+            });
+
+            // 計算內容中心點
+            const contentCenterX = (minX + maxX) / 2;
+            const contentCenterY = (minY + maxY) / 2;
+
+            // 計算畫布可視區域中心點
+            const canvasWidth = this.canvas.canvas.width / (window.devicePixelRatio || 1);
+            const canvasHeight = this.canvas.canvas.height / (window.devicePixelRatio || 1);
+            const viewCenterX = canvasWidth / 2;
+            const viewCenterY = canvasHeight / 2;
+
+            // 設定偏移量，使內容中心對齊畫布中心
+            this.canvas.offsetX = viewCenterX - contentCenterX;
+            this.canvas.offsetY = viewCenterY - contentCenterY;
+        } else {
+            // 沒有人物時，重置偏移
+            this.canvas.offsetX = 0;
+            this.canvas.offsetY = 0;
+        }
+
         this.updateZoomDisplay();
         this.render();
     }
@@ -3334,6 +3388,12 @@ class GenogramApp {
      * 撤銷
      */
     undo() {
+        // [UX Fix] 如果正在預覽自動排列，撤銷時僅取消預覽，不執行歷史回溯
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+            return;
+        }
+
         const currentState = {
             persons: this.persons.map(p => p.toJSON()),
             relationships: this.relationships.map(r => r.toJSON()),
@@ -3359,6 +3419,12 @@ class GenogramApp {
      * 重做
      */
     redo() {
+        // [UX Fix] 如果正在預覽自動排列，重做時僅取消預覽 (視為退出預覽模式)
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+            return;
+        }
+
         const currentState = {
             persons: this.persons.map(p => p.toJSON()),
             relationships: this.relationships.map(r => r.toJSON()),
@@ -3527,8 +3593,8 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    exportPNG(showNotes = true) {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
+    exportPNG(showNotes = true, showLegend = true, scale = 3) {
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -3584,26 +3650,40 @@ class GenogramApp {
         const showNotesCheckbox = document.getElementById('exportShowNotes');
         const showNotes = showNotesCheckbox ? showNotesCheckbox.checked : true;
 
+        // 讀取是否顯示圖例的設定
+        const showLegendCheckbox = document.getElementById('exportShowLegend');
+        const showLegend = showLegendCheckbox ? showLegendCheckbox.checked : true;
+
+        // 讀取解析度設定
+        const resolutionRadios = document.getElementsByName('exportResolution');
+        let scale = 2; // 預設 2x
+        for (const radio of resolutionRadios) {
+            if (radio.checked) {
+                scale = parseFloat(radio.value);
+                break;
+            }
+        }
+
         const timestamp = new Date().toISOString().slice(0, 10);
 
         switch (format) {
             case 'png':
-                this.exportPNG(showNotes);
+                this.exportPNG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PNG 圖片', 'success');
                 break;
 
             case 'jpeg':
-                this.exportJPEG(showNotes);
+                this.exportJPEG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 JPEG 圖片', 'success');
                 break;
 
             case 'svg':
-                this.exportSVG(showNotes);
+                this.exportSVG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 SVG 向量圖', 'success');
                 break;
 
             case 'pdf':
-                this.exportPDF(showNotes);
+                this.exportPDF(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PDF 文件', 'success');
                 break;
 
@@ -3620,8 +3700,8 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    exportJPEG(showNotes = true) {
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes);
+    exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -3633,10 +3713,10 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    exportSVG(showNotes = true) {
+    exportSVG(showNotes = true, showLegend = true, scale = 3) {
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -3663,8 +3743,8 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    exportPDF(showNotes = true) {
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
+    exportPDF(showNotes = true, showLegend = true, scale = 3) {
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -3696,6 +3776,11 @@ class GenogramApp {
      * 清空畫布 (清除所有人物、關係、圈選)
      */
     clearAll() {
+        // [UX Fix] 如果正在預覽自動排列，清空時自動取消預覽
+        if (this.isPreviewingLayout) {
+            this.cancelPreviewedLayout();
+        }
+
         if (this.persons.length === 0 && this.relationships.length === 0) {
             this.updateStatus('畫布已經是空的', 'info');
             return;
@@ -3732,7 +3817,21 @@ class GenogramApp {
             const showNotesCheckbox = document.getElementById('exportShowNotes');
             const showNotes = showNotesCheckbox ? showNotesCheckbox.checked : true;
 
-            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes);
+            // 讀取是否顯示圖例的設定
+            const showLegendCheckbox = document.getElementById('exportShowLegend');
+            const showLegend = showLegendCheckbox ? showLegendCheckbox.checked : true;
+
+            // 讀取解析度設定 (預設 1x 用於剪貼簿，避免過大)
+            const resolutionRadios = document.getElementsByName('exportResolution');
+            let scale = 1; 
+            for (const radio of resolutionRadios) {
+                if (radio.checked) {
+                    scale = parseFloat(radio.value);
+                    break;
+                }
+            }
+
+            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
             if (!dataUrl) {
                 this.updateStatus('產生圖片失敗', 'error');
                 return;

@@ -2150,8 +2150,10 @@ class GenogramCanvas {
      * @param {Array} households - 同住家庭陣列
      * @param {Array} lifeCircles - 生活圈陣列
      * @param {boolean} showNotes - 是否顯示備註 (人物備註 + 關係線時間/說明)
+     * @param {boolean} showLegend - 是否顯示關係類型圖例
+     * @param {number} scale - 匯出縮放倍率 (解析度)
      */
-    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true) {
+    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true, showLegend = true, scale = 3) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -2208,17 +2210,18 @@ class GenogramCanvas {
         const contentHeight = maxY - minY;
 
         // ===== 圖例設定 =====
-        const legendWidth = 440; // 180*2 columns + 32 gap + 32 padding + extra
-        const legendPadding = 40;
+        // 如果不顯示圖例，寬度設為 0
+        const legendWidth = showLegend ? 440 : 0; 
+        const legendPadding = showLegend ? 40 : 0;
         const legendHeight = 850;
 
         // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
-        const totalHeight = Math.max(contentHeight, legendHeight + margin * 2);
+        const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
 
-        // 建立臨時畫布 (提高解析度 3x)
+        // 建立臨時畫布
         const exportCanvas = document.createElement('canvas');
-        const exportScale = 3;
+        const exportScale = scale; // 使用傳入的 scale
         exportCanvas.width = totalWidth * exportScale;
         exportCanvas.height = totalHeight * exportScale;
         const exportCtx = exportCanvas.getContext('2d');
@@ -2279,10 +2282,12 @@ class GenogramCanvas {
 
         this.ctx.restore();
 
-        // 5. 繪製圖例 (靠右對齊)
-        const legendX = totalWidth - legendWidth - legendPadding / 2;
-        const legendY = (totalHeight - legendHeight) / 2;
-        this.drawExportLegend(exportCtx, legendX, legendY);
+        // 5. 繪製圖例 (靠右對齊) - 只有當 showLegend 為 true 時才繪製
+        if (showLegend) {
+            const legendX = totalWidth - legendWidth - legendPadding / 2;
+            const legendY = (totalHeight - legendHeight) / 2;
+            this.drawExportLegend(exportCtx, legendX, legendY);
+        }
 
         // 還原 context
         this.ctx = originalCtx;
@@ -2298,9 +2303,11 @@ class GenogramCanvas {
      * @param {Array} lifeCircles - 生活圈陣列
      * @param {number} quality - JPEG 品質 (0-1)
      * @param {boolean} showNotes - 是否顯示備註
+     * @param {boolean} showLegend - 是否顯示關係類型圖例
+     * @param {number} scale - 匯出縮放倍率
      * @returns {string|null} - Data URL 或 null
      */
-    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true) {
+    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true, showLegend = true, scale = 3) {
         // 計算內容邊界
         if (persons.length === 0) {
             return null;
@@ -2353,15 +2360,15 @@ class GenogramCanvas {
         const contentWidth = maxX - minX;
         const contentHeight = maxY - minY;
 
-        const legendWidth = 440;
-        const legendPadding = 40;
+        const legendWidth = showLegend ? 440 : 0;
+        const legendPadding = showLegend ? 40 : 0;
         const legendHeight = 850;
 
         const totalWidth = contentWidth + legendWidth + legendPadding;
-        const totalHeight = Math.max(contentHeight, legendHeight + margin * 2);
+        const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
 
         const exportCanvas = document.createElement('canvas');
-        const exportScale = 3;
+        const exportScale = scale; // 使用傳入的 scale
         exportCanvas.width = totalWidth * exportScale;
         exportCanvas.height = totalHeight * exportScale;
         const exportCtx = exportCanvas.getContext('2d');
@@ -2417,9 +2424,11 @@ class GenogramCanvas {
 
         this.ctx.restore();
 
-        const legendX = totalWidth - legendWidth - legendPadding / 2;
-        const legendY = (totalHeight - legendHeight) / 2;
-        this.drawExportLegend(exportCtx, legendX, legendY);
+        if (showLegend) {
+            const legendX = totalWidth - legendWidth - legendPadding / 2;
+            const legendY = (totalHeight - legendHeight) / 2;
+            this.drawExportLegend(exportCtx, legendX, legendY);
+        }
 
         this.ctx = originalCtx;
 
