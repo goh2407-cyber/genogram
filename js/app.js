@@ -16,10 +16,10 @@ class GenogramApp {
 
     // 格子系統設定 (Grid System)
     static GRID = {
-        CELL_WIDTH: 200,      // 水平格子寬度 (人物間距) - 從 160 調大到 200
-        CELL_HEIGHT: 180,     // 垂直格子高度 (輩分間距) - 從 150 調大到 180
+        CELL_WIDTH: 120,      // 水平格子寬度 (人物間距) - 調回較緊湊的 120
+        CELL_HEIGHT: 120,     // 垂直格子高度 (輩分間距) - 調回較緊湊的 120
         MIN_DISTANCE: 50,     // 人物最小間距
-        MAX_DISTANCE: 200,    // 人物最大間距 (2 格寬度)
+        MAX_DISTANCE: 120,    // 人物最大間距 (1 格寬度)
         ORIGIN_X: 50,         // 格子起點 X (半格偏移，讓人物置中)
         ORIGIN_Y: 60          // 格子起點 Y (半格偏移)
     };
@@ -1020,6 +1020,23 @@ class GenogramApp {
                         let targetX = this.snapToGrid(p.x, 'x');
                         let targetY = this.snapToGrid(p.y, 'y');
 
+                        // [NEW] 智慧吸附: 檢查是否有父母，若有則優先吸附到父母婚姻線中點
+                        const parents = this.relationships
+                            .filter(r => r.toPersonId === p.id && r.type === 'parent-child')
+                            .map(r => this.persons.find(per => per.id === r.fromPersonId))
+                            .filter(Boolean);
+
+                        if (parents.length === 2) {
+                            // 計算父母婚姻線中點
+                            const parentMidX = (parents[0].x + parents[1].x) / 2;
+                            const SNAP_THRESHOLD = 50; // 吸附閾值
+
+                            // 若拖曳位置接近中點，則吸附到中點
+                            if (Math.abs(p.x - parentMidX) < SNAP_THRESHOLD) {
+                                targetX = parentMidX;
+                            }
+                        }
+
                         // [UPDATED] 根據拖曳位置自動切換輩分
                         // 如果拖曳超過上下輩分的中點，自動調整到該輩分
                         const grid = GenogramApp.GRID;
@@ -1536,18 +1553,38 @@ class GenogramApp {
         const grid = GenogramApp.GRID;
         const parentY = child.y - grid.CELL_HEIGHT;
 
-        // 建立父親（左）
+        // 計算初始位置
+        let fatherX = child.x - grid.CELL_WIDTH / 2;
+        let motherX = child.x + grid.CELL_WIDTH / 2;
+
+        // 碰撞檢測：確保不與現有人物重疊
+        const minDistance = grid.CELL_WIDTH * 0.8;
+        const existingAtY = this.persons.filter(p =>
+            Math.abs(p.y - parentY) < grid.CELL_HEIGHT / 2
+        );
+
+        // 如果父親位置有重疊，整體向左移動
+        while (existingAtY.some(p => Math.abs(p.x - fatherX) < minDistance)) {
+            fatherX -= grid.CELL_WIDTH;
+            motherX -= grid.CELL_WIDTH;
+        }
+        // 如果母親位置有重疊，母親向右移動
+        while (existingAtY.some(p => Math.abs(p.x - motherX) < minDistance)) {
+            motherX += grid.CELL_WIDTH;
+        }
+
+        // 建立父親
         const father = new Person({
-            x: child.x - grid.CELL_WIDTH / 2,
+            x: fatherX,
             y: parentY,
             gender: 'male',
             generation: this.getGenerationAbove(child.generation)
         });
         this.persons.push(father);
 
-        // 建立母親（右）
+        // 建立母親
         const mother = new Person({
-            x: child.x + grid.CELL_WIDTH / 2,
+            x: motherX,
             y: parentY,
             gender: 'female',
             generation: this.getGenerationAbove(child.generation)
@@ -3823,7 +3860,7 @@ class GenogramApp {
 
             // 讀取解析度設定 (預設 1x 用於剪貼簿，避免過大)
             const resolutionRadios = document.getElementsByName('exportResolution');
-            let scale = 1; 
+            let scale = 1;
             for (const radio of resolutionRadios) {
                 if (radio.checked) {
                     scale = parseFloat(radio.value);

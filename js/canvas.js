@@ -1022,15 +1022,13 @@ class GenogramCanvas {
 
     /**
      * 繪製標準直線（用於親子關係等）
+     * 親子關係一律繪製為直線
      */
     drawStandardLine(from, to, style) {
-        const midY = (from.y + to.y) / 2;
         this.ctx.setLineDash(this.getLineDash(style.pattern));
         this.ctx.beginPath();
         this.ctx.moveTo(from.x, from.y);
-        this.ctx.lineTo(from.x, midY);
-        this.ctx.lineTo(to.x, midY);
-        this.ctx.lineTo(to.x, to.y);
+        this.ctx.lineTo(to.x, to.y);  // 一律直線連接
         this.ctx.stroke();
     }
 
@@ -2211,7 +2209,7 @@ class GenogramCanvas {
 
         // ===== 圖例設定 =====
         // 如果不顯示圖例，寬度設為 0
-        const legendWidth = showLegend ? 440 : 0; 
+        const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
         const legendHeight = 850;
 

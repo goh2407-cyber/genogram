@@ -19,12 +19,12 @@ class GenogramLayout {
         this.relationships = relationships || [];
         this.options = options;
 
-        // 預設格線設定
+        // 預設格線設定 (應與 GenogramApp.GRID 保持一致)
         this.grid = options.grid || {
             CELL_WIDTH: 120,
-            CELL_HEIGHT: 150,
-            ORIGIN_X: 100,
-            ORIGIN_Y: 100
+            CELL_HEIGHT: 120,
+            ORIGIN_X: 50,
+            ORIGIN_Y: 60
         };
 
         this.households = options.households || [];
@@ -77,7 +77,10 @@ class GenogramLayout {
         // 7. 處理多 Component 的間距
         this._adjustComponentSpacing(positions, components);
 
-        // 8. 重新計算生活圈形狀 (智慧跟隨)
+        // 8. [NEW] 讓獨生子女置中於父母婚姻線中點
+        this._centerChildrenUnderParents(positions);
+
+        // 9. 重新計算生活圈形狀 (智慧跟隨)
         const lifeCircleShapes = this._recalculateLifeCircleShapes(positions);
 
         return { positions, lifeCircleShapes };
@@ -494,6 +497,76 @@ class GenogramLayout {
             });
 
             currentX += bounds.width + COMPONENT_GAP;
+        });
+    }
+
+    /**
+     * [NEW] 讓獨生子女置中於父母婚姻線中點
+     * @param {Map} positions - 座標映射
+     */
+    _centerChildrenUnderParents(positions) {
+        // 找出所有配偶對
+        const couples = this._identifyCouples();
+
+        couples.forEach(couple => {
+            const parent1 = this.personMap[couple.id1];
+            const parent2 = this.personMap[couple.id2];
+            if (!parent1 || !parent2) return;
+
+            const pos1 = positions.get(couple.id1);
+            const pos2 = positions.get(couple.id2);
+            if (!pos1 || !pos2) return;
+
+            // 找出這對父母的所有子女
+            const children = this.persons.filter(p => {
+                // 檢查是否有來自任一父母的 parent-child 關係
+                const hasParent1 = this.relationships.some(r =>
+                    r.fromPersonId === couple.id1 &&
+                    r.toPersonId === p.id &&
+                    r.type === 'parent-child'
+                );
+                const hasParent2 = this.relationships.some(r =>
+                    r.fromPersonId === couple.id2 &&
+                    r.toPersonId === p.id &&
+                    r.type === 'parent-child'
+                );
+                // 只要有任一父母的關係即視為此配偶對的子女
+                return hasParent1 || hasParent2;
+            });
+
+            // 只處理獨生子女的情況
+            if (children.length === 1) {
+                const child = children[0];
+                const childPos = positions.get(child.id);
+                if (childPos) {
+                    // 置中於父母婚姻線中點
+                    childPos.x = (pos1.x + pos2.x) / 2;
+                }
+            }
+            // 多名子女的情況：讓他們均勻分佈在父母之間
+            else if (children.length > 1) {
+                const midX = (pos1.x + pos2.x) / 2;
+                const parentSpan = Math.abs(pos1.x - pos2.x);
+                const childSpacing = this.grid.CELL_WIDTH;
+
+                // 依 X 座標排序子女
+                children.sort((a, b) => {
+                    const posA = positions.get(a.id);
+                    const posB = positions.get(b.id);
+                    return (posA?.x || 0) - (posB?.x || 0);
+                });
+
+                // 計算子女起始位置（置中）
+                const totalWidth = (children.length - 1) * childSpacing;
+                const startX = midX - totalWidth / 2;
+
+                children.forEach((child, idx) => {
+                    const childPos = positions.get(child.id);
+                    if (childPos) {
+                        childPos.x = startX + idx * childSpacing;
+                    }
+                });
+            }
         });
     }
 
