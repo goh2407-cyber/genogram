@@ -244,6 +244,18 @@ class GenogramCanvas {
             }
         }
 
+        // 9.5 繪製選取順序 Badge (最後繪製，確保在最上層)
+        // 只有在有選取且工具支援時才顯示 (這裡我們假設 selectedPersonIds 存在就是要顯示，或者可以判斷傳入參數)
+        // 由於同住工具會傳入 selectedPersonIds，這符合需求
+        if (selectedPersonIds && selectedPersonIds.length > 0) {
+            selectedPersonIds.forEach((id, index) => {
+                const person = persons.find(p => p.id === id);
+                if (person) {
+                    this.drawSelectionBadge(person, index + 1);
+                }
+            });
+        }
+
         this.ctx.restore();
     }
 
@@ -318,6 +330,41 @@ class GenogramCanvas {
         this.ctx.beginPath(); this.ctx.moveTo(x2, y2 - s); this.ctx.lineTo(x2, y2); this.ctx.lineTo(x2 - s, y2); this.ctx.stroke();
         // Bottom-left
         this.ctx.beginPath(); this.ctx.moveTo(x1 + s, y2); this.ctx.lineTo(x1, y2); this.ctx.lineTo(x1, y2 - s); this.ctx.stroke();
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 繪製選取順序編號 Badge
+     */
+    drawSelectionBadge(person, number) {
+        const { x, y } = person;
+        const size = this.personSize;
+        const badgeSize = 20;
+        // 位置：右上角，稍微超出人物框一點
+        const badgeX = x + size / 2 + 5;
+        const badgeY = y - size / 2 - 5;
+
+        this.ctx.save();
+        this.ctx.shadowBlur = 5;
+        this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
+
+        // 圓底
+        this.ctx.beginPath();
+        this.ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ff5722'; // 鮮豔的橙紅色
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#fff';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        // 數字
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(String(number), badgeX, badgeY + 1); // +1 微調垂直居中
 
         this.ctx.restore();
     }

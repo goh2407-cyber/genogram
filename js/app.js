@@ -372,6 +372,11 @@ class GenogramApp {
             this.cancelPreviewedLayout();
         }
 
+        // [New Fix] 如果正在繪製生活圈，切換工具時自動取消
+        if (this.isDrawingLifeCircle) {
+            this.cancelLifeCircle();
+        }
+
         this.currentTool = tool;
 
         // 切換工具時清空連線暫存，避免出現「跟隨滑鼠的線」
@@ -395,11 +400,11 @@ class GenogramApp {
                 this.connectingFrom = null;
                 break;
             case 'household':
-                // [UX Fix] 不自動建立，讓使用者明確操作
-                if (this.selectedPersonIds.length > 0 || this.selectedPersonId) {
-                    statusText = '已選取成員，按 Enter 建立同住框，或拖曳圈選更多';
+                // [UX Fix] 改用點選模式，更直覺好用
+                if (this.selectedPersonIds.length > 0) {
+                    statusText = `已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框`;
                 } else {
-                    statusText = '同住圈選：拖曳圈選成員，放開後自動建立';
+                    statusText = '同住圈選：點選角色加入選取，按 Enter 建立';
                 }
                 break;
             case 'lifeCircle':
@@ -567,7 +572,7 @@ class GenogramApp {
             return;
         }
 
-        if (this.currentTool === 'boxSelect' || this.currentTool === 'household') {
+        if (this.currentTool === 'boxSelect') {
             this.isBoxSelecting = true;
             this.boxSelectStart = point;
             this.boxSelectEnd = point;
@@ -577,6 +582,30 @@ class GenogramApp {
             this.selectedHouseholdId = null;
             this.updatePropertyPanel();
             this.render();
+            return;
+        }
+
+        // [UX Fix] 同住工具改用點選模式，更直覺好用
+        if (this.currentTool === 'household') {
+            const clickedPerson = this.getPersonAt(point.x, point.y);
+            if (clickedPerson) {
+                // Toggle 選取狀態
+                const index = this.selectedPersonIds.indexOf(clickedPerson.id);
+                if (index > -1) {
+                    this.selectedPersonIds.splice(index, 1);
+                } else {
+                    this.selectedPersonIds.push(clickedPerson.id);
+                }
+
+                if (this.selectedPersonIds.length > 0) {
+                    this.updateStatus(`已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框`, 'info');
+                } else {
+                    this.updateStatus('同住圈選：點選角色加入選取，按 Enter 建立');
+                }
+                this.render();
+                return;
+            }
+            // 點擊空白處不做任何事 (不清空選取)
             return;
         }
 
@@ -925,22 +954,33 @@ class GenogramApp {
         }
 
         // 更新游標樣式（hover 效果）
-        if (this.currentTool === 'select') {
+        // 我們把原來的邏輯改寫一下以支援 household
+        if (this.currentTool === 'select' || this.currentTool === 'household') {
             const person = this.getPersonAt(point.x, point.y);
             const rel = this.getRelationshipAt(point.x, point.y);
             const household = this.getHouseholdAt(point.x, point.y);
 
-            if (person) {
-                this.canvas.canvas.style.cursor = 'move';
-            } else if (rel) {
-                this.canvas.canvas.style.cursor = 'pointer';
-            } else if (household) {
-                this.canvas.canvas.style.cursor = 'move'; // 顯示可移動游標
-            } else if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
-                this.canvas.canvas.style.cursor = 'move'; // 多選區域移動
+            if (this.currentTool === 'household') {
+                if (person) {
+                    this.canvas.canvas.style.cursor = 'pointer';
+                } else {
+                    this.canvas.canvas.style.cursor = 'default';
+                }
             } else {
-                this.canvas.canvas.style.cursor = 'default';
+                // Select tool logic
+                if (person) {
+                    this.canvas.canvas.style.cursor = 'move';
+                } else if (rel) {
+                    this.canvas.canvas.style.cursor = 'pointer';
+                } else if (household) {
+                    this.canvas.canvas.style.cursor = 'move'; // 顯示可移動游標
+                } else if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
+                    this.canvas.canvas.style.cursor = 'move'; // 多選區域移動
+                } else {
+                    this.canvas.canvas.style.cursor = 'default';
+                }
             }
+
 
             // [NEW] 快速按鈕 hover 追蹤
             // 修正：使用擴展區域來保持按鈕可見
@@ -985,14 +1025,6 @@ class GenogramApp {
         if (this.isBoxSelecting) {
             this.isBoxSelecting = false;
             this.updateBoxSelection(); // 計算選取了哪些人
-
-            // 如果是在「同住工具」模式下，圈選完直接建立
-            if (this.currentTool === 'household' && this.selectedPersonIds.length > 0) {
-                this.householdSelection = [...this.selectedPersonIds];
-                this.createHousehold();
-                // createHousehold 內部已經呼叫了 render()，所以這裡直接 return
-                return;
-            }
 
             // 如果是「範圍圈選」工具，完成後自動切換回選取工具，方便立即移動
             if (this.currentTool === 'boxSelect') {
