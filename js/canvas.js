@@ -2269,24 +2269,16 @@ class GenogramCanvas {
 
 
     /**
-     * 匯出為 PNG 圖片（含關係圖例）
-     * @param {Array} persons - 人物陣列
-     * @param {Array} relationships - 關係陣列
-     * @param {Array} households - 同住家庭陣列
-     * @param {Array} lifeCircles - 生活圈陣列
-     * @param {boolean} showNotes - 是否顯示備註 (人物備註 + 關係線時間/說明)
-     * @param {boolean} showLegend - 是否顯示關係類型圖例
-     * @param {number} scale - 匯出縮放倍率 (解析度)
+     * 計算內容邊界 (包含所有人物、關係、同住框、生活圈)
      */
-    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true, showLegend = true, scale = 3) {
-        // 計算內容邊界
+    _calculateContentBounds(persons, relationships, households, lifeCircles) {
         if (persons.length === 0) {
             return null;
         }
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-        // 1. 每個人物的影響範圍 (包含名字高度)
+        // 1. 人物
         persons.forEach(p => {
             const halfSize = this.personSize / 2 + 10;
             minX = Math.min(minX, p.x - halfSize);
@@ -2295,7 +2287,7 @@ class GenogramCanvas {
             maxY = Math.max(maxY, p.y + halfSize + 30); // 留點空間給名字
         });
 
-        // 2. 考慮 households 的實際邊界 (hullPoints)
+        // 2. 同住家庭
         if (households && households.length > 0) {
             households.forEach(household => {
                 const bounds = this.getHouseholdBounds(household, persons, relationships);
@@ -2310,11 +2302,30 @@ class GenogramCanvas {
             });
         }
 
-        // 3. 考慮 lifeCircles 的邊界
+        // 3. 生活圈
         if (lifeCircles && lifeCircles.length > 0) {
             lifeCircles.forEach(lc => {
                 if (lc.points) {
                     lc.points.forEach(pt => {
+                        minX = Math.min(minX, pt.x);
+                        minY = Math.min(minY, pt.y);
+                        maxX = Math.max(maxX, pt.x);
+                        maxY = Math.max(maxY, pt.y);
+                    });
+                }
+            });
+        }
+
+        // 4. [New] 關係線 (包含天橋)
+        if (relationships && relationships.length > 0) {
+            relationships.forEach(rel => {
+                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
+                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                if (fromPerson && toPerson) {
+                    // 使用相同的 getRelationshipPath 邏輯來取得所有路徑點
+                    // 注意：這裡傳入 relationships 是為了正確計算 offset和天橋配置
+                    const points = this.getRelationshipPath(fromPerson, toPerson, rel, relationships);
+                    points.forEach(pt => {
                         minX = Math.min(minX, pt.x);
                         minY = Math.min(minY, pt.y);
                         maxX = Math.max(maxX, pt.x);
@@ -2331,8 +2342,25 @@ class GenogramCanvas {
         maxX += margin;
         maxY += margin;
 
-        const contentWidth = maxX - minX;
-        const contentHeight = maxY - minY;
+        return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+    }
+
+    /**
+     * 匯出為 PNG 圖片（含關係圖例）
+     * @param {Array} persons - 人物陣列
+     * @param {Array} relationships - 關係陣列
+     * @param {Array} households - 同住家庭陣列
+     * @param {Array} lifeCircles - 生活圈陣列
+     * @param {boolean} showNotes - 是否顯示備註 (人物備註 + 關係線時間/說明)
+     * @param {boolean} showLegend - 是否顯示關係類型圖例
+     * @param {number} scale - 匯出縮放倍率 (解析度)
+     */
+    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true, showLegend = true, scale = 3) {
+        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+        if (!bounds) return null;
+
+        const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
+        const margin = 50; // Re-define margin for legend calculation
 
         // ===== 圖例設定 =====
         // 如果不顯示圖例，寬度設為 0
@@ -2433,57 +2461,11 @@ class GenogramCanvas {
      * @returns {string|null} - Data URL 或 null
      */
     exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true, showLegend = true, scale = 3) {
-        // 計算內容邊界
-        if (persons.length === 0) {
-            return null;
-        }
+        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+        if (!bounds) return null;
 
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-        persons.forEach(p => {
-            const halfSize = this.personSize / 2 + 10;
-            minX = Math.min(minX, p.x - halfSize);
-            minY = Math.min(minY, p.y - halfSize);
-            maxX = Math.max(maxX, p.x + halfSize);
-            maxY = Math.max(maxY, p.y + halfSize + 30);
-        });
-
-        if (households && households.length > 0) {
-            households.forEach(household => {
-                const bounds = this.getHouseholdBounds(household, persons, relationships);
-                if (bounds && bounds.hullPoints) {
-                    bounds.hullPoints.forEach(pt => {
-                        minX = Math.min(minX, pt.x);
-                        minY = Math.min(minY, pt.y);
-                        maxX = Math.max(maxX, pt.x);
-                        maxY = Math.max(maxY, pt.y);
-                    });
-                }
-            });
-        }
-
-        // 考慮 lifeCircles 的邊界
-        if (lifeCircles && lifeCircles.length > 0) {
-            lifeCircles.forEach(lc => {
-                if (lc.points) {
-                    lc.points.forEach(pt => {
-                        minX = Math.min(minX, pt.x);
-                        minY = Math.min(minY, pt.y);
-                        maxX = Math.max(maxX, pt.x);
-                        maxY = Math.max(maxY, pt.y);
-                    });
-                }
-            });
-        }
-
-        const margin = 50;
-        minX -= margin;
-        minY -= margin;
-        maxX += margin;
-        maxY += margin;
-
-        const contentWidth = maxX - minX;
-        const contentHeight = maxY - minY;
+        const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
+        const margin = 50; // Re-define margin for legend calculation
 
         const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
