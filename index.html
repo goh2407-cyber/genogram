@@ -25,7 +25,18 @@
         <!-- 頂部工具列 -->
         <header class="toolbar">
             <div class="toolbar-left">
-                <h1 class="app-title">勵馨家系圖生成器</h1>
+                <h1 class="app-title" style="display: flex; align-items: center; gap: 10px;">
+                    <svg id="a" xmlns="http://www.w3.org/2000/svg" width="16.55mm" height="13.99mm"
+                        viewBox="0 0 46.91 39.65">
+                        <path
+                            d="m45.65,20.95c1.82.1,1.43-1.15.29-1.72-3.46-1.73-6.88-3.06-8.01-3.46-1.51-.53-1.97.44-1.97.44,0,0-4.41,5.73-4.86,6.52-.92,1.65.89,1.36.89,1.36l4.39-2.39c.92,1.06,2.65,4.94.24,7.87-.89,1.08-2.87,3.5-7.71,4.83-5.08,1.39-8.74.45-10.58-.66-.82-.5.89-4.58-4.01-3.92-4.2.57-3.35-1.43-3.52-1.93-.08-.24,0-.78-.39-.97-.42-.19-.68-.5-.68-.5-.5-.89.92-1.26.92-1.26-2.42.35-1.21-.95-1.04-1.38.11-.27.3-.32-.88-.64-1.4-.39-1.22-.82-.36-1.75.89-.96,1.06-2.01,1.1-2.06.17-.31-.82-6.52,5.14-8.48,2.8-.92,6.21-.98,10.51-.44,6.33.81,6.03-2.72,6.03-2.72-7.65-1.38-10.96-1.45-14.44-1.17-6.88.55-11.65,2.78-14.39,6.26-2.74,3.48-3.28,9.19-.52,13.81.07.12,2.77,4.64,5.65,7.03,3.24,2.7,6.68,3.88,7.88,4.33,7.19,2.52,15.47,2.22,21.82-1.05,10.96-6.47,4.61-14.73,3.89-16.35,0,0,1.99.24,4.58.38Z"
+                            style="fill:#ed1261; stroke-width:0px;" />
+                        <polygon
+                            points="34.59 3.92 28.41 4.29 34.85 5.04 37.77 14.11 36.65 5.1 42.82 4.73 36.39 3.97 34.58 0 34.59 3.92"
+                            style="fill:#ed1261; stroke-width:0px;" />
+                    </svg>
+                    勵馨家系圖生成器
+                </h1>
             </div>
             <div class="toolbar-center">
                 <div class="tool-group generation-group">
@@ -489,7 +500,8 @@
                         <span style="font-size: 14px; font-weight: bold; color: #555;">解析度 (影響檔案大小):</span>
                         <div style="display: flex; gap: 15px; margin-top: 6px;">
                             <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="radio" name="exportResolution" value="2" checked style="margin-right: 6px;">
+                                <input type="radio" name="exportResolution" value="2" checked
+                                    style="margin-right: 6px;">
                                 <span>高解析度 (2x)</span>
                             </label>
                             <label style="display: flex; align-items: center; cursor: pointer;">
