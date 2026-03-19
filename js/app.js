@@ -886,46 +886,10 @@ class GenogramApp {
 
                 const movingPersons = movingPersonIds.map(id => this.persons.find(p => p.id === id)).filter(p => p);
 
-                // 簡化移動邏輯：只進行基本的重疊防止
-                // 移除垂直層級限制和水平排序限制，讓使用者可以自由移動
-                const personalSpace = 80; // 從 60 調大到 80，確保人物間距更寬鬆
+                // [Disabled] 移除碰撞偵測，讓使用者可以完全自由拖曳
+                // 放開後的 snapToGrid + isOccupied 會確保最終不重疊
                 let finalDx = dx;
                 let finalDy = dy;
-
-                // 檢查是否會與其他人物過於接近
-                // [Fix] 只檢查同輩份（相近Y座標）的人物，不同輩份不會互相阻擋
-                const checkOverlap = (testDx, testDy) => {
-                    for (const person of movingPersons) {
-                        const nx = person.x + testDx;
-                        const ny = person.y + testDy;
-
-                        for (const other of this.persons) {
-                            if (movingPersonIds.includes(other.id)) continue;
-
-                            // 只檢查同輩份的人（Y座標差距在半格以內）
-                            if (Math.abs(ny - other.y) > GenogramApp.GRID.CELL_HEIGHT / 2) continue;
-
-                            const dist = Math.sqrt(Math.pow(nx - other.x, 2) + Math.pow(ny - other.y, 2));
-                            if (dist < personalSpace) return true;
-                        }
-                    }
-                    return false;
-                };
-
-                // 如果完整移動會重疊，嘗試分軸移動
-                if (checkOverlap(finalDx, finalDy)) {
-                    const canMoveX = !checkOverlap(finalDx, 0);
-                    const canMoveY = !checkOverlap(0, finalDy);
-
-                    if (canMoveX && !canMoveY) {
-                        finalDy = 0;
-                    } else if (!canMoveX && canMoveY) {
-                        finalDx = 0;
-                    } else if (!canMoveX && !canMoveY) {
-                        finalDx = 0;
-                        finalDy = 0;
-                    }
-                }
 
                 // [UPDATED] 允許垂直移動以支援輩分切換
                 // 放開後會自動 snap 到最近的輩分
