@@ -1611,18 +1611,38 @@ class GenogramApp {
         const grid = GenogramApp.GRID;
         const childY = parent.y + grid.CELL_HEIGHT;
 
-        // 找配偶
-        const spouse = this.findSpouse(parent.id);
-        const parentIds = spouse ? [parent.id, spouse.id] : [parent.id];
+        // 找配偶（多段關係時不再盲目取第一位）
+        const spouses = this.getSpouses(parent.id);
+        let spouse = null;
 
-        // 找出這對父母現有的所有子女
+        if (spouses.length === 1) {
+            spouse = spouses[0];
+        } else if (spouses.length > 1 && this.selectedRelationshipId) {
+            const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+            const selectedCat = selectedRel
+                ? (typeof selectedRel.getCategory === 'function' ? selectedRel.getCategory() : Relationship.getCategory(selectedRel.type))
+                : null;
+
+            if (selectedRel && selectedCat === 'marriage' && selectedRel.involvesPerson(parent.id)) {
+                const spouseId = selectedRel.fromPersonId === parent.id ? selectedRel.toPersonId : selectedRel.fromPersonId;
+                spouse = this.persons.find(p => p.id === spouseId) || null;
+            }
+        }
+
+        // 找出現有子女（雙親時只看「這一對父母」的共同子女；多伴侶未指定時僅看單親子女）
         const existingChildren = this.persons.filter(p => {
-            // 檢查是否有從任一父母到此人的 parent-child 關係
-            return this.relationships.some(r =>
-                parentIds.includes(r.fromPersonId) &&
-                r.toPersonId === p.id &&
-                r.type === 'parent-child'
-            );
+            if (spouse) {
+                return this.hasParentChildLink(parent.id, p.id) && this.hasParentChildLink(spouse.id, p.id);
+            }
+
+            // 多伴侶但未指定關係：避免把其他伴侶的子女混進來影響定位
+            if (spouses.length > 1) {
+                const parentIdsOfChild = this.getParentIdsForChild(p.id);
+                return this.hasParentChildLink(parent.id, p.id) && parentIdsOfChild.length <= 1;
+            }
+
+            // 一般單親情境
+            return this.hasParentChildLink(parent.id, p.id);
         });
 
         // 計算新子女的 X 座標
@@ -1686,7 +1706,9 @@ class GenogramApp {
         else if (gender === 'female-to-male') genderName = '跨性別兒子';
         else if (gender === 'male-to-female') genderName = '跨性別女兒';
         else genderName = '子女';
-        const spouseNote = spouse ? '（雙親）' : '';
+        const spouseNote = spouse
+            ? '（雙親）'
+            : (spouses.length > 1 ? '（多段伴侶：已先建立單親子女，可再用連線工具指定另一位父母）' : '');
         this.updateStatus(`已建立${genderName}並建立親子關係${spouseNote}`, 'success');
     }
 
@@ -2965,67 +2987,69 @@ class GenogramApp {
      * 遍歷所有親子關係，確保每位父母的 X 座標置中於其所有子女的中心點
      */
     centerParentsAboveChildren() {
-        // 收集每位父母的所有子女
-        const parentToChildren = {};
-
+        // 收集所有「被判定為父母」的人
+        const parentIds = new Set();
         this.relationships.forEach(rel => {
-            if (rel.type === 'parent-child') {
-                const fromPerson = this.persons.find(p => p.id === rel.fromPersonId);
-                const toPerson = this.persons.find(p => p.id === rel.toPersonId);
-                if (!fromPerson || !toPerson) return;
+            if (rel.type !== 'parent-child') return;
+            const fromPerson = this.persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = this.persons.find(p => p.id === rel.toPersonId);
+            if (!fromPerson || !toPerson) return;
 
-                // 判斷誰是父母（Y 座標較小的是父母）
-                let parentId, childId;
-                if (fromPerson.y < toPerson.y) {
-                    parentId = fromPerson.id;
-                    childId = toPerson.id;
-                } else {
-                    parentId = toPerson.id;
-                    childId = fromPerson.id;
-                }
-
-                if (!parentToChildren[parentId]) {
-                    parentToChildren[parentId] = [];
-                }
-                parentToChildren[parentId].push(childId);
-            }
+            if (fromPerson.y < toPerson.y) parentIds.add(fromPerson.id);
+            else if (toPerson.y < fromPerson.y) parentIds.add(toPerson.id);
         });
 
-        // 對每位父母，計算其所有子女的 X 中心點，並調整父母位置
-        Object.keys(parentToChildren).forEach(parentId => {
-            const childIds = parentToChildren[parentId];
+        const processedPairs = new Set();
+
+        parentIds.forEach(parentId => {
             const parent = this.persons.find(p => p.id === parentId);
-            if (!parent || childIds.length === 0) return;
+            if (!parent) return;
 
-            // 計算所有子女的 X 座標平均值（中心點）
-            const childXPositions = childIds.map(cid => {
-                const child = this.persons.find(p => p.id === cid);
-                return child ? child.x : 0;
-            }).filter(x => x !== 0);
+            const spouseIds = this.getSpouseIds(parentId);
 
-            if (childXPositions.length === 0) return;
+            // 多段伴侶：停用自動置中，避免破壞複雜婚姻排版
+            if (spouseIds.length > 1) return;
 
-            const centerX = childXPositions.reduce((sum, x) => sum + x, 0) / childXPositions.length;
+            // 單親：直接以自己的子女置中
+            if (spouseIds.length === 0) {
+                const childXPositions = this.persons
+                    .filter(ch => this.hasParentChildLink(parentId, ch.id))
+                    .map(ch => ch.x);
 
-            // 檢查是否有配偶（透過婚姻關係）
-            const spouse = this.findSpouse(parentId);
-
-            if (spouse) {
-                // 如果有配偶，將兩人中心置於子女中心上方
-                const spacing = GenogramApp.HORIZONTAL_SPACING;
-                const coupleCenter = centerX;
-
-                // 根據性別決定左右位置（男左女右）
-                if (parent.gender === 'male') {
-                    parent.x = coupleCenter - spacing / 2;
-                    spouse.x = coupleCenter + spacing / 2;
-                } else {
-                    parent.x = coupleCenter + spacing / 2;
-                    spouse.x = coupleCenter - spacing / 2;
-                }
-            } else {
-                // 單親：直接置中
+                if (childXPositions.length === 0) return;
+                const centerX = childXPositions.reduce((sum, x) => sum + x, 0) / childXPositions.length;
                 parent.x = centerX;
+                return;
+            }
+
+            // 一對一伴侶：以「共同子女」置中
+            const spouseId = spouseIds[0];
+            const spouse = this.persons.find(p => p.id === spouseId);
+            if (!spouse) return;
+
+            // 若對方有多段伴侶，也跳過自動置中
+            if (this.getSpouseIds(spouseId).length > 1) return;
+
+            const pairKey = [parentId, spouseId].sort().join('_');
+            if (processedPairs.has(pairKey)) return;
+            processedPairs.add(pairKey);
+
+            const sharedChildXPositions = this.persons
+                .filter(ch => this.hasParentChildLink(parentId, ch.id) && this.hasParentChildLink(spouseId, ch.id))
+                .map(ch => ch.x);
+
+            if (sharedChildXPositions.length === 0) return;
+
+            const centerX = sharedChildXPositions.reduce((sum, x) => sum + x, 0) / sharedChildXPositions.length;
+            const spacing = GenogramApp.HORIZONTAL_SPACING;
+
+            // 根據性別決定左右位置（男左女右）
+            if (parent.gender === 'male') {
+                parent.x = centerX - spacing / 2;
+                spouse.x = centerX + spacing / 2;
+            } else {
+                parent.x = centerX + spacing / 2;
+                spouse.x = centerX - spacing / 2;
             }
         });
     }
@@ -3036,20 +3060,76 @@ class GenogramApp {
      * @returns {Person|null}
      */
     findSpouse(personId) {
-        // 使用類別常數
-        const marriageTypes = GenogramApp.MARRIAGE_TYPES;
+        const spouses = this.getSpouses(personId);
+        return spouses.length > 0 ? spouses[0] : null;
+    }
 
-        for (const rel of this.relationships) {
-            if (marriageTypes.includes(rel.type)) {
-                if (rel.fromPersonId === personId) {
-                    return this.persons.find(p => p.id === rel.toPersonId);
-                }
-                if (rel.toPersonId === personId) {
-                    return this.persons.find(p => p.id === rel.fromPersonId);
-                }
+    /**
+     * 取得某人的所有配偶 ID（婚姻類關係）
+     * @param {string} personId
+     * @returns {string[]}
+     */
+    getSpouseIds(personId) {
+        const marriageTypes = GenogramApp.MARRIAGE_TYPES;
+        const spouseIds = new Set();
+
+        this.relationships.forEach(rel => {
+            if (!marriageTypes.includes(rel.type)) return;
+            if (rel.fromPersonId === personId) spouseIds.add(rel.toPersonId);
+            else if (rel.toPersonId === personId) spouseIds.add(rel.fromPersonId);
+        });
+
+        return Array.from(spouseIds);
+    }
+
+    /**
+     * 取得某人的所有配偶物件
+     * @param {string} personId
+     * @returns {Person[]}
+     */
+    getSpouses(personId) {
+        return this.getSpouseIds(personId)
+            .map(id => this.persons.find(p => p.id === id))
+            .filter(p => p);
+    }
+
+    /**
+     * 取得某位子女的父母 ID 列表（依 Y 判斷上下）
+     * @param {string} childId
+     * @returns {string[]}
+     */
+    getParentIdsForChild(childId) {
+        const parentIds = new Set();
+
+        this.relationships.forEach(rel => {
+            if (rel.type !== 'parent-child') return;
+
+            const fromPerson = this.persons.find(p => p.id === rel.fromPersonId);
+            const toPerson = this.persons.find(p => p.id === rel.toPersonId);
+            if (!fromPerson || !toPerson) return;
+
+            if (fromPerson.y < toPerson.y && toPerson.id === childId) {
+                parentIds.add(fromPerson.id);
+            } else if (toPerson.y < fromPerson.y && fromPerson.id === childId) {
+                parentIds.add(toPerson.id);
             }
-        }
-        return null;
+        });
+
+        return Array.from(parentIds);
+    }
+
+    /**
+     * 檢查是否存在 parent-child 關係（不受 from/to 方向影響）
+     * @param {string} parentId
+     * @param {string} childId
+     * @returns {boolean}
+     */
+    hasParentChildLink(parentId, childId) {
+        return this.relationships.some(rel =>
+            rel.type === 'parent-child' &&
+            ((rel.fromPersonId === parentId && rel.toPersonId === childId) ||
+                (rel.fromPersonId === childId && rel.toPersonId === parentId))
+        );
     }
 
     /**
