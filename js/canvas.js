@@ -2987,20 +2987,25 @@ class GenogramCanvas {
                 if (marriageRel) {
                     // [New] 根據天橋配置決定起點
                     const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
+                    const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
 
                     if (config.isBridge) {
-                        // [Fix] 天橋模式：sourceX 使用子女的水平中心（限制在天橋範圍內）
-                        const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
-                        const minParentX = Math.min(p1.x, p2.x);
-                        const maxParentX = Math.max(p1.x, p2.x);
-                        sourceX = Math.max(minParentX, Math.min(maxParentX, childrenCenterX));
+                        // [Fix] 天橋模式：sourceX 使用子女中心，但限制在天橋「實際水平段」範圍
+                        const top1 = p1.getConnectionPoint('top');
+                        const top2 = p2.getConnectionPoint('top');
+                        const minMarriageX = Math.min(top1.x, top2.x);
+                        const maxMarriageX = Math.max(top1.x, top2.x);
+                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, childrenCenterX));
                         sourceY = config.bridgeY;
                     } else {
-                        // [Fix] 一般婚姻也使用子女中心X，確保子女線永遠垂直
-                        const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
-                        const minParentX = Math.min(p1.x, p2.x);
-                        const maxParentX = Math.max(p1.x, p2.x);
-                        sourceX = Math.max(minParentX, Math.min(maxParentX, childrenCenterX));
+                        // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
+                        const leftParent = p1.x <= p2.x ? p1 : p2;
+                        const rightParent = p1.x <= p2.x ? p2 : p1;
+                        const marriageStartX = leftParent.getConnectionPoint('right').x;
+                        const marriageEndX = rightParent.getConnectionPoint('left').x;
+                        const minMarriageX = Math.min(marriageStartX, marriageEndX);
+                        const maxMarriageX = Math.max(marriageStartX, marriageEndX);
+                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, childrenCenterX));
                         sourceY = (p1.y + p2.y) / 2;
                     }
 
