@@ -2989,8 +2989,12 @@ class GenogramCanvas {
                     const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
 
                     if (config.isBridge) {
-                        // 如果是天橋，起點在天橋高度
-                        sourceX = (p1.x + p2.x) / 2;
+                        // [Fix] 天橋模式：sourceX 使用子女的水平中心（限制在天橋範圍內）
+                        // 避免移動遠端配偶時，子女連線跟著移動穿插其他關係線
+                        const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
+                        const minParentX = Math.min(p1.x, p2.x);
+                        const maxParentX = Math.max(p1.x, p2.x);
+                        sourceX = Math.max(minParentX, Math.min(maxParentX, childrenCenterX));
                         sourceY = config.bridgeY;
                     } else {
                         // 否則為一般左右連線的中心
