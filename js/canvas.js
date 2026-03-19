@@ -2999,7 +2999,7 @@ class GenogramCanvas {
                         const minMarriageX = Math.min(top1.x, top2.x);
                         const maxMarriageX = Math.max(top1.x, top2.x);
                         sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = desiredSourceX;
+                        sourceX = childObjs.length === 1 ? desiredSourceX : sourceAnchorX;
                         sourceY = config.bridgeY;
                     } else {
                         // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
@@ -3010,7 +3010,7 @@ class GenogramCanvas {
                         const minMarriageX = Math.min(marriageStartX, marriageEndX);
                         const maxMarriageX = Math.max(marriageStartX, marriageEndX);
                         sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = desiredSourceX;
+                        sourceX = childObjs.length === 1 ? desiredSourceX : sourceAnchorX;
                         sourceY = (p1.y + p2.y) / 2;
                     }
 
@@ -3084,9 +3084,6 @@ class GenogramCanvas {
                 }
             });
 
-            // 是否需要從父母關係線掛接點轉折到子女主幹 X
-            const hasOffsetAnchor = Math.abs(sourceX - sourceAnchorX) > 0.5;
-
             // 計算孩子的高度 (Bar Y position)
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
 
@@ -3142,24 +3139,10 @@ class GenogramCanvas {
                 nonTwins.length === 0 &&
                 Object.keys(twinGroups).length === 1;
 
-            // [Fix] 從父母線連到主幹線：
-            // 1) 先垂直往下到 sourceY（避免穿過父母符號）
-            // 2) 若主幹 X 與掛接點不同，再在 sourceY 水平轉折
+            // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線（如果全是多胞胎則跳過）
             if (!allSameTwinGroup && originalSourceY < sourceY) {
                 this.ctx.beginPath();
-                if (hasOffsetAnchor) {
-                    this.ctx.moveTo(sourceAnchorX, originalSourceY);
-                    this.ctx.lineTo(sourceAnchorX, sourceY);
-                    this.ctx.lineTo(sourceX, sourceY);
-                } else {
-                    this.ctx.moveTo(sourceX, originalSourceY);
-                    this.ctx.lineTo(sourceX, sourceY);
-                }
-                this.ctx.stroke();
-            } else if (!allSameTwinGroup && hasOffsetAnchor) {
-                // 防呆：若沒有可下移空間，至少補上水平連接
-                this.ctx.beginPath();
-                this.ctx.moveTo(sourceAnchorX, sourceY);
+                this.ctx.moveTo(sourceX, originalSourceY);
                 this.ctx.lineTo(sourceX, sourceY);
                 this.ctx.stroke();
             }

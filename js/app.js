@@ -1641,13 +1641,17 @@ class GenogramApp {
         }
 
         // 額外檢查：確保不會與同層其他人重疊
-        const sameLevelPersons = this.persons.filter(p =>
-            Math.abs(p.y - childY) < grid.CELL_HEIGHT * 0.3
-        );
-        if (sameLevelPersons.length > 0) {
-            const occupied = sameLevelPersons.map(p => p.x);
-            while (occupied.some(x => Math.abs(x - childX) < grid.CELL_WIDTH * 0.8)) {
-                childX += grid.CELL_WIDTH;
+        // 但「雙親第一個子女」要維持置中，不要被硬推到父母關係線外
+        const isFirstCoupleChild = !!spouse && existingChildren.length === 0;
+        if (!isFirstCoupleChild) {
+            const sameLevelPersons = this.persons.filter(p =>
+                Math.abs(p.y - childY) < grid.CELL_HEIGHT * 0.3
+            );
+            if (sameLevelPersons.length > 0) {
+                const occupied = sameLevelPersons.map(p => p.x);
+                while (occupied.some(x => Math.abs(x - childX) < grid.CELL_WIDTH * 0.8)) {
+                    childX += grid.CELL_WIDTH;
+                }
             }
         }
 
