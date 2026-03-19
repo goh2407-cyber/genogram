@@ -1,4 +1,4 @@
-﻿/**
+/**
  * GenogramApp - 主應用程式
  */
 class GenogramApp {
@@ -893,16 +893,18 @@ class GenogramApp {
                 let finalDy = dy;
 
                 // 檢查是否會與其他人物過於接近
+                // [Fix] 只檢查同輩份（相近Y座標）的人物，不同輩份不會互相阻擋
                 const checkOverlap = (testDx, testDy) => {
                     for (const person of movingPersons) {
                         const nx = person.x + testDx;
                         const ny = person.y + testDy;
-                        const size = person.getSize ? person.getSize() : 50;
 
                         for (const other of this.persons) {
                             if (movingPersonIds.includes(other.id)) continue;
 
-                            // Simple circle collision for smoother feedback
+                            // 只檢查同輩份的人（Y座標差距在半格以內）
+                            if (Math.abs(ny - other.y) > GenogramApp.GRID.CELL_HEIGHT / 2) continue;
+
                             const dist = Math.sqrt(Math.pow(nx - other.x, 2) + Math.pow(ny - other.y, 2));
                             if (dist < personalSpace) return true;
                         }
@@ -1059,14 +1061,20 @@ class GenogramApp {
                             .filter(Boolean);
 
                         if (parents.length === 2) {
-                            // 計算父母婚姻線中點
-                            const parentMidX = (parents[0].x + parents[1].x) / 2;
-                            const SNAP_THRESHOLD = 50; // 吸附閾值
+                            // [Fix] 檢查父母是否為天橋婚姻（多段婚姻）
+                            // 天橋婚姻的父母距離很遠，中點吸附會把子女拉到錯誤位置
+                            const parentDist = Math.abs(parents[0].x - parents[1].x);
+                            const isBridgeMarriage = parentDist > GenogramApp.GRID.CELL_WIDTH * 2;
 
-                            // 若拖曳位置接近中點，則吸附到中點
-                            if (Math.abs(p.x - parentMidX) < SNAP_THRESHOLD) {
-                                targetX = parentMidX;
+                            if (!isBridgeMarriage) {
+                                // 一般婚姻：吸附到父母中點
+                                const parentMidX = (parents[0].x + parents[1].x) / 2;
+                                const SNAP_THRESHOLD = 50;
+                                if (Math.abs(p.x - parentMidX) < SNAP_THRESHOLD) {
+                                    targetX = parentMidX;
+                                }
                             }
+                            // 天橋婚姻：不吸附到父母中點，讓子女自由定位
                         }
 
                         // [UPDATED] 根據拖曳位置自動切換輩分
