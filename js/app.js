@@ -1054,28 +1054,8 @@ class GenogramApp {
                         let targetX = this.snapToGrid(p.x, 'x');
                         let targetY = this.snapToGrid(p.y, 'y');
 
-                        // [NEW] 智慧吸附: 檢查是否有父母，若有則優先吸附到父母婚姻線中點
-                        const parents = this.relationships
-                            .filter(r => r.toPersonId === p.id && r.type === 'parent-child')
-                            .map(r => this.persons.find(per => per.id === r.fromPersonId))
-                            .filter(Boolean);
-
-                        if (parents.length === 2) {
-                            // [Fix] 檢查父母是否為天橋婚姻（多段婚姻）
-                            // 天橋婚姻的父母距離很遠，中點吸附會把子女拉到錯誤位置
-                            const parentDist = Math.abs(parents[0].x - parents[1].x);
-                            const isBridgeMarriage = parentDist > GenogramApp.GRID.CELL_WIDTH * 2;
-
-                            if (!isBridgeMarriage) {
-                                // 一般婚姻：吸附到父母中點
-                                const parentMidX = (parents[0].x + parents[1].x) / 2;
-                                const SNAP_THRESHOLD = 50;
-                                if (Math.abs(p.x - parentMidX) < SNAP_THRESHOLD) {
-                                    targetX = parentMidX;
-                                }
-                            }
-                            // 天橋婚姻：不吸附到父母中點，讓子女自由定位
-                        }
+                        // [Disabled] 停用父母中點吸附，避免子女被拉到非預期位置
+                        // 特別是天橋婚姻（多段婚姻）時，父母距離遠，中點吸附會造成問題
 
                         // [UPDATED] 根據拖曳位置自動切換輩分
                         // 如果拖曳超過上下輩分的中點，自動調整到該輩分
