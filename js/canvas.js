@@ -2990,15 +2990,17 @@ class GenogramCanvas {
 
                     if (config.isBridge) {
                         // [Fix] 天橋模式：sourceX 使用子女的水平中心（限制在天橋範圍內）
-                        // 避免移動遠端配偶時，子女連線跟著移動穿插其他關係線
                         const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
                         const minParentX = Math.min(p1.x, p2.x);
                         const maxParentX = Math.max(p1.x, p2.x);
                         sourceX = Math.max(minParentX, Math.min(maxParentX, childrenCenterX));
                         sourceY = config.bridgeY;
                     } else {
-                        // 否則為一般左右連線的中心
-                        sourceX = (p1.x + p2.x) / 2;
+                        // [Fix] 一般婚姻也使用子女中心X，確保子女線永遠垂直
+                        const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
+                        const minParentX = Math.min(p1.x, p2.x);
+                        const maxParentX = Math.max(p1.x, p2.x);
+                        sourceX = Math.max(minParentX, Math.min(maxParentX, childrenCenterX));
                         sourceY = (p1.y + p2.y) / 2;
                     }
 
