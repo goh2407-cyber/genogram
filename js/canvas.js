@@ -2972,6 +2972,7 @@ class GenogramCanvas {
             this.ctx.setLineDash([]); // 實線
 
             let sourceX, sourceY;
+            let sourceAnchorX = null; // 父母關係線上的實際掛接點 X
 
             if (parentObjs.length >= 2) {
                 // 雙親：尋找婚姻關係以確定起點
@@ -2988,6 +2989,8 @@ class GenogramCanvas {
                     // [New] 根據天橋配置決定起點
                     const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
                     const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
+                    // 單一子女時，主幹直接對齊該子女，確保連線垂直
+                    const desiredSourceX = childObjs.length === 1 ? childObjs[0].x : childrenCenterX;
 
                     if (config.isBridge) {
                         // [Fix] 天橋模式：sourceX 使用子女中心，但限制在天橋「實際水平段」範圍
@@ -2995,7 +2998,8 @@ class GenogramCanvas {
                         const top2 = p2.getConnectionPoint('top');
                         const minMarriageX = Math.min(top1.x, top2.x);
                         const maxMarriageX = Math.max(top1.x, top2.x);
-                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, childrenCenterX));
+                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                        sourceX = desiredSourceX;
                         sourceY = config.bridgeY;
                     } else {
                         // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
@@ -3005,7 +3009,8 @@ class GenogramCanvas {
                         const marriageEndX = rightParent.getConnectionPoint('left').x;
                         const minMarriageX = Math.min(marriageStartX, marriageEndX);
                         const maxMarriageX = Math.max(marriageStartX, marriageEndX);
-                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, childrenCenterX));
+                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                        sourceX = desiredSourceX;
                         sourceY = (p1.y + p2.y) / 2;
                     }
 
@@ -3027,12 +3032,14 @@ class GenogramCanvas {
                     this.ctx.setLineDash([]);
 
                     sourceX = (p1.x + p2.x) / 2;
+                    sourceAnchorX = sourceX;
                     sourceY = (p1.y + p2.y) / 2;
                 }
             } else {
                 // 單親
                 const p = parentObjs[0];
                 sourceX = p.x;
+                sourceAnchorX = sourceX;
                 // 計算備註高度偏移
                 let notesOffset = 0;
                 if (p.name) {
@@ -3048,22 +3055,11 @@ class GenogramCanvas {
                 sourceY = p.y + this.personSize / 2 + notesOffset;
             }
 
-            // [Optimization] 如果只有一個孩子且為雙親家庭，讓連接線對齊孩子 X 軸以呈現垂直直線
-            // 這樣使用者不需要手動微調父母或孩子位置來消除「閃電線」
-            if (childObjs.length === 1 && parentObjs.length === 2) {
-                const child = childObjs[0];
-                const p1 = parentObjs[0];
-                const p2 = parentObjs[1];
-
-                const centerX = (p1.x + p2.x) / 2;
-
-                // [Fix] 設定固定 "吸附閾值" 為 16px
-                // 1. 不使用 halfDist，避免父母距離遠時，子女放在父母下方也被吸附成垂直線 (導致誤會為單親或偏心)
-                // 2. 16px 提供足夠的緩衝區 (總寬 32px)，解決 "太近無法置中" 的操作困難
-                const snapThreshold = 16;
-
-                if (Math.abs(child.x - centerX) <= snapThreshold) {
-                    sourceX = child.x;
+            // 單一子女：主幹永遠對齊子女 X，確保畫面為垂直連線
+            if (childObjs.length === 1) {
+                sourceX = childObjs[0].x;
+                if (sourceAnchorX === null) {
+                    sourceAnchorX = sourceX;
                 }
             }
 
@@ -3087,6 +3083,15 @@ class GenogramCanvas {
                     sourceY = parentBottom;
                 }
             });
+
+            // 如果主幹 X 與父母線掛接點不同，先補一段水平連接
+            // 讓多段關係時，子女可跨到其他關係區域而不會斷線
+            if (Math.abs(sourceX - sourceAnchorX) > 0.5) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(sourceAnchorX, originalSourceY);
+                this.ctx.lineTo(sourceX, originalSourceY);
+                this.ctx.stroke();
+            }
 
             // 計算孩子的高度 (Bar Y position)
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
