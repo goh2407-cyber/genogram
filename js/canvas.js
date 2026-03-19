@@ -3084,14 +3084,8 @@ class GenogramCanvas {
                 }
             });
 
-            // 如果主幹 X 與父母線掛接點不同，先補一段水平連接
-            // 讓多段關係時，子女可跨到其他關係區域而不會斷線
-            if (Math.abs(sourceX - sourceAnchorX) > 0.5) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(sourceAnchorX, originalSourceY);
-                this.ctx.lineTo(sourceX, originalSourceY);
-                this.ctx.stroke();
-            }
+            // 是否需要從父母關係線掛接點轉折到子女主幹 X
+            const hasOffsetAnchor = Math.abs(sourceX - sourceAnchorX) > 0.5;
 
             // 計算孩子的高度 (Bar Y position)
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
@@ -3148,10 +3142,24 @@ class GenogramCanvas {
                 nonTwins.length === 0 &&
                 Object.keys(twinGroups).length === 1;
 
-            // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線（如果全是多胞胎則跳過）
+            // [Fix] 從父母線連到主幹線：
+            // 1) 先垂直往下到 sourceY（避免穿過父母符號）
+            // 2) 若主幹 X 與掛接點不同，再在 sourceY 水平轉折
             if (!allSameTwinGroup && originalSourceY < sourceY) {
                 this.ctx.beginPath();
-                this.ctx.moveTo(sourceX, originalSourceY);
+                if (hasOffsetAnchor) {
+                    this.ctx.moveTo(sourceAnchorX, originalSourceY);
+                    this.ctx.lineTo(sourceAnchorX, sourceY);
+                    this.ctx.lineTo(sourceX, sourceY);
+                } else {
+                    this.ctx.moveTo(sourceX, originalSourceY);
+                    this.ctx.lineTo(sourceX, sourceY);
+                }
+                this.ctx.stroke();
+            } else if (!allSameTwinGroup && hasOffsetAnchor) {
+                // 防呆：若沒有可下移空間，至少補上水平連接
+                this.ctx.beginPath();
+                this.ctx.moveTo(sourceAnchorX, sourceY);
                 this.ctx.lineTo(sourceX, sourceY);
                 this.ctx.stroke();
             }
