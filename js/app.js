@@ -1611,34 +1611,14 @@ class GenogramApp {
         const grid = GenogramApp.GRID;
         const childY = parent.y + grid.CELL_HEIGHT;
 
-        // 找配偶（多段關係時不再盲目取第一位）
+        // 找配偶（優先選中的婚姻線，其次選最近的同輩配偶）
         const spouses = this.getSpouses(parent.id);
-        let spouse = null;
-
-        if (spouses.length === 1) {
-            spouse = spouses[0];
-        } else if (spouses.length > 1 && this.selectedRelationshipId) {
-            const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
-            const selectedCat = selectedRel
-                ? (typeof selectedRel.getCategory === 'function' ? selectedRel.getCategory() : Relationship.getCategory(selectedRel.type))
-                : null;
-
-            if (selectedRel && selectedCat === 'marriage' && selectedRel.involvesPerson(parent.id)) {
-                const spouseId = selectedRel.fromPersonId === parent.id ? selectedRel.toPersonId : selectedRel.fromPersonId;
-                spouse = this.persons.find(p => p.id === spouseId) || null;
-            }
-        }
+        const spouse = this.pickSpouseForChildCreation(parent, spouses);
 
         // 找出現有子女（雙親時只看「這一對父母」的共同子女；多伴侶未指定時僅看單親子女）
         const existingChildren = this.persons.filter(p => {
             if (spouse) {
                 return this.hasParentChildLink(parent.id, p.id) && this.hasParentChildLink(spouse.id, p.id);
-            }
-
-            // 多伴侶但未指定關係：避免把其他伴侶的子女混進來影響定位
-            if (spouses.length > 1) {
-                const parentIdsOfChild = this.getParentIdsForChild(p.id);
-                return this.hasParentChildLink(parent.id, p.id) && parentIdsOfChild.length <= 1;
             }
 
             // 一般單親情境
@@ -1706,9 +1686,7 @@ class GenogramApp {
         else if (gender === 'female-to-male') genderName = '跨性別兒子';
         else if (gender === 'male-to-female') genderName = '跨性別女兒';
         else genderName = '子女';
-        const spouseNote = spouse
-            ? '（雙親）'
-            : (spouses.length > 1 ? '（多段伴侶：已先建立單親子女，可再用連線工具指定另一位父母）' : '');
+        const spouseNote = spouse ? '（雙親）' : '';
         this.updateStatus(`已建立${genderName}並建立親子關係${spouseNote}`, 'success');
     }
 
@@ -3091,6 +3069,51 @@ class GenogramApp {
         return this.getSpouseIds(personId)
             .map(id => this.persons.find(p => p.id === id))
             .filter(p => p);
+    }
+
+    /**
+     * 建立子女時挑選配偶：
+     * 1) 優先使用目前選中的婚姻線
+     * 2) 否則使用最近的同輩配偶
+     * @param {Person} parent
+     * @param {Person[]} spouses
+     * @returns {Person|null}
+     */
+    pickSpouseForChildCreation(parent, spouses) {
+        if (!parent || !spouses || spouses.length === 0) return null;
+        if (spouses.length === 1) return spouses[0];
+
+        // 優先：當前選中的婚姻關係
+        if (this.selectedRelationshipId) {
+            const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+            const selectedCat = selectedRel
+                ? (typeof selectedRel.getCategory === 'function' ? selectedRel.getCategory() : Relationship.getCategory(selectedRel.type))
+                : null;
+
+            const selectedInvolvesParent = selectedRel &&
+                ((typeof selectedRel.involvesPerson === 'function' && selectedRel.involvesPerson(parent.id)) ||
+                    selectedRel.fromPersonId === parent.id || selectedRel.toPersonId === parent.id);
+
+            if (selectedRel && selectedCat === 'marriage' && selectedInvolvesParent) {
+                const spouseId = selectedRel.fromPersonId === parent.id ? selectedRel.toPersonId : selectedRel.fromPersonId;
+                const selectedSpouse = spouses.find(p => p.id === spouseId);
+                if (selectedSpouse) return selectedSpouse;
+            }
+        }
+
+        // 退而求其次：最近的同輩配偶（Y 近似）
+        const grid = GenogramApp.GRID;
+        const sameLevelSpouses = spouses.filter(s => Math.abs(s.y - parent.y) <= grid.CELL_HEIGHT * 0.5);
+        const candidates = sameLevelSpouses.length > 0 ? sameLevelSpouses : spouses;
+
+        candidates.sort((a, b) => {
+            const da = Math.abs(a.x - parent.x);
+            const db = Math.abs(b.x - parent.x);
+            if (da !== db) return da - db;
+            return (a.id || '').localeCompare(b.id || '');
+        });
+
+        return candidates[0] || null;
     }
 
     /**
