@@ -3160,6 +3160,46 @@ class GenogramApp {
     }
 
     /**
+     * 依據目前選到的親子線，找出同一條「可視子女線」要一起刪除的關係 ID
+     * @param {Relationship} baseRel
+     * @returns {string[]}
+     */
+    getFamilyRelationshipIdsForDeletion(baseRel) {
+        if (!baseRel) return [];
+        const category = typeof baseRel.getCategory === 'function'
+            ? baseRel.getCategory()
+            : Relationship.getCategory(baseRel.type);
+        if (category !== 'family') return [baseRel.id];
+
+        const personById = new Map(this.persons.map(p => [p.id, p]));
+        const fromPerson = personById.get(baseRel.fromPersonId);
+        const toPerson = personById.get(baseRel.toPersonId);
+        if (!fromPerson || !toPerson || fromPerson.y === toPerson.y) {
+            return [baseRel.id];
+        }
+
+        const childId = fromPerson.y < toPerson.y ? toPerson.id : fromPerson.id;
+
+        const ids = this.relationships
+            .filter(rel => {
+                const relCategory = typeof rel.getCategory === 'function'
+                    ? rel.getCategory()
+                    : Relationship.getCategory(rel.type);
+                if (relCategory !== 'family') return false;
+
+                const p1 = personById.get(rel.fromPersonId);
+                const p2 = personById.get(rel.toPersonId);
+                if (!p1 || !p2 || p1.y === p2.y) return false;
+
+                const relChildId = p1.y < p2.y ? p2.id : p1.id;
+                return relChildId === childId;
+            })
+            .map(rel => rel.id);
+
+        return ids.length > 0 ? ids : [baseRel.id];
+    }
+
+    /**
      * 刪除選取的項目
      */
     deleteSelected() {
@@ -3172,8 +3212,22 @@ class GenogramApp {
         // 優先權 1: 優先刪除「關係線」 (User Request: 避免被同住框攔截)
         if (this.selectedRelationshipId) {
             this.saveState();
-            this.relationships = this.relationships.filter(r => r.id !== this.selectedRelationshipId);
+            const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+            const deleteIds = selectedRel
+                ? this.getFamilyRelationshipIdsForDeletion(selectedRel)
+                : [this.selectedRelationshipId];
+
+            const deleteSet = new Set(deleteIds);
+            this.relationships = this.relationships.filter(r => !deleteSet.has(r.id));
             this.selectedRelationshipId = null;
+            if (selectedRel) {
+                const relCategory = typeof selectedRel.getCategory === 'function'
+                    ? selectedRel.getCategory()
+                    : Relationship.getCategory(selectedRel.type);
+                if (relCategory === 'family' && deleteIds.length > 1) {
+                    this.updateStatus(`已刪除 ${deleteIds.length} 條子女關係連結`, 'success');
+                }
+            }
             this.updatePropertyPanel();
             this.autoSave();
             this.render();

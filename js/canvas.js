@@ -146,6 +146,10 @@ class GenogramCanvas {
      * 繪製整個家系圖
      */
     render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null, households = [], selectedHouseholdId = null, hoveredPersonId = null) {
+        // [HitTest] 保留最近一次資料，供關係線點擊路徑計算使用
+        this.lastPersons = Array.isArray(persons) ? persons : [];
+        this.lastRelationships = Array.isArray(relationships) ? relationships : [];
+
         this.clear();
 
         this.ctx.save();
@@ -2999,7 +3003,7 @@ class GenogramCanvas {
                         const minMarriageX = Math.min(top1.x, top2.x);
                         const maxMarriageX = Math.max(top1.x, top2.x);
                         sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = childObjs.length === 1 ? desiredSourceX : sourceAnchorX;
+                        sourceX = sourceAnchorX;
                         sourceY = config.bridgeY;
                     } else {
                         // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
@@ -3010,7 +3014,7 @@ class GenogramCanvas {
                         const minMarriageX = Math.min(marriageStartX, marriageEndX);
                         const maxMarriageX = Math.max(marriageStartX, marriageEndX);
                         sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = childObjs.length === 1 ? desiredSourceX : sourceAnchorX;
+                        sourceX = sourceAnchorX;
                         sourceY = (p1.y + p2.y) / 2;
                     }
 
@@ -3055,12 +3059,8 @@ class GenogramCanvas {
                 sourceY = p.y + this.personSize / 2 + notesOffset;
             }
 
-            // 單一子女：主幹永遠對齊子女 X，確保畫面為垂直連線
-            if (childObjs.length === 1) {
-                sourceX = childObjs[0].x;
-                if (sourceAnchorX === null) {
-                    sourceAnchorX = sourceX;
-                }
+            if (sourceAnchorX === null) {
+                sourceAnchorX = sourceX;
             }
 
             // [Fix] 確保 sourceY 在所有父母備註之下 (避免線條穿過備註)
@@ -3784,50 +3784,192 @@ class GenogramCanvas {
         }
 
         if (category === 'family') {
-            // 親子關係：計算子女的垂直連接線（橫槓 → 子女）
-            // 這是該親子關係獨有的線段，共享橫槓由其他關係共用
+            // 親子關係：使用與 drawFamilies 對齊的路徑，避免「只有小段能點」問題
+            const fallbackFamilyPath = () => {
+                if (fromPerson.y === toPerson.y) {
+                    points.push({ x: fromPerson.x, y: fromPerson.y });
+                    points.push({ x: toPerson.x, y: toPerson.y });
+                    return;
+                }
 
-            // 確定父母和子女
-            let parentPerson, childPerson;
-            if (fromPerson.y < toPerson.y) {
-                parentPerson = fromPerson;
-                childPerson = toPerson;
-            } else {
-                parentPerson = toPerson;
-                childPerson = fromPerson;
+                const parentPerson = fromPerson.y < toPerson.y ? fromPerson : toPerson;
+                const childPerson = fromPerson.y < toPerson.y ? toPerson : fromPerson;
+                const sourceY = parentPerson.y + this.personSize / 2;
+                const childTop = childPerson.y - this.personSize / 2;
+                let barY = (sourceY + childTop) / 2;
+                if (barY < sourceY + 20) barY = sourceY + 20;
+                if (barY > childTop - 20) barY = childTop - 20;
+                if (sourceY >= childTop - 10) barY = sourceY + 30;
+
+                points.push({ x: parentPerson.x, y: sourceY });
+                points.push({ x: parentPerson.x, y: barY });
+                points.push({ x: childPerson.x, y: barY });
+                points.push({ x: childPerson.x, y: childTop });
+            };
+
+            const allPersons = Array.isArray(this.lastPersons) ? this.lastPersons : [];
+            const personById = new Map(allPersons.map(p => [p.id, p]));
+            // 確保目前這兩位至少可用
+            personById.set(fromPerson.id, fromPerson);
+            personById.set(toPerson.id, toPerson);
+
+            const categoryOf = (rel) =>
+                (typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type));
+
+            const orientFamilyRel = (rel) => {
+                const p1 = personById.get(rel.fromPersonId);
+                const p2 = personById.get(rel.toPersonId);
+                if (!p1 || !p2) return null;
+                if (p1.y === p2.y) return null;
+                const parent = p1.y < p2.y ? p1 : p2;
+                const child = p1.y < p2.y ? p2 : p1;
+                return { parent, child };
+            };
+
+            const current = (fromPerson.y === toPerson.y)
+                ? null
+                : (fromPerson.y < toPerson.y
+                    ? { parent: fromPerson, child: toPerson }
+                    : { parent: toPerson, child: fromPerson });
+
+            if (!current) {
+                fallbackFamilyPath();
+                return points;
             }
 
-            // 計算 sourceY (與 drawFamilies 一致)
-            // 單親情況：使用父母底部
-            const sourceY = parentPerson.y + this.personSize / 2;
+            const familyRels = allRelationships.filter(r => categoryOf(r) === 'family');
+            const childToParentIds = new Map(); // childId -> Set(parentId)
 
-            // 計算 barY (與 drawFamilies 使用相同邏輯)
-            // 注意：drawFamilies 使用 childrenMinY，這裡簡化為單一子女
-            const childTop = childPerson.y - this.personSize / 2;
-            let barY = (sourceY + childTop) / 2;
+            familyRels.forEach(rel => {
+                const info = orientFamilyRel(rel);
+                if (!info) return;
+                if (!childToParentIds.has(info.child.id)) {
+                    childToParentIds.set(info.child.id, new Set());
+                }
+                childToParentIds.get(info.child.id).add(info.parent.id);
+            });
 
-            // 防呆處理 (與 drawFamilies 一致)
+            const selectedChildId = current.child.id;
+            const parentIdSet = childToParentIds.get(selectedChildId);
+            if (!parentIdSet || parentIdSet.size === 0) {
+                fallbackFamilyPath();
+                return points;
+            }
+
+            const parentIds = Array.from(parentIdSet).sort();
+            const sameIds = (a, b) => a.length === b.length && a.every((id, idx) => id === b[idx]);
+
+            // 找同一組父母的全部子女（與 drawFamilies 的 family group 對齊）
+            const childIds = [];
+            childToParentIds.forEach((set, childId) => {
+                const ids = Array.from(set).sort();
+                if (sameIds(ids, parentIds)) {
+                    childIds.push(childId);
+                }
+            });
+
+            const parentObjs = parentIds.map(id => personById.get(id)).filter(p => p);
+            const childObjs = childIds
+                .map(id => personById.get(id))
+                .filter(p => p);
+
+            if (parentObjs.length === 0 || childObjs.length === 0) {
+                fallbackFamilyPath();
+                return points;
+            }
+
+            // 計算 sourceX/sourceY（與 drawFamilies 同步）
+            let sourceX, sourceY;
+            if (parentObjs.length >= 2) {
+                const p1 = parentObjs[0];
+                const p2 = parentObjs[1];
+
+                const marriageRel = allRelationships.find(r => {
+                    if (categoryOf(r) !== 'marriage') return false;
+                    if (typeof r.involvesPerson === 'function') {
+                        return r.involvesPerson(p1.id) && r.involvesPerson(p2.id);
+                    }
+                    return (
+                        (r.fromPersonId === p1.id && r.toPersonId === p2.id) ||
+                        (r.fromPersonId === p2.id && r.toPersonId === p1.id)
+                    );
+                });
+
+                if (marriageRel) {
+                    const config = this.getMarriageConfiguration(p1, p2, marriageRel, allRelationships);
+                    const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
+                    const desiredSourceX = childObjs.length === 1 ? childObjs[0].x : childrenCenterX;
+
+                    if (config.isBridge) {
+                        const top1 = p1.getConnectionPoint('top');
+                        const top2 = p2.getConnectionPoint('top');
+                        const minMarriageX = Math.min(top1.x, top2.x);
+                        const maxMarriageX = Math.max(top1.x, top2.x);
+                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                        sourceY = config.bridgeY;
+                    } else {
+                        const leftParent = p1.x <= p2.x ? p1 : p2;
+                        const rightParent = p1.x <= p2.x ? p2 : p1;
+                        const marriageStartX = leftParent.getConnectionPoint('right').x;
+                        const marriageEndX = rightParent.getConnectionPoint('left').x;
+                        const minMarriageX = Math.min(marriageStartX, marriageEndX);
+                        const maxMarriageX = Math.max(marriageStartX, marriageEndX);
+                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                        sourceY = (p1.y + p2.y) / 2;
+                    }
+                } else {
+                    sourceX = (p1.x + p2.x) / 2;
+                    sourceY = (p1.y + p2.y) / 2;
+                }
+            } else {
+                const p = parentObjs[0];
+                sourceX = p.x;
+                let notesOffset = 0;
+                if (p.name) {
+                    notesOffset += this.fontSize + 8;
+                    if (p.notes) {
+                        const lines = p.notes.split('\n');
+                        const actualLines = lines.filter(l => l.length > 0).length || 1;
+                        const noteLineHeight = this.fontSize * 0.8 + 2;
+                        notesOffset += actualLines * noteLineHeight + 4;
+                    }
+                }
+                sourceY = p.y + this.personSize / 2 + notesOffset;
+            }
+
+            // 與 drawFamilies 一樣，避免線條穿過父母文字備註
+            parentObjs.forEach(p => {
+                let parentBottom = p.y + this.personSize / 2;
+                if (p.name) {
+                    parentBottom += this.fontSize + 8;
+                    if (p.notes) {
+                        const lines = p.notes.split('\n');
+                        const actualLines = lines.filter(l => l.length > 0).length || 1;
+                        const noteLineHeight = this.fontSize * 0.8 + 2;
+                        parentBottom += actualLines * noteLineHeight + 4;
+                    }
+                }
+                if (sourceY < parentBottom) {
+                    sourceY = parentBottom;
+                }
+            });
+
+            const childrenMinY = Math.min(...childObjs.map(c => c.y));
+            let barY = (sourceY + (childrenMinY - this.personSize / 2)) / 2;
             if (barY < sourceY + 20) barY = sourceY + 20;
-            if (barY > childTop - 20) barY = childTop - 20;
-            if (sourceY >= childTop - 10) {
+            if (barY > childrenMinY - 20) barY = childrenMinY - 20;
+            if (sourceY >= childrenMinY - 10) {
                 barY = sourceY + 30;
             }
 
-            // 路徑：T 形狀 (橫槓左右延伸 + 垂直到子女)
-            // 這樣每個子女有更大的點擊區域
+            const selectedChild = personById.get(selectedChildId) || current.child;
+            const childTop = selectedChild.y - this.personSize / 2;
 
-            // T 形：從子女位置往左右各延伸 50px (避免重疊)
-            const barExtend = 50; // 左右各延伸的長度
-
-            // 4 個點形成 T 形 (倒T)：
-            // 1. 橫槓左端
-            // 2. 橫槓右端
-            // 3. (返回) 子女 X 位置
-            // 4. 子女頂部
-            points.push({ x: childPerson.x - barExtend, y: barY });
-            points.push({ x: childPerson.x + barExtend, y: barY });
-            points.push({ x: childPerson.x, y: barY });
-            points.push({ x: childPerson.x, y: childTop });
+            // 命中路徑：主幹垂直 + 對應子女橫接 + 子女垂直
+            points.push({ x: sourceX, y: sourceY });
+            points.push({ x: sourceX, y: barY });
+            points.push({ x: selectedChild.x, y: barY });
+            points.push({ x: selectedChild.x, y: childTop });
         } else if (category === 'marriage') {
             // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
             const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
@@ -3909,7 +4051,7 @@ class GenogramCanvas {
         // - 其他 (emotional): 使用預設 tolerance
         let effectiveTolerance = tolerance;
         if (category === 'family') {
-            effectiveTolerance = 20; // 調整回 20 避免過度重疊
+            effectiveTolerance = 24; // 放大命中區，提升子女線可點擊性
         } else if (category === 'marriage') {
             effectiveTolerance = 15;
         }
