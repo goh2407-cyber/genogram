@@ -8,13 +8,19 @@
     <meta name="description" content="專為社工家庭評估設計的專業家系圖繪製工具">
     <link rel="stylesheet" href="css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- <link rel="manifest" href="manifest.json"> -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('Service Worker registered'))
-                    .catch(err => console.log('Service Worker registration failed', err));
+                // 停用離線版：清除既有 Service Worker 與 Cache
+                navigator.serviceWorker.getRegistrations()
+                    .then(registrations => Promise.all(registrations.map(reg => reg.unregister())))
+                    .catch(err => console.log('Service Worker unregister failed', err));
+
+                if ('caches' in window) {
+                    caches.keys()
+                        .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+                        .catch(err => console.log('Cache cleanup failed', err));
+                }
             });
         }
     </script>
@@ -558,6 +564,7 @@
     <script src="js/person.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/relationship.js"></script>
+    <script src="js/domain/kinship-engine.js"></script>
     <script src="js/history.js"></script>
     <script src="js/canvas.js"></script>
     <script src="js/storage.js"></script>

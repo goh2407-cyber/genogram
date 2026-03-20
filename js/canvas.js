@@ -3108,11 +3108,23 @@ class GenogramCanvas {
                     this.ctx.lineCap = 'round';
                     this.ctx.lineJoin = 'round';
 
-                    // 繪製高亮背景 - 僅該子女的垂直線段 (視覺更清楚)
                     const childTop = selectedChild.y - this.personSize / 2;
                     this.ctx.beginPath();
-                    this.ctx.moveTo(selectedChild.x, barY);
-                    this.ctx.lineTo(selectedChild.x, childTop);
+
+                    // 單一子女時，整條垂直線都可視為同一條子女線（避免只亮短段）
+                    if (childObjs.length === 1 && Math.abs(sourceX - selectedChild.x) < 0.5) {
+                        this.ctx.moveTo(selectedChild.x, sourceY);
+                        this.ctx.lineTo(selectedChild.x, childTop);
+                    } else {
+                        // 多子女：高亮該子女分支（主幹 + 橫接 + 子女垂直）
+                        this.ctx.moveTo(sourceX, sourceY);
+                        this.ctx.lineTo(sourceX, barY);
+                        if (Math.abs(selectedChild.x - sourceX) > 0.5) {
+                            this.ctx.lineTo(selectedChild.x, barY);
+                        }
+                        this.ctx.lineTo(selectedChild.x, childTop);
+                    }
+
                     this.ctx.stroke();
 
                     this.ctx.restore();
@@ -3219,21 +3231,42 @@ class GenogramCanvas {
                     }
                 }
 
-                // 如果這個子女被選中，使用高亮樣式
+                // 如果這個子女被選中，深藍色描出完整分支（避免只顯示短段）
                 if (isThisChildSelected) {
                     this.ctx.save();
                     this.ctx.strokeStyle = '#4a90d9';
                     this.ctx.lineWidth = 4;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    this.ctx.beginPath();
+
+                    if (childObjs.length === 1 && Math.abs(sourceX - child.x) < 0.5) {
+                        // 單一子女：整條垂直到子女
+                        this.ctx.moveTo(child.x, sourceY);
+                        this.ctx.lineTo(child.x, childTop);
+                    } else {
+                        // 多子女：主幹 + 橫接 + 子女垂直
+                        this.ctx.moveTo(sourceX, sourceY);
+                        if (barY > sourceY) {
+                            this.ctx.lineTo(sourceX, barY);
+                        } else {
+                            this.ctx.lineTo(sourceX, sourceY + 10);
+                        }
+                        if (Math.abs(child.x - sourceX) > 0.5) {
+                            this.ctx.lineTo(child.x, barY);
+                        }
+                        this.ctx.lineTo(child.x, childTop);
+                    }
+
+                    this.ctx.stroke();
+                    this.ctx.restore();
+                    return;
                 }
 
                 this.ctx.beginPath();
                 this.ctx.moveTo(child.x, barY);
                 this.ctx.lineTo(child.x, childTop);
                 this.ctx.stroke();
-
-                if (isThisChildSelected) {
-                    this.ctx.restore();
-                }
             });
         });
     }
@@ -3965,11 +3998,16 @@ class GenogramCanvas {
             const selectedChild = personById.get(selectedChildId) || current.child;
             const childTop = selectedChild.y - this.personSize / 2;
 
-            // 命中路徑：主幹垂直 + 對應子女橫接 + 子女垂直
-            points.push({ x: sourceX, y: sourceY });
-            points.push({ x: sourceX, y: barY });
-            points.push({ x: selectedChild.x, y: barY });
-            points.push({ x: selectedChild.x, y: childTop });
+            // 命中路徑：單一子女時整條垂直可點；多子女時用分支路徑
+            if (childObjs.length === 1 && Math.abs(sourceX - selectedChild.x) < 0.5) {
+                points.push({ x: selectedChild.x, y: sourceY });
+                points.push({ x: selectedChild.x, y: childTop });
+            } else {
+                points.push({ x: sourceX, y: sourceY });
+                points.push({ x: sourceX, y: barY });
+                points.push({ x: selectedChild.x, y: barY });
+                points.push({ x: selectedChild.x, y: childTop });
+            }
         } else if (category === 'marriage') {
             // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
             const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
@@ -4051,7 +4089,7 @@ class GenogramCanvas {
         // - 其他 (emotional): 使用預設 tolerance
         let effectiveTolerance = tolerance;
         if (category === 'family') {
-            effectiveTolerance = 24; // 放大命中區，提升子女線可點擊性
+            effectiveTolerance = 30; // 進一步放大命中區，避免只剩短段可點
         } else if (category === 'marriage') {
             effectiveTolerance = 15;
         }
