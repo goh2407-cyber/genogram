@@ -1,4 +1,48 @@
 /**
+ * [B3] Dash pattern 集中表
+ * 所有 setLineDash 調用均查表；禁止在函式內直接出現魔術陣列。
+ *
+ * 設計依據：
+ *   engaged    [12, 6] — 訂婚：長虛線，視覺上「幾乎相連」，呼應半正式承諾
+ *   cohabit    [2, 6]  — 同居：短點配長間隔，疏鬆點線，與訂婚明顯區分
+ *   fosterLink [2, 6]  — 無婚姻線的隱形親子起源連接，沿用 cohabit 極淡色
+ *   household  [10, 5] — 同住家庭圈選框：較密虛線，在不同縮放下易讀
+ *   selection  [5, 5]  — UI 選取框、框選拖曳、正在連接預覽線：等長段，標準互動虛線
+ *   liveCircle [5, 3]  — 生活圈未選中邊框：比 selection 略密，區分靜態物件
+ *   legendDash [5, 5]  — 圖例面板虛線預覽預設值（同 selection 尺寸，語意獨立）
+ *   legendDot  [2, 2]  — 圖例面板點線預覽預設值：等距短點，緊湊適合小尺寸圖例列
+ *   solid      []      — 實線重置（所有 clear/reset 呼叫共用此空陣列）
+ */
+const DASH_PATTERNS = {
+    solid:      [],        // 實線 / 重置用
+    engaged:    [12, 6],   // 訂婚：長虛線 ▬ ▬ ▬
+    cohabit:    [2, 6],    // 同居：短點線 · · · · (點短間隔長)
+    fosterLink: [2, 6],    // 無婚姻線的隱性親子連接（同 cohabit，語意獨立）
+    household:  [10, 5],   // 同住家庭圈選框
+    selection:  [5, 5],    // 框選 / 正在連接預覽 / UI 選取框
+    liveCircle: [5, 3],    // 生活圈未選中邊框（略密於 selection）
+    legendDash: [5, 5],    // 圖例面板虛線預覽預設值
+    legendDot:  [2, 2],    // 圖例面板點線預覽預設值（等距短點，緊湊適合小尺寸）
+};
+
+/**
+ * [D1] 背景網格樣式常數
+ * 設計依據（臨床極簡調性）：
+ *   細格色 #f3f4f6 — Tailwind gray-100，幾乎不可見，僅在近距離提供空間參考
+ *   粗格色 #e5e7eb — Tailwind gray-200，比細格深一階，形成層次感但不搶焦點
+ *   細格距 20px    — 符合 20px 基準格，方便對齊臨床符號（人物 50px = 2.5 格）
+ *   粗格距 100px   — 20px × 5，與細格整倍數關係，不產生視覺干擾
+ *   細格縮放閾值 0.6 — 縮放小於 0.6 時細格過密（< 12px/格），自動隱藏
+ */
+const GRID_STYLE = {
+    fineColor:    '#f3f4f6',  // Tailwind gray-100：細格線
+    coarseColor:  '#e5e7eb',  // Tailwind gray-200：粗格線
+    fineSize:     20,          // 細格間距 (px，畫布座標)
+    coarseSize:   100,         // 粗格間距 (px，畫布座標)
+    fineMinScale: 0.6,         // 低於此縮放比例時不畫細格
+};
+
+/**
  * GenogramCanvas 類別 - 管理畫布繪製
  */
 class GenogramCanvas {
@@ -91,6 +135,66 @@ class GenogramCanvas {
     }
 
     /**
+     * [D1] 繪製背景網格
+     * 在螢幕座標系下繪製（clear 後、applyTransform 前），避免受縮放變換影響。
+     * 網格線在 canvas 世界座標中固定間距，隨 offsetX/offsetY 捲動。
+     * 縮放低於 GRID_STYLE.fineMinScale 時，細格隱藏以避免過密。
+     */
+    drawGrid() {
+        const ctx = this.ctx;
+        const { fineColor, coarseColor, fineSize, coarseSize, fineMinScale } = GRID_STYLE;
+
+        // 螢幕尺寸（含 DPR）
+        const W = this.canvas.width;
+        const H = this.canvas.height;
+
+        // 世界座標中的網格間距轉為螢幕像素
+        const fineStep   = fineSize   * this.scale * this.dpr;
+        const coarseStep = coarseSize * this.scale * this.dpr;
+
+        // 起始偏移（讓網格隨 pan 滾動）
+        const offX = (this.offsetX * this.dpr) % fineStep;
+        const offY = (this.offsetY * this.dpr) % fineStep;
+        const coarseOffX = (this.offsetX * this.dpr) % coarseStep;
+        const coarseOffY = (this.offsetY * this.dpr) % coarseStep;
+
+        ctx.save();
+        // 重置為恆等變換，在螢幕像素座標下繪製
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.lineWidth = 1;
+
+        // --- 細格（縮放夠大時才顯示）---
+        if (this.scale >= fineMinScale) {
+            ctx.strokeStyle = fineColor;
+            ctx.beginPath();
+            for (let x = offX; x <= W; x += fineStep) {
+                ctx.moveTo(Math.round(x) + 0.5, 0);
+                ctx.lineTo(Math.round(x) + 0.5, H);
+            }
+            for (let y = offY; y <= H; y += fineStep) {
+                ctx.moveTo(0, Math.round(y) + 0.5);
+                ctx.lineTo(W, Math.round(y) + 0.5);
+            }
+            ctx.stroke();
+        }
+
+        // --- 粗格（任何縮放下都顯示）---
+        ctx.strokeStyle = coarseColor;
+        ctx.beginPath();
+        for (let x = coarseOffX; x <= W; x += coarseStep) {
+            ctx.moveTo(Math.round(x) + 0.5, 0);
+            ctx.lineTo(Math.round(x) + 0.5, H);
+        }
+        for (let y = coarseOffY; y <= H; y += coarseStep) {
+            ctx.moveTo(0, Math.round(y) + 0.5);
+            ctx.lineTo(W, Math.round(y) + 0.5);
+        }
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    /**
      * 套用變換（縮放與平移）
      */
     applyTransform() {
@@ -151,6 +255,7 @@ class GenogramCanvas {
         this.lastRelationships = Array.isArray(relationships) ? relationships : [];
 
         this.clear();
+        this.drawGrid(); // [D1] 背景網格（在 clear 後、applyTransform 前繪製於螢幕座標）
 
         this.ctx.save();
         this.applyTransform();
@@ -202,7 +307,7 @@ class GenogramCanvas {
             this.ctx.save();
             this.ctx.strokeStyle = '#4a90d9';
             this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 5]);
+            this.ctx.setLineDash(DASH_PATTERNS.selection);
             this.ctx.beginPath();
             this.ctx.moveTo(connectingFrom.person.x, connectingFrom.person.y);
             this.ctx.lineTo(connectingFrom.targetX, connectingFrom.targetY);
@@ -277,7 +382,7 @@ class GenogramCanvas {
         this.ctx.strokeStyle = '#4a90d9';
         this.ctx.fillStyle = 'rgba(74, 144, 217, 0.1)';
         this.ctx.lineWidth = 2;
-        this.ctx.setLineDash([5, 5]);
+        this.ctx.setLineDash(DASH_PATTERNS.selection);
 
         // 繪製填充矩形
         this.ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
@@ -316,7 +421,7 @@ class GenogramCanvas {
         this.ctx.save();
         this.ctx.strokeStyle = '#4a90d9';
         this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([5, 5]);
+        this.ctx.setLineDash(DASH_PATTERNS.selection);
         this.ctx.globalAlpha = 0.4;
 
         // 繪製一個淡淡的虛線框
@@ -325,7 +430,7 @@ class GenogramCanvas {
         // 在角落畫一點裝飾線，讓它看起來更像「選取範圍」
         const s = 10; // corner size
         this.ctx.globalAlpha = 0.8;
-        this.ctx.setLineDash([]);
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
 
         // Top-left
         this.ctx.beginPath(); this.ctx.moveTo(x1, y1 + s); this.ctx.lineTo(x1, y1); this.ctx.lineTo(x1 + s, y1); this.ctx.stroke();
@@ -972,7 +1077,7 @@ class GenogramCanvas {
         this.ctx.lineTo(toPt.x, toPt.y);     // Down
         this.ctx.stroke();
 
-        this.ctx.setLineDash([]); // Reset for decoration
+        this.ctx.setLineDash(DASH_PATTERNS.solid); // Reset for decoration
 
         // 繪製裝飾 (在天橋水平段的中點)
         const midX = (fromPt.x + toPt.x) / 2;
@@ -1145,7 +1250,7 @@ class GenogramCanvas {
             }
             this.ctx.setLineDash(this.getLineDash(style.pattern));
             this.drawPatternOnPath(path, style);
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
             this.drawEmotionalDecorations(path, style);
         }
 
@@ -1169,9 +1274,9 @@ class GenogramCanvas {
      */
     getLineDash(pattern) {
         switch (pattern) {
-            case 'dashed': return [12, 6]; // 訂婚：長虛線
-            case 'dotted': return [2, 6];  // 同居：短點線
-            default: return [];
+            case 'dashed': return DASH_PATTERNS.engaged;  // 訂婚：長虛線
+            case 'dotted': return DASH_PATTERNS.cohabit;  // 同居：短點線
+            default:       return DASH_PATTERNS.solid;
         }
     }
 
@@ -1184,9 +1289,9 @@ class GenogramCanvas {
 
         // 訂婚(dashed): 較長虛線段，同居(dotted): 短點配長間隔，讓兩者視覺差異明顯
         if (style.pattern === 'dashed') {
-            this.ctx.setLineDash([12, 6]); // 訂婚：長虛線 ▬ ▬ ▬
+            this.ctx.setLineDash(DASH_PATTERNS.engaged); // 訂婚：長虛線 ▬ ▬ ▬
         } else if (style.pattern === 'dotted') {
-            this.ctx.setLineDash([2, 6]); // 同居：短點線 · · · · (點短間隔長)
+            this.ctx.setLineDash(DASH_PATTERNS.cohabit); // 同居：短點線 · · · · (點短間隔長)
         }
 
         // 繪製主線（左右直線）
@@ -1198,7 +1303,7 @@ class GenogramCanvas {
         this.ctx.lineTo(to.x, to.y);
         this.ctx.stroke();
 
-        this.ctx.setLineDash([]); // 重置虛線以繪製裝飾
+        this.ctx.setLineDash(DASH_PATTERNS.solid); // 重置虛線以繪製裝飾
 
         // 裝飾
         if (style.decoration === 'house') {
@@ -1364,7 +1469,7 @@ class GenogramCanvas {
         // 2. 使用通用路徑繪製器
         this.ctx.setLineDash(this.getLineDash(style.pattern));
         this.drawPatternOnPath(path, style);
-        this.ctx.setLineDash([]);
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
 
         // 3. 繪製裝飾 (在路徑中點)
         this.drawEmotionalDecorations(path, style);
@@ -1713,7 +1818,7 @@ class GenogramCanvas {
             // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
             this.ctx.beginPath();
             this.ctx.moveTo(path[0].x, path[0].y);
             for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
@@ -1727,7 +1832,7 @@ class GenogramCanvas {
             // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
             this.ctx.beginPath();
             this.ctx.moveTo(path[0].x, path[0].y);
             for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
@@ -1912,7 +2017,7 @@ class GenogramCanvas {
     drawCrossBar(x, y) {
         const s = 5;
         this.ctx.save();
-        this.ctx.setLineDash([]);
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         // X 標記
@@ -2096,7 +2201,7 @@ class GenogramCanvas {
         const ny = dx / len * gap;
 
         // 在上方繪製實線
-        this.ctx.setLineDash([]);
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
         this.ctx.beginPath();
         this.ctx.moveTo(x1 + nx, y1 + ny);
         this.ctx.lineTo(x2 + nx, y2 + ny);
@@ -2759,12 +2864,12 @@ class GenogramCanvas {
             } else {
                 // 一般實線或虛線
                 ctx.beginPath();
-                if (item.style === 'dashed') ctx.setLineDash(item.pattern || [5, 5]);
-                if (item.style === 'dotted') ctx.setLineDash(item.pattern || [2, 2]);
+                if (item.style === 'dashed') ctx.setLineDash(item.pattern || DASH_PATTERNS.legendDash);
+                if (item.style === 'dotted') ctx.setLineDash(item.pattern || DASH_PATTERNS.legendDot);
                 ctx.moveTo(startX, lineY);
                 ctx.lineTo(endX, lineY);
                 ctx.stroke();
-                ctx.setLineDash([]);
+                ctx.setLineDash(DASH_PATTERNS.solid);
             }
 
             // 繪製裝飾
@@ -2968,7 +3073,7 @@ class GenogramCanvas {
             // 設置預設線條樣式 (不選中時)
             this.ctx.strokeStyle = '#333';
             this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([]); // 實線
+            this.ctx.setLineDash(DASH_PATTERNS.solid); // 實線
 
             let sourceX, sourceY;
             let sourceAnchorX = null; // 父母關係線上的實際掛接點 X
@@ -3018,7 +3123,7 @@ class GenogramCanvas {
                     // 畫一條輕微的隱形連接線 (極淺色虛線)，用於標示子代起源，避免與正式關係線混淆
                     this.ctx.save();
                     this.ctx.strokeStyle = '#f0f0f0';
-                    this.ctx.setLineDash([2, 6]);
+                    this.ctx.setLineDash(DASH_PATTERNS.fosterLink);
                     this.ctx.beginPath();
                     this.ctx.moveTo(p1.x, p1.y);
                     this.ctx.lineTo(p2.x, p2.y);
@@ -3028,7 +3133,7 @@ class GenogramCanvas {
                     // 恢復預設樣式
                     this.ctx.strokeStyle = '#333';
                     this.ctx.lineWidth = 2;
-                    this.ctx.setLineDash([]);
+                    this.ctx.setLineDash(DASH_PATTERNS.solid);
 
                     sourceX = (p1.x + p2.x) / 2;
                     sourceAnchorX = sourceX;
@@ -3311,7 +3416,7 @@ class GenogramCanvas {
         if (applyTransformFlag) {
             this.applyTransform(); // 應用縮放和平移（僅在正常渲染時）
         }
-        this.ctx.setLineDash([10, 5]); // 改為較密的虛線，在不同縮放比例下更容易看清
+        this.ctx.setLineDash(DASH_PATTERNS.household); // 改為較密的虛線，在不同縮放比例下更容易看清
         this.ctx.lineWidth = 3;
         this.ctx.lineJoin = 'round';
 
@@ -3422,7 +3527,7 @@ class GenogramCanvas {
             // 如果被選中，先繪製高亮外框
             if (isSelected) {
                 this.ctx.save();
-                this.ctx.setLineDash([]);
+                this.ctx.setLineDash(DASH_PATTERNS.solid);
                 this.ctx.lineWidth = 6;
                 this.ctx.strokeStyle = '#4a90d9';
                 this.ctx.globalAlpha = 0.3;
@@ -4394,7 +4499,7 @@ class GenogramCanvas {
             // 邊框
             this.ctx.strokeStyle = isSelected ? '#4a90d9' : 'rgba(74, 144, 226, 0.5)';
             this.ctx.lineWidth = isSelected ? 3 : 2;
-            this.ctx.setLineDash(isSelected ? [] : [5, 3]);
+            this.ctx.setLineDash(isSelected ? DASH_PATTERNS.solid : DASH_PATTERNS.liveCircle);
             this.ctx.stroke();
 
             // 繪製頂點（選中時）
@@ -4469,9 +4574,9 @@ class GenogramCanvas {
             // 邊框
             this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
             this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 3]);
+            this.ctx.setLineDash(DASH_PATTERNS.liveCircle);
             this.ctx.stroke();
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
         });
     }
 
@@ -4500,7 +4605,7 @@ class GenogramCanvas {
 
         this.ctx.strokeStyle = '#4a90d9';
         this.ctx.lineWidth = 2;
-        this.ctx.setLineDash([5, 5]);
+        this.ctx.setLineDash(DASH_PATTERNS.selection);
         this.ctx.stroke();
 
         // 繪製頂點
@@ -4511,7 +4616,7 @@ class GenogramCanvas {
             this.ctx.fill();
             this.ctx.strokeStyle = '#fff';
             this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
             this.ctx.stroke();
         });
 
