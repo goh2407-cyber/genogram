@@ -254,6 +254,12 @@ class GenogramCanvas {
         this.lastPersons = Array.isArray(persons) ? persons : [];
         this.lastRelationships = Array.isArray(relationships) ? relationships : [];
 
+        // [Sprint 2 Phase A] personMap fallback：正常路徑由 App.render() 注入；
+        // 若 canvas 被外部直接呼叫（無注入），就地重建避免 ReferenceError
+        if (!this.personMap) {
+            this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
+        }
+
         this.clear();
         this.drawGrid(); // [D1] 背景網格（在 clear 後、applyTransform 前繪製於螢幕座標）
 
@@ -284,8 +290,8 @@ class GenogramCanvas {
 
         // 3. 繪製非親子關係
         otherRels.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
                 const isSelected = selectedRelationshipId === rel.id;
                 // 傳入所有關係以便計算並行位移
@@ -295,8 +301,8 @@ class GenogramCanvas {
 
         // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
         otherRels.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
                 this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
             }
@@ -336,7 +342,7 @@ class GenogramCanvas {
 
         // 8. 繪製快速新增按鈕 (hover 時顯示)
         if (hoveredPersonId) {
-            const hoveredPerson = persons.find(p => p.id === hoveredPersonId);
+            const hoveredPerson = this.personMap.get(hoveredPersonId);
             if (hoveredPerson) {
                 this.drawQuickAddButtons(hoveredPerson);
             }
@@ -346,8 +352,8 @@ class GenogramCanvas {
         if (selectedRelationshipId) {
             const selectedRel = relationships.find(r => r.id === selectedRelationshipId);
             if (selectedRel) {
-                const fromPerson = persons.find(p => p.id === selectedRel.fromPersonId);
-                const toPerson = persons.find(p => p.id === selectedRel.toPersonId);
+                const fromPerson = this.personMap.get(selectedRel.fromPersonId);
+                const toPerson = this.personMap.get(selectedRel.toPersonId);
                 if (fromPerson && toPerson) {
                     this.drawRelationshipEditButton(selectedRel, fromPerson, toPerson, relationships);
                 }
@@ -359,7 +365,7 @@ class GenogramCanvas {
         // 由於同住工具會傳入 selectedPersonIds，這符合需求
         if (selectedPersonIds && selectedPersonIds.length > 0) {
             selectedPersonIds.forEach((id, index) => {
-                const person = persons.find(p => p.id === id);
+                const person = this.personMap.get(id);
                 if (person) {
                     this.drawSelectionBadge(person, index + 1);
                 }
@@ -2412,8 +2418,8 @@ class GenogramCanvas {
         // 4. [New] 關係線 (包含天橋)
         if (relationships && relationships.length > 0) {
             relationships.forEach(rel => {
-                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                const fromPerson = this.personMap.get(rel.fromPersonId);
+                const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
                     // 使用相同的 getRelationshipPath 邏輯來取得所有路徑點
                     // 注意：這裡傳入 relationships 是為了正確計算 offset和天橋配置
@@ -2503,8 +2509,8 @@ class GenogramCanvas {
 
         // 3. 繪製其餘關係
         otherRels.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
                 this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
             }
@@ -2513,8 +2519,8 @@ class GenogramCanvas {
         // 3.5 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
         if (showNotes) {
             relationships.forEach(rel => {
-                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                const fromPerson = this.personMap.get(rel.fromPersonId);
+                const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
                     this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
                 }
@@ -2599,8 +2605,8 @@ class GenogramCanvas {
         this.drawFamilies(familyRels, persons, otherRels);
 
         otherRels.forEach(rel => {
-            const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = persons.find(p => p.id === rel.toPersonId);
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
                 this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
             }
@@ -2609,8 +2615,8 @@ class GenogramCanvas {
         // 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
         if (showNotes) {
             relationships.forEach(rel => {
-                const fromPerson = persons.find(p => p.id === rel.fromPersonId);
-                const toPerson = persons.find(p => p.id === rel.toPersonId);
+                const fromPerson = this.personMap.get(rel.fromPersonId);
+                const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
                     this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
                 }
@@ -3048,8 +3054,8 @@ class GenogramCanvas {
             }
 
             // 取得物件
-            const parentObjs = parentIds.map(id => persons.find(p => p.id === id)).filter(p => p);
-            const childObjs = childIds.map(id => persons.find(p => p.id === id)).filter(p => p);
+            const parentObjs = parentIds.map(id => this.personMap.get(id)).filter(p => p);
+            const childObjs = childIds.map(id => this.personMap.get(id)).filter(p => p);
 
             if (parentObjs.length === 0 || childObjs.length === 0) return;
 
@@ -3535,7 +3541,7 @@ class GenogramCanvas {
      * @returns {Object|null} - {points, hullPoints, minX, minY, maxX, maxY} 或 null
      */
     getHouseholdBounds(household, persons, relationships = []) {
-        const members = household.ids.map(id => persons.find(p => p.id === id)).filter(p => p);
+        const members = household.ids.map(id => this.personMap.get(id)).filter(p => p);
         if (members.length === 0) return null;
 
         const padding = 25; // 恢復較顯眼的邊距 (User 要求大一點)

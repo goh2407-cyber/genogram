@@ -36,6 +36,10 @@ class GenogramApp {
         this.relationships = [];
         this.households = []; // [{ids: ['id1', 'id2'], notes: ''}]
 
+        // [Sprint 2 Phase A] personMap 主索引：所有 O(n) 的 persons.find 改查表
+        // 維護規則見 refactor/PERSONMAP_INDEX_DESIGN.md §3
+        this.personMap = new Map();
+
         // 狀態
         this.currentTool = 'select'; // select, addMale, addFemale, connect, boxSelect, household
         this.selectedPersonId = null;
@@ -545,7 +549,7 @@ class GenogramApp {
 
         // [NEW] 快速按鈕點擊偵測
         if (this.hoveredPersonId && this.currentTool === 'select') {
-            const hoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+            const hoveredPerson = this.personMap.get(this.hoveredPersonId);
             if (hoveredPerson) {
                 const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
                 if (buttonType) {
@@ -706,8 +710,8 @@ class GenogramApp {
             if (this.selectedRelationshipId) {
                 const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
                 if (selectedRel) {
-                    const fromPerson = this.persons.find(p => p.id === selectedRel.fromPersonId);
-                    const toPerson = this.persons.find(p => p.id === selectedRel.toPersonId);
+                    const fromPerson = this.personMap.get(selectedRel.fromPersonId);
+                    const toPerson = this.personMap.get(selectedRel.toPersonId);
                     if (fromPerson && toPerson) {
                         if (this.canvas.isPointOnEditButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
                             // 點擊了編輯按鈕，開啟關係類型編輯選單
@@ -724,8 +728,8 @@ class GenogramApp {
             if (clickedRel) {
                 // 檢查這條線是否完全在某個家庭內 (Selected by default?)
                 // 為求簡單與符合直覺，若該線連接的兩人都在同一家庭，則視為拖曳該家庭
-                const p1 = this.persons.find(p => p.id === clickedRel.fromPersonId);
-                const p2 = this.persons.find(p => p.id === clickedRel.toPersonId);
+                const p1 = this.personMap.get(clickedRel.fromPersonId);
+                const p2 = this.personMap.get(clickedRel.toPersonId);
 
                 let relHousehold = null;
                 if (p1 && p2 && this.households) {
@@ -812,7 +816,7 @@ class GenogramApp {
                 if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
-                    this.canvas.draggedPerson = this.persons.find(p => p.id === this.selectedPersonIds[0]);
+                    this.canvas.draggedPerson = this.personMap.get(this.selectedPersonIds[0]);
                     this.updateStatus('正在移動選取對象...', 'info');
                 } else {
                     // 普通點擊空白處 -> 拖曳畫布 (Pan)
@@ -884,7 +888,7 @@ class GenogramApp {
                     movingPersonIds = this.canvas.draggedHousehold.ids;
                 }
 
-                const movingPersons = movingPersonIds.map(id => this.persons.find(p => p.id === id)).filter(p => p);
+                const movingPersons = movingPersonIds.map(id => this.personMap.get(id)).filter(p => p);
 
                 // [Disabled] 移除碰撞偵測，讓使用者可以完全自由拖曳
                 // 放開後的 snapToGrid + isOccupied 會確保最終不重疊
@@ -955,7 +959,7 @@ class GenogramApp {
             // 如果目前沒有 hover 到人物，但之前有 hoveredPersonId，
             // 檢查是否在擴展的按鈕區域內
             if (!newHoveredId && this.hoveredPersonId) {
-                const prevHoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+                const prevHoveredPerson = this.personMap.get(this.hoveredPersonId);
                 if (prevHoveredPerson && this.canvas.isPointInQuickAddZone(point.x, point.y, prevHoveredPerson)) {
                     // 滑鼠在擴展區域內，保持 hover 狀態
                     newHoveredId = this.hoveredPersonId;
@@ -969,7 +973,7 @@ class GenogramApp {
 
             // 檢查是否 hover 在快速按鈕上
             if (this.hoveredPersonId) {
-                const hoveredPerson = this.persons.find(p => p.id === this.hoveredPersonId);
+                const hoveredPerson = this.personMap.get(this.hoveredPersonId);
                 const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
                 if (buttonType) {
                     this.canvas.canvas.style.cursor = 'pointer';
@@ -1389,8 +1393,8 @@ class GenogramApp {
         // 從後往前檢查（後建立的在上層）
         for (let i = this.relationships.length - 1; i >= 0; i--) {
             const rel = this.relationships[i];
-            const fromPerson = this.persons.find(p => p.id === rel.fromPersonId);
-            const toPerson = this.persons.find(p => p.id === rel.toPersonId);
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
                 if (!this.canvas.isPointOnRelationship(x, y, fromPerson, toPerson, rel, 14, this.relationships)) {
                     continue;
@@ -1504,6 +1508,7 @@ class GenogramApp {
             gender: gender
         });
         this.persons.push(person);
+        this.personMap.set(person.id, person);
         this.selectPerson(person.id);
         this.autoSave();
         // 新增後切換到選取工具，方便使用者編輯
@@ -1644,6 +1649,7 @@ class GenogramApp {
             generation: this.getGenerationAbove(child.generation)
         });
         this.persons.push(father);
+        this.personMap.set(father.id, father);
 
         // 建立母親
         const mother = new Person({
@@ -1653,6 +1659,7 @@ class GenogramApp {
             generation: this.getGenerationAbove(child.generation)
         });
         this.persons.push(mother);
+        this.personMap.set(mother.id, mother);
 
         // 建立婚姻關係
         const marriage = new Relationship({
@@ -1743,6 +1750,7 @@ class GenogramApp {
             generation: this.getGenerationBelow(parent.generation)
         });
         this.persons.push(child);
+        this.personMap.set(child.id, child);
 
         // 建立親子關係（主要父/母）
         const parentChildRel = new Relationship({
@@ -1783,7 +1791,7 @@ class GenogramApp {
         if (!this.quickAddContext) return;
 
         const { personId, type } = this.quickAddContext;
-        const basePerson = this.persons.find(p => p.id === personId);
+        const basePerson = this.personMap.get(personId);
 
         if (!basePerson) {
             this.closeGenderModal();
@@ -1813,6 +1821,7 @@ class GenogramApp {
                 generation: basePerson.generation
             });
             this.persons.push(sibling);
+            this.personMap.set(sibling.id, sibling);
 
             // 找出基準角色的父母，為手足建立親子關係
             const parentRels = this.relationships.filter(r =>
@@ -1841,6 +1850,7 @@ class GenogramApp {
                 generation: basePerson.generation
             });
             this.persons.push(partner);
+            this.personMap.set(partner.id, partner);
 
             // 建立關係 (預設為 cohabiting，或可改為 marriage)
             const cohabitRel = new Relationship({
@@ -1933,7 +1943,7 @@ class GenogramApp {
 
         // 偵測選取的物件作為連線對象
         const selectedIds = this.selectedPersonIds.length > 0 ? this.selectedPersonIds : (this.selectedPersonId ? [this.selectedPersonId] : []);
-        const selectedPersons = selectedIds.map(id => this.persons.find(p => p.id === id)).filter(p => p);
+        const selectedPersons = selectedIds.map(id => this.personMap.get(id)).filter(p => p);
 
         // [Smart Positioning] 計算理想 X 座標
         let idealX = null;
@@ -2061,6 +2071,7 @@ class GenogramApp {
             generation: generationStr
         });
         this.persons.push(person);
+        this.personMap.set(person.id, person);
 
         // 自動建立關係
         let relCount = 0;
@@ -2153,7 +2164,7 @@ class GenogramApp {
         });
 
         return Array.from(siblingIds)
-            .map(id => this.persons.find(p => p.id === id))
+            .map(id => this.personMap.get(id))
             .filter(p => p);
     }
 
@@ -2210,8 +2221,8 @@ class GenogramApp {
                 return;
             }
 
-            const fromPerson = this.persons.find(p => p.id === relationship.fromPersonId);
-            const toPerson = this.persons.find(p => p.id === relationship.toPersonId);
+            const fromPerson = this.personMap.get(relationship.fromPersonId);
+            const toPerson = this.personMap.get(relationship.toPersonId);
             const typeName = Relationship.getTypeName(relationship.type);
 
             content.innerHTML = `
@@ -2269,7 +2280,7 @@ class GenogramApp {
             return;
         }
 
-        const person = this.persons.find(p => p.id === this.selectedPersonId);
+        const person = this.personMap.get(this.selectedPersonId);
         if (!person) {
             content.innerHTML = '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>';
             return;
@@ -2461,7 +2472,7 @@ class GenogramApp {
         const form = document.getElementById('personForm');
         if (!form) return;
 
-        const person = this.persons.find(p => p.id === this.selectedPersonId);
+        const person = this.personMap.get(this.selectedPersonId);
         if (!person) return;
 
         // 姓名
@@ -2556,7 +2567,7 @@ class GenogramApp {
         twinCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
                 const siblingId = e.target.dataset.siblingId;
-                const sibling = this.persons.find(p => p.id === siblingId);
+                const sibling = this.personMap.get(siblingId);
 
                 if (!sibling) return;
 
@@ -2673,8 +2684,8 @@ class GenogramApp {
         }
 
         // 驗證婚姻類關係的限制規則
-        const fromPerson = this.persons.find(p => p.id === relationship.fromPersonId);
-        const toPerson = this.persons.find(p => p.id === relationship.toPersonId);
+        const fromPerson = this.personMap.get(relationship.fromPersonId);
+        const toPerson = this.personMap.get(relationship.toPersonId);
         const category = Relationship.getCategory(type);
 
         if (category === 'marriage') {
@@ -2712,8 +2723,8 @@ class GenogramApp {
 
         const fromId = this.connectingFrom.person.id;
         const toId = this.connectingTo.id;
-        const fromPerson = this.persons.find(p => p.id === fromId);
-        const toPerson = this.persons.find(p => p.id === toId);
+        const fromPerson = this.personMap.get(fromId);
+        const toPerson = this.personMap.get(toId);
         const category = Relationship.getCategory(type);
 
         // [驗證] 婚姻類關係的限制規則
@@ -2938,7 +2949,7 @@ class GenogramApp {
         const processedPairs = new Set();
 
         parentIds.forEach(parentId => {
-            const parent = this.persons.find(p => p.id === parentId);
+            const parent = this.personMap.get(parentId);
             if (!parent) return;
 
             const spouseIds = this.getSpouseIds(parentId);
@@ -2960,7 +2971,7 @@ class GenogramApp {
 
             // 一對一伴侶：以「共同子女」置中
             const spouseId = spouseIds[0];
-            const spouse = this.persons.find(p => p.id === spouseId);
+            const spouse = this.personMap.get(spouseId);
             if (!spouse) return;
 
             // 若對方有多段伴侶，也跳過自動置中
@@ -3073,6 +3084,18 @@ class GenogramApp {
     }
 
     /**
+     * [Sprint 2 Phase A] 從 this.persons 重建 personMap 索引。
+     * 用於批次覆寫路徑：loadData / saveState 復原 / clearAll / cache restore / filter 刪除。
+     * 單筆增刪請直接 this.personMap.set/delete，避免 O(n) 重建。
+     */
+    _syncPersonMap() {
+        this.personMap = new Map();
+        for (const p of this.persons) {
+            this.personMap.set(p.id, p);
+        }
+    }
+
+    /**
      * 尋找某人的配偶（透過婚姻類型關係）
      * @param {string} personId 
      * @returns {Person|null}
@@ -3107,7 +3130,7 @@ class GenogramApp {
      */
     getSpouses(personId) {
         return this.getSpouseIds(personId)
-            .map(id => this.persons.find(p => p.id === id))
+            .map(id => this.personMap.get(id))
             .filter(p => p);
     }
 
@@ -3265,6 +3288,7 @@ class GenogramApp {
             // 刪除多選的人物
             this.saveState();
             this.persons = this.persons.filter(p => !this.selectedPersonIds.includes(p.id));
+            this._syncPersonMap();
             // 刪除相關的關係
             this.relationships = this.relationships.filter(r =>
                 !this.selectedPersonIds.includes(r.fromPersonId) &&
@@ -3296,6 +3320,7 @@ class GenogramApp {
 
             // 3. 刪除人物
             this.persons = this.persons.filter(p => p.id !== this.selectedPersonId);
+            this._syncPersonMap();
             this.selectedPersonId = null;
             this.updatePropertyPanel();
             this.autoSave();
@@ -3307,6 +3332,8 @@ class GenogramApp {
      * 繪製
      */
     render() {
+        // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
+        this.canvas.personMap = this.personMap;
         this.canvas.render(
             this.persons,
             this.relationships,
@@ -3453,7 +3480,7 @@ class GenogramApp {
 
         marriageRels.forEach(rel => {
             const spouseId = rel.fromPersonId === person.id ? rel.toPersonId : rel.fromPersonId;
-            const spouse = this.persons.find(p => p.id === spouseId);
+            const spouse = this.personMap.get(spouseId);
 
             // 只處理同一輩 (Y 座標相近) 的配偶
             if (spouse && Math.abs(person.y - spouse.y) < sameGenErrorMargin) {
@@ -3519,7 +3546,7 @@ class GenogramApp {
             this.relationships.forEach(r => {
                 if (r.type === 'parent-child' && parentIds.includes(r.fromPersonId)) {
                     // 檢查此 Child 是否在同一輩
-                    const child = this.persons.find(p => p.id === r.toPersonId);
+                    const child = this.personMap.get(r.toPersonId);
                     if (child && Math.abs(child.y - person.y) < sameGenErrorMargin) {
                         siblingIds.add(child.id);
                     }
@@ -3527,7 +3554,7 @@ class GenogramApp {
             });
 
             if (siblingIds.size > 1) {
-                const siblings = Array.from(siblingIds).map(id => this.persons.find(p => p.id === id)).filter(p => p);
+                const siblings = Array.from(siblingIds).map(id => this.personMap.get(id)).filter(p => p);
 
                 // 依目前 X 座標排序 (這是使用者拖曳後的"意圖"位置)
                 const currentPositions = siblings.map(p => p.x).sort((a, b) => a - b);
@@ -3616,6 +3643,7 @@ class GenogramApp {
         const prevState = this.history.undo(currentState);
         if (prevState) {
             this.persons = prevState.persons.map(p => Person.fromJSON(p));
+            this._syncPersonMap();
             this.relationships = prevState.relationships.map(r => Relationship.fromJSON(r));
             this.households = prevState.households || [];
             this.lifeCircles = prevState.lifeCircles || [];
@@ -3647,6 +3675,7 @@ class GenogramApp {
         const nextState = this.history.redo(currentState);
         if (nextState) {
             this.persons = nextState.persons.map(p => Person.fromJSON(p));
+            this._syncPersonMap();
             this.relationships = nextState.relationships.map(r => Relationship.fromJSON(r));
             this.households = nextState.households || [];
             this.lifeCircles = nextState.lifeCircles || [];
@@ -3748,6 +3777,7 @@ class GenogramApp {
     loadData(data) {
         this.saveState();
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
+        this._syncPersonMap();
         this.relationships = (data.relationships || []).map(r => Relationship.fromJSON(r));
         this.households = data.households || [];
         this.lifeCircles = data.lifeCircles || [];
@@ -4011,6 +4041,7 @@ class GenogramApp {
 
         this.saveState();
         this.persons = [];
+        this._syncPersonMap();
         this.relationships = [];
         this.households = [];
         this.lifeCircles = [];
@@ -4117,6 +4148,7 @@ class GenogramApp {
         const saved = this.storage.loadAutoSave();
         if (saved) {
             this.persons = saved.persons;
+            this._syncPersonMap();
             this.relationships = saved.relationships;
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
@@ -4293,7 +4325,7 @@ class GenogramApp {
 
         // 套用新座標
         result.positions.forEach((pos, personId) => {
-            const person = this.persons.find(p => p.id === personId);
+            const person = this.personMap.get(personId);
             if (person) {
                 person.x = this.snapToGrid(pos.x, 'x');
                 person.y = this.snapToGrid(pos.y, 'y');
