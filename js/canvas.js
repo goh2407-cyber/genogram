@@ -378,20 +378,64 @@ class GenogramCanvas {
     /**
      * 繪製人物
      */
+
+    // [A3] Clinical minimalism state styles — replaces shadowBlur with double-stroke rings.
+    // selected/connecting: muted steel-blue (#5b8fc9) — lower saturation than the old #4a90d9,
+    //   reduces visual noise while preserving clear focus affordance (Color & Theme: dominant
+    //   accent over timid, evenly-distributed palettes; kept restrained for clinical context).
+    // highlighted: soft sage-green (#3aab58) — desaturated from pure #28a745, signals
+    //   lasso-selection without competing with blue focus ring (clinical differentiation).
+    // [C5] Name halo styles — white stroke behind fillText prevents family lines from bleeding
+    //   into label text (readability over decoration; spatial clarity principle).
+    static get DRAW_PERSON_STYLES() {
+        return {
+            selected:    { ring: '#5b8fc9', ringWidth: 3, haloGap: 5 },
+            connecting:  { ring: '#5b8fc9', ringWidth: 3, haloGap: 5 },
+            highlighted: { ring: '#3aab58', ringWidth: 3, haloGap: 5 },
+            nameHalo:    { color: '#ffffff', lineWidth: 4 },
+            notesHalo:   { color: '#ffffff', lineWidth: 4 },
+        };
+    }
+
     drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
         const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
         const size = this.personSize;
         const halfSize = size / 2;
+        const S = GenogramCanvas.DRAW_PERSON_STYLES; // shorthand
 
         this.ctx.save();
 
-        // 選取或連接中的高亮效果
-        if (isSelected || isConnecting) {
-            this.ctx.shadowColor = '#4a90d9';
-            this.ctx.shadowBlur = 15;
-        } else if (isHighlighted) {
-            this.ctx.shadowColor = '#28a745'; // 綠色高亮 (圈選中)
-            this.ctx.shadowBlur = 15;
+        // [A3] State ring: draw outer halo before the shape so it sits beneath the shape stroke.
+        // No shadowBlur — instead we stroke a slightly-expanded path in the state colour.
+        // This is crisp at any zoom level and costs a single extra path per frame.
+        if (isSelected || isConnecting || isHighlighted) {
+            const stateStyle = (isHighlighted && !isSelected && !isConnecting)
+                ? S.highlighted : S.selected;
+            const gap = stateStyle.haloGap;
+            this.ctx.save();
+            this.ctx.strokeStyle = stateStyle.ring;
+            this.ctx.lineWidth = stateStyle.ringWidth;
+            this.ctx.beginPath();
+            if (transgender === 'ftm') {
+                this.ctx.strokeRect(x - halfSize - gap, y - halfSize - gap, size + gap * 2, size + gap * 2);
+            } else if (transgender === 'mtf' || gender === 'female') {
+                this.ctx.arc(x, y, halfSize + gap, 0, Math.PI * 2);
+            } else if (gender === 'pregnancy') {
+                this.ctx.moveTo(x, y - halfSize - gap);
+                this.ctx.lineTo(x + halfSize + gap, y + halfSize + gap);
+                this.ctx.lineTo(x - halfSize - gap, y + halfSize + gap);
+                this.ctx.closePath();
+            } else if (gender === 'same') {
+                this.ctx.arc(x, y, halfSize + gap, Math.PI, 0);
+                this.ctx.lineTo(x + halfSize + gap, y + halfSize + gap);
+                this.ctx.lineTo(x - halfSize - gap, y + halfSize + gap);
+                this.ctx.closePath();
+            } else {
+                // male (default square) and ftm fallback
+                this.ctx.rect(x - halfSize - gap, y - halfSize - gap, size + gap * 2, size + gap * 2);
+            }
+            this.ctx.stroke();
+            this.ctx.restore();
         }
 
         // 繪製主要形狀背景
@@ -460,23 +504,13 @@ class GenogramCanvas {
         }
 
         // 重新繪製邊框 (確保清晰)
-        // 如果是黑底，邊框也用黑色可能看不出來，但實際上填充 #333 邊框也是 #333 是一樣的。
-        // 為了確保邊界清晰，如果內容是黑的，外部背景是白的，所以沒問題。
-        // 重新繪製邊框 (確保清晰)
+        // [A3] isHighlighted inline rings removed — state ring is drawn once above via DRAW_PERSON_STYLES.
         if (transgender === 'ftm') {
             // FTM: 方框 + 內圓
             this.ctx.strokeRect(x - halfSize, y - halfSize, size, size);
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
             this.ctx.stroke();
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeRect(x - halfSize - 5, y - halfSize - 5, size + 10, size + 10);
-                this.ctx.restore();
-            }
         } else if (transgender === 'mtf') {
             // MTF: 圓框 + 內方
             this.ctx.beginPath();
@@ -484,30 +518,10 @@ class GenogramCanvas {
             this.ctx.stroke();
             const innerSize = size * 0.7071;
             this.ctx.strokeRect(x - innerSize / 2, y - innerSize / 2, innerSize, innerSize);
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, halfSize + 5, 0, Math.PI * 2);
-                this.ctx.stroke();
-                this.ctx.restore();
-            }
         } else if (gender === 'female') {
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
             this.ctx.stroke();
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, halfSize + 5, 0, Math.PI * 2);
-                this.ctx.stroke();
-                this.ctx.restore();
-            }
         } else if (gender === 'pregnancy') {
             this.ctx.beginPath();
             this.ctx.moveTo(x, y - halfSize);
@@ -515,19 +529,6 @@ class GenogramCanvas {
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
             this.ctx.stroke();
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, y - halfSize - 5);
-                this.ctx.lineTo(x + halfSize + 5, y + halfSize + 5);
-                this.ctx.lineTo(x - halfSize - 5, y + halfSize + 5);
-                this.ctx.closePath();
-                this.ctx.stroke();
-                this.ctx.restore();
-            }
         } else if (gender === 'same') {
             // 同性別：圓頂方底
             this.ctx.beginPath();
@@ -536,28 +537,8 @@ class GenogramCanvas {
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
             this.ctx.stroke();
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, halfSize + 5, Math.PI, 0);
-                this.ctx.lineTo(x + halfSize + 5, y + halfSize + 5);
-                this.ctx.lineTo(x - halfSize - 5, y + halfSize + 5);
-                this.ctx.stroke();
-                this.ctx.restore();
-            }
         } else {
             this.ctx.strokeRect(x - halfSize, y - halfSize, size, size);
-
-            if (isHighlighted) {
-                this.ctx.save();
-                this.ctx.strokeStyle = '#28a745';
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeRect(x - halfSize - 5, y - halfSize - 5, size + 10, size + 10);
-                this.ctx.restore();
-            }
         }
 
 
@@ -607,9 +588,11 @@ class GenogramCanvas {
             this.ctx.textBaseline = 'top';
             this.ctx.fillStyle = '#333';
 
-            // [New] 姓名也加一點描邊，避免被背景線條干擾
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            // [C5] Name halo: strokeText with solid white before fillText.
+            // Solid #fff (no alpha) ensures maximum coverage against family lines
+            // (spatial clarity principle — label legibility over decorative restraint).
+            this.ctx.lineWidth = S.nameHalo.lineWidth;
+            this.ctx.strokeStyle = S.nameHalo.color;
             this.ctx.strokeText(name, x, y + halfSize + 8);
 
             this.ctx.fillText(name, x, y + halfSize + 8);
@@ -625,9 +608,9 @@ class GenogramCanvas {
                 noteLines.forEach((line, i) => {
                     const lineY = y + halfSize + 8 + (this.fontSize + 4) + i * noteLineHeight;
 
-                    // [New] 增加白色描邊，避免被線條遮擋
-                    this.ctx.lineWidth = 4; // 描邊粗一點
-                    this.ctx.strokeStyle = '#fff';
+                    // [C5] Notes halo: same solid white halo via DRAW_PERSON_STYLES.notesHalo.
+                    this.ctx.lineWidth = S.notesHalo.lineWidth;
+                    this.ctx.strokeStyle = S.notesHalo.color;
                     this.ctx.strokeText(line, x, lineY);
 
                     this.ctx.fillText(line, x, lineY);
