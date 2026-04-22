@@ -3,6 +3,7 @@
 *.7z
 *.md
 !README.md
+!CLAUDE.md
 !manifest.json
 
 # 測試與紀錄
