@@ -18,3 +18,7 @@ Desktop.ini
 
 # 打包輸出
 geno/
+
+# 重構資料夾：保留規劃文件，排除副本程式碼
+!refactor/*.md
+refactor/app/
