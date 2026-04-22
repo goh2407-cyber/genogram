@@ -173,8 +173,9 @@ class GenogramCanvas {
             }
         });
 
-        // 2. 繪製親子關係
-        this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId);
+        // 2. 繪製親子關係（以 KinshipEngine 提供方向判斷，避免 Y 座標誤判）
+        const kinship = new KinshipEngine(persons, relationships);
+        this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId, kinship);
 
         // 3. 繪製非親子關係
         otherRels.forEach(rel => {
@@ -2891,26 +2892,20 @@ class GenogramCanvas {
     /**
      * 繪製家庭樹狀結構 (親子關係)
      */
-    drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null) {
+    drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
+        // 若未提供 kinship（例如外部直接呼叫），就地建立以保持函式可獨立使用
+        if (!kinship) kinship = new KinshipEngine(persons, familyRels);
+
         // 1. 整理每個孩子的父母
         const childParents = {}; // childId -> [parentId, parentId]
         // 同時建立 child-parent 對應到關係 ID 的映射
         const childParentRelMap = {}; // `${childId}_${parentId}` -> relId
 
         familyRels.forEach(rel => {
-            const p1 = persons.find(p => p.id === rel.fromPersonId);
-            const p2 = persons.find(p => p.id === rel.toPersonId);
-            if (!p1 || !p2) return;
-
-            let parentId, childId;
-            // 自動判斷方向：Y軸位置較高(數值較小)的是父母
-            if (p1.y < p2.y) {
-                parentId = p1.id;
-                childId = p2.id;
-            } else {
-                parentId = p2.id;
-                childId = p1.id;
-            }
+            // 方向判斷統一由 KinshipEngine 處理（from=parent, to=child）
+            const pc = kinship.normalizeParentChild(rel);
+            if (!pc) return;
+            const { parentId, childId } = pc;
 
             if (!childParents[childId]) childParents[childId] = [];
             if (!childParents[childId].includes(parentId)) {

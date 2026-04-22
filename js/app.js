@@ -2141,60 +2141,17 @@ class GenogramApp {
      * @returns {Array} 兄弟姊妹列表
      */
     getSiblings(person) {
-        // 找出此人物的父母（透過 parent-child 關係，用 Y 軸位置判斷）
-        const parentIds = [];
-        this.relationships.forEach(rel => {
-            if (rel.type !== 'parent-child') return;
+        const kinship = this.getKinshipEngine();
+        const parentIds = kinship.getParentIds(person.id);
+        if (parentIds.length === 0) return [];
 
-            const p1 = this.persons.find(p => p.id === rel.fromPersonId);
-            const p2 = this.persons.find(p => p.id === rel.toPersonId);
-            if (!p1 || !p2) return;
-
-            // Y 軸較小（較高）的是父母
-            let parentId, childId;
-            if (p1.y < p2.y) {
-                parentId = p1.id;
-                childId = p2.id;
-            } else {
-                parentId = p2.id;
-                childId = p1.id;
-            }
-
-            // 如果此 person 是子女，記錄其父母
-            if (childId === person.id) {
-                parentIds.push(parentId);
-            }
-        });
-
-        if (parentIds.length === 0) {
-            return []; // 沒有父母，無兄弟姊妹
-        }
-
-        // 找出所有與這些父母有 parent-child 關係的其他子女
         const siblingIds = new Set();
-        this.relationships.forEach(rel => {
-            if (rel.type !== 'parent-child') return;
-
-            const p1 = this.persons.find(p => p.id === rel.fromPersonId);
-            const p2 = this.persons.find(p => p.id === rel.toPersonId);
-            if (!p1 || !p2) return;
-
-            let parentId, childId;
-            if (p1.y < p2.y) {
-                parentId = p1.id;
-                childId = p2.id;
-            } else {
-                parentId = p2.id;
-                childId = p1.id;
-            }
-
-            // 如果父母在我們的父母列表中，且子女不是當前 person
-            if (parentIds.includes(parentId) && childId !== person.id) {
-                siblingIds.add(childId);
-            }
+        parentIds.forEach(parentId => {
+            kinship.getChildrenIds(parentId).forEach(childId => {
+                if (childId !== person.id) siblingIds.add(childId);
+            });
         });
 
-        // 轉換為 Person 物件並過濾存在的人物
         return Array.from(siblingIds)
             .map(id => this.persons.find(p => p.id === id))
             .filter(p => p);
@@ -2944,12 +2901,8 @@ class GenogramApp {
         // 為每個選中的子女與兩位父母建立親子關係
         this.selectedChildrenIds.forEach(childId => {
             this.pendingParents.forEach(parentId => {
-                // 檢查是否已存在親子關係
-                const exists = this.relationships.some(r =>
-                    r.type === 'parent-child' &&
-                    ((r.fromPersonId === parentId && r.toPersonId === childId) ||
-                        (r.fromPersonId === childId && r.toPersonId === parentId))
-                );
+                // 檢查是否已存在親子關係（單向：from=parent, to=child）
+                const exists = this.hasParentChildLink(parentId, childId);
                 if (!exists) {
                     const relationship = new Relationship({
                         fromPersonId: parentId,
@@ -3113,23 +3066,10 @@ class GenogramApp {
      * @returns {KinshipEngine}
      */
     getKinshipEngine() {
-        if (typeof window !== 'undefined' && window.KinshipEngine) {
-            return new window.KinshipEngine(this.persons, this.relationships);
+        if (typeof window === 'undefined' || !window.KinshipEngine) {
+            throw new Error('KinshipEngine 未載入；請確認 index.html 中 js/domain/kinship-engine.js 在 js/app.js 之前載入');
         }
-
-        // fallback：若模組未載入，至少返回相容介面避免整體崩潰
-        return {
-            hasParentChildLink: (parentId, childId) => this.relationships.some(rel =>
-                rel.type === 'parent-child' &&
-                rel.fromPersonId === parentId &&
-                rel.toPersonId === childId
-            ),
-            getParentIds: () => [],
-            getChildrenIds: () => [],
-            getAncestorIds: () => new Set(),
-            getDescendantIds: () => new Set(),
-            shareAnyParent: () => false
-        };
+        return new window.KinshipEngine(this.persons, this.relationships);
     }
 
     /**
@@ -3247,14 +3187,11 @@ class GenogramApp {
             : Relationship.getCategory(baseRel.type);
         if (category !== 'family') return [baseRel.id];
 
-        const personById = new Map(this.persons.map(p => [p.id, p]));
-        const fromPerson = personById.get(baseRel.fromPersonId);
-        const toPerson = personById.get(baseRel.toPersonId);
-        if (!fromPerson || !toPerson || fromPerson.y === toPerson.y) {
-            return [baseRel.id];
-        }
+        const kinship = this.getKinshipEngine();
+        const basePc = kinship.normalizeParentChild(baseRel);
+        if (!basePc) return [baseRel.id];
 
-        const childId = fromPerson.y < toPerson.y ? toPerson.id : fromPerson.id;
+        const targetChildId = basePc.childId;
 
         const ids = this.relationships
             .filter(rel => {
@@ -3262,13 +3199,8 @@ class GenogramApp {
                     ? rel.getCategory()
                     : Relationship.getCategory(rel.type);
                 if (relCategory !== 'family') return false;
-
-                const p1 = personById.get(rel.fromPersonId);
-                const p2 = personById.get(rel.toPersonId);
-                if (!p1 || !p2 || p1.y === p2.y) return false;
-
-                const relChildId = p1.y < p2.y ? p2.id : p1.id;
-                return relChildId === childId;
+                const pc = kinship.normalizeParentChild(rel);
+                return pc && pc.childId === targetChildId;
             })
             .map(rel => rel.id);
 

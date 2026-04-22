@@ -2,11 +2,10 @@
  * KinshipEngine
  * 集中管理親屬推論，避免在 app/canvas 多處重複實作且互相矛盾。
  *
- * 基本規則（優先）：
- * - parent-child 關係預設 fromPersonId = parent, toPersonId = child
- *
- * 相容策略（fallback）：
- * - 若資料與規則不一致，允許用 Y 座標高低推斷方向，避免舊資料直接失效。
+ * 唯一規則：
+ * - parent-child 關係一律 fromPersonId = parent, toPersonId = child
+ * - 座標只負責顯示，不參與親屬語意判斷（GENERATION_POLICY 第 2 條）
+ * - 舊資料的方向一致性由 App.migrateRelationships() 在載入時保證
  */
 class KinshipEngine {
     constructor(persons = [], relationships = []) {
@@ -22,24 +21,14 @@ class KinshipEngine {
 
     /**
      * 將親子關係正規化為 { parentId, childId }。
-     * 優先使用 from->to；若判斷失敗才用 Y 座標 fallback。
+     * 一律信任 from→to 方向；拒絕 self-loop 與缺漏節點。
      */
     normalizeParentChild(rel) {
         if (!rel || rel.type !== 'parent-child') return null;
-
-        const from = this.getPerson(rel.fromPersonId);
-        const to = this.getPerson(rel.toPersonId);
-        if (!from || !to) return null;
-
-        // 規範方向（優先）
-        if (rel.fromPersonId !== rel.toPersonId) {
-            return { parentId: rel.fromPersonId, childId: rel.toPersonId };
-        }
-
-        // fallback：用 Y 推斷
-        if (from.y < to.y) return { parentId: from.id, childId: to.id };
-        if (to.y < from.y) return { parentId: to.id, childId: from.id };
-        return null;
+        if (rel.fromPersonId === rel.toPersonId) return null;
+        if (!this.personMap.has(rel.fromPersonId)) return null;
+        if (!this.personMap.has(rel.toPersonId)) return null;
+        return { parentId: rel.fromPersonId, childId: rel.toPersonId };
     }
 
     hasParentChildLink(parentId, childId) {
