@@ -2738,11 +2738,16 @@ class GenogramApp {
         }
 
         // 檢查是否已存在「完全相同」的關係（防止完全重複）
-        const exactDuplicate = this.relationships.find(r =>
-            ((r.fromPersonId === fromId && r.toPersonId === toId) ||
-                (r.fromPersonId === toId && r.toPersonId === fromId)) &&
-            r.type === type
-        );
+        // 情感類：方向敏感（例：母控制子 vs 子控制母 是兩條獨立關係）
+        // 婚姻/親子類：方向不敏感（雙向視為同一條）
+        const exactDuplicate = this.relationships.find(r => {
+            if (r.type !== type) return false;
+            if (category === 'emotional') {
+                return r.fromPersonId === fromId && r.toPersonId === toId;
+            }
+            return (r.fromPersonId === fromId && r.toPersonId === toId) ||
+                   (r.fromPersonId === toId && r.toPersonId === fromId);
+        });
 
         if (exactDuplicate) {
             this.updateStatus('此關係已存在', 'info');

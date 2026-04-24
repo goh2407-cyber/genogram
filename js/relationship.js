@@ -194,9 +194,10 @@ class Relationship {
             'conflict': { color: '#E53935', width: 3, pattern: 'double' },
             // 仇恨：紅色三實線 (Hate)
             'hate': { color: '#E53935', width: 3, pattern: 'triple' },
-            // 斷絕/疏遠：紅色虛線 + 雙豎線
+            // 斷絕：紅色虛線 + 雙豎線（完全斷絕的標記）
             'cutoff': { color: '#E53935', width: 3, pattern: 'dashed', decoration: 'double-bar' },
-            'estranged': { color: '#E53935', width: 3, pattern: 'dashed', decoration: 'double-bar' },
+            // 疏遠：純紅色虛線（疏遠但仍有聯繫，視覺較輕）
+            'estranged': { color: '#E53935', width: 3, pattern: 'dashed' },
             // 敵對：紅色波浪線 (Hostile)
             'hostile': { color: '#E53935', width: 3, pattern: 'wave' },
             // 遠距敵對：紅色波浪線 + 箭頭 (Distant Hostile)
