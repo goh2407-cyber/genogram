@@ -8,6 +8,10 @@
 
 # 測試與紀錄
 test_*
+refactor/*.png
+refactor/adv_*.js
+refactor/verify_visual_extra.js
+refactor/vis_pixel_check.ps1
 line_check.md
 .system_generated/
 app_icon_*.png

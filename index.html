@@ -7,7 +7,7 @@
     <title>勵馨家系圖生成器 | Genogram Generator</title>
     <meta name="description" content="專為社工家庭評估設計的專業家系圖繪製工具">
     <link rel="stylesheet" href="css/styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -47,60 +47,114 @@
             <div class="toolbar-center">
                 <div class="tool-group generation-group">
                     <button class="tool-btn primary" id="addPerson" title="新增角色 (N)">
-                        <span class="icon">➕</span>
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <line x1="19" y1="8" x2="19" y2="14" />
+                                <line x1="22" y1="11" x2="16" y2="11" />
+                            </svg></span>
                         <span class="tool-label">新增角色 (N)</span>
                     </button>
                 </div>
                 <div class="tool-divider"></div>
                 <div class="tool-group">
                     <button class="tool-btn" id="selectTool" title="選取工具 (V)">
-                        <span class="icon select-icon">↖</span>
+                        <span class="icon select-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 3l7.07 16.97 2.51-7.39 7.39-2.51L4 3z" />
+                            </svg></span>
                         <span class="tool-label">選取 (V)</span>
                     </button>
                     <button class="tool-btn" id="boxSelectTool" title="範圍圈選 (B)">
-                        <span class="icon box-select-icon">⊞</span>
+                        <span class="icon box-select-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="4 3" />
+                            </svg></span>
                         <span class="tool-label">範圍圈選 (B)</span>
                     </button>
 
                     <button class="tool-btn" id="householdTool" title="同住/圈選 (H)">
-                        <span class="icon household-icon" style="font-size: 20px;">⌂</span>
+                        <span class="icon household-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 10.5L12 3l9 7.5" />
+                                <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+                            </svg></span>
                         <span class="tool-label">同住 (H)</span>
                     </button>
 
                     <button class="tool-btn" id="lifeCircleTool" title="生活圈 (L)">
-                        <span class="icon life-circle-icon" style="font-size: 18px;">◎</span>
+                        <span class="icon life-circle-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="8.5" stroke-dasharray="5 3.5" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg></span>
                         <span class="tool-label">生活圈 (L)</span>
                     </button>
 
                     <button class="tool-btn" id="connectTool" title="連接關係 (C)">
-                        <span class="icon">⟷</span> <!-- 雙向箭頭 -->
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="5.5" cy="12" r="3" />
+                                <circle cx="18.5" cy="12" r="3" />
+                                <line x1="8.5" y1="12" x2="15.5" y2="12" />
+                            </svg></span>
                         <span class="tool-label">連接 (C)</span>
                     </button>
                     <button class="tool-btn" id="deleteTool" title="刪除 (Del)">
-                        <span class="icon delete-icon">✕</span>
+                        <span class="icon delete-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                            </svg></span>
                         <span class="tool-label">刪除 (Del)</span>
                     </button>
-                    <button class="tool-btn" id="clearAllBtn" title="清空畫布">
-                        <span class="icon" style="color: #d32f2f;">🗑</span>
+                    <button class="tool-btn danger" id="clearAllBtn" title="清空畫布">
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                                <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg></span>
                         <span class="tool-label">清空</span>
                     </button>
                 </div>
                 <div class="tool-divider"></div>
                 <div class="tool-group">
                     <button class="tool-btn" id="undoBtn" title="復原 (Ctrl+Z)">
-                        <span class="icon undo-icon">↶</span>
+                        <span class="icon undo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 14L4 9l5-5" />
+                                <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                            </svg></span>
                         <span class="tool-label">復原 (Ctrl+Z)</span>
                     </button>
                     <button class="tool-btn" id="redoBtn" title="重做 (Ctrl+Y)">
-                        <span class="icon redo-icon">↷</span>
+                        <span class="icon redo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M15 14l5-5-5-5" />
+                                <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+                            </svg></span>
                         <span class="tool-label">重做 (Ctrl+Y)</span>
                     </button>
                     <button class="tool-btn" id="autoLayoutBtn" title="自動排列同輩份">
-                        <span class="icon layout-icon">⚟</span>
+                        <span class="icon layout-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="2.5" width="6" height="6" rx="1" />
+                                <rect x="2.5" y="15.5" width="6" height="6" rx="1" />
+                                <rect x="15.5" y="15.5" width="6" height="6" rx="1" />
+                                <path d="M12 8.5V12M5.5 15.5V14a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1.5" />
+                            </svg></span>
                         <span class="tool-label">自動排列</span>
                     </button>
                     <button class="tool-btn" id="copyImageBtn" title="複製圖片到剪貼簿">
-                        <span class="icon">📋</span>
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="12" height="12" rx="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg></span>
                         <span class="tool-label">複製圖片</span>
                     </button>
                 </div>
@@ -108,23 +162,48 @@
             <div class="toolbar-right">
                 <div class="tool-group">
                     <button class="tool-btn primary" id="saveBtn" title="儲存檔案 (Ctrl+S)">
-                        <span class="icon save-icon">💾</span>
+                        <span class="icon save-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                <path d="M17 21v-8H7v8" />
+                                <path d="M7 3v5h8" />
+                            </svg></span>
                         <span class="tool-label">儲存 (Ctrl+S)</span>
                     </button>
                     <button class="tool-btn" id="downloadBtn" title="另存新檔">
-                        <span class="icon download-icon">⬇</span>
+                        <span class="icon download-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <path d="M7 10l5 5 5-5" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg></span>
                         <span class="tool-label">另存</span>
                     </button>
                     <button class="tool-btn" id="loadBtn" title="載入檔案">
-                        <span class="icon load-icon">📂</span>
+                        <span class="icon load-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path
+                                    d="M2 19V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v1" />
+                                <path d="M2 19l2.27-6.05A2 2 0 0 1 6.14 11.6H20.5a1.5 1.5 0 0 1 1.42 2L19.7 19.7a2 2 0 0 1-1.88 1.3H4a2 2 0 0 1-2-2z" />
+                            </svg></span>
                         <span class="tool-label">載入</span>
                     </button>
                     <button class="tool-btn" id="exportBtn" title="匯出圖片">
-                        <span class="icon export-icon">🖼</span>
+                        <span class="icon export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <path d="M21 15.5l-4.5-4.5L5 22.5" />
+                            </svg></span>
                         <span class="tool-label">匯出</span>
                     </button>
                     <button class="tool-btn" id="helpBtn" title="使用說明">
-                        <span class="icon">❓</span>
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="9" />
+                                <path d="M9.4 9.2a2.7 2.7 0 1 1 3.8 2.6c-.85.38-1.2 1-1.2 1.9" />
+                                <line x1="12" y1="16.8" x2="12" y2="16.81" stroke-width="2.4" />
+                            </svg></span>
                         <span class="tool-label">說明</span>
                     </button>
                 </div>
@@ -168,8 +247,8 @@
                 <!-- 關係圖例 -->
                 <section class="panel-section" id="legendPanel">
                     <h3 class="panel-title">
-                        <span class="toggle-icon">▼</span>
                         關係類型圖例
+                        <span class="toggle-icon">▼</span>
                     </h3>
                     <div class="panel-content legend-content">
                         <div class="legend-category">
@@ -490,8 +569,7 @@
         <div class="modal">
             <h3 class="modal-title">選擇匯出格式</h3>
             <div class="modal-content">
-                <div class="export-settings"
-                    style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 8px;">
+                <div class="export-settings">
                     <label style="display: flex; align-items: center; cursor: pointer;">
                         <input type="checkbox" id="exportShowNotes" checked
                             style="margin-right: 8px; width: 18px; height: 18px;">
@@ -519,27 +597,52 @@
                 </div>
                 <div class="export-options">
                     <button class="export-option-btn" data-format="png">
-                        <span class="export-icon">🖼</span>
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <path d="M21 15.5l-4.5-4.5L5 22.5" />
+                            </svg></span>
                         <span class="format-name">PNG</span>
                         <span class="format-desc">點陣圖，適合分享</span>
                     </button>
                     <button class="export-option-btn" data-format="jpeg">
-                        <span class="export-icon">📷</span>
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 8a2 2 0 0 1 2-2h2.2l1.6-2.4A1.5 1.5 0 0 1 10 3h4a1.5 1.5 0 0 1 1.2.6L16.8 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                                <circle cx="12" cy="13" r="3.5" />
+                            </svg></span>
                         <span class="format-name">JPEG</span>
                         <span class="format-desc">壓縮圖片，檔案較小</span>
                     </button>
                     <button class="export-option-btn" data-format="svg">
-                        <span class="export-icon">📐</span>
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="19" cy="5" r="2.2" />
+                                <circle cx="5" cy="19" r="2.2" />
+                                <path d="M5 16.8A11.8 11.8 0 0 1 16.8 5" />
+                            </svg></span>
                         <span class="format-name">SVG</span>
                         <span class="format-desc">向量圖，可無限放大</span>
                     </button>
                     <button class="export-option-btn" data-format="pdf">
-                        <span class="export-icon">📄</span>
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 2v6h6" />
+                                <line x1="8" y1="13" x2="16" y2="13" />
+                                <line x1="8" y1="17" x2="16" y2="17" />
+                            </svg></span>
                         <span class="format-name">PDF</span>
                         <span class="format-desc">文件格式，適合列印</span>
                     </button>
                     <button class="export-option-btn" data-format="json">
-                        <span class="export-icon">💾</span>
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <ellipse cx="12" cy="5" rx="8" ry="3" />
+                                <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+                                <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+                            </svg></span>
                         <span class="format-name">JSON</span>
                         <span class="format-desc">資料備份，可重新匯入</span>
                     </button>

@@ -99,28 +99,38 @@ class GenogramLayout {
             return newShapes;
         }
 
+        // 射線法：點是否在多邊形內（成員判定不再用 bounding box，
+        // 避免「在 bbox 內但在多邊形外」的人被誤算進圈裡）
+        const pointInPolygon = (x, y, pts) => {
+            let inside = false;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const xi = pts[i].x, yi = pts[i].y;
+                const xj = pts[j].x, yj = pts[j].y;
+                const intersect = ((yi > y) !== (yj > y)) &&
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        };
+
         this.lifeCircles.forEach(lc => {
             if (!lc.points || lc.points.length === 0) return;
 
-            // 1. 找出原本在生活圈範圍內的成員
-            // 計算原始生活圈的範圍
+            // 原始生活圈的外接矩形（仿射變換的基準）
             const minX = Math.min(...lc.points.map(pt => pt.x));
             const maxX = Math.max(...lc.points.map(pt => pt.x));
             const minY = Math.min(...lc.points.map(pt => pt.y));
             const maxY = Math.max(...lc.points.map(pt => pt.y));
 
+            // 1. 找出原本在生活圈「多邊形內」的成員
             const membersInCircle = this.persons.filter(p => {
                 const orig = this.originalPositions[p.id];
                 if (!orig) return false;
-                // 寬鬆判定：只要中心點在範圍內 (擴大 20px)
-                return orig.x >= minX - 20 && orig.x <= maxX + 20 &&
-                    orig.y >= minY - 20 && orig.y <= maxY + 20;
+                return pointInPolygon(orig.x, orig.y, lc.points);
             });
 
             if (membersInCircle.length === 0) {
-                // 如果沒有圈到任何人，保持原狀 (或嘗試平移? 暫時保持原位，因為這通常是裝飾用)
-                // 為了避免完全錯位，我們可以嘗試找出最近的人? 不，保持原位比較安全。
-                // 這裡我們不回傳新的 points，讓外部保留原本的 points
+                // 沒圈到任何人：保持原狀（通常是裝飾用），不回傳新 points
                 return;
             }
 
@@ -138,6 +148,8 @@ class GenogramLayout {
                 }
             });
 
+            if (newMinX === Infinity) return; // 成員都沒有新位置
+
             // 3. 加上 Padding
             const PADDING = 60; // 留出足夠空間
             newMinX -= PADDING;
@@ -145,14 +157,17 @@ class GenogramLayout {
             newMinY -= PADDING;
             newMaxY += PADDING;
 
-            // 4. 重建成矩形 (四個角)
-            // Canvas 的平滑曲線功能會將其繪製為圓角矩形/橢圓
-            newShapes[lc.id] = [
-                { x: newMinX, y: newMinY }, // 左上
-                { x: newMaxX, y: newMinY }, // 右上
-                { x: newMaxX, y: newMaxY }, // 右下
-                { x: newMinX, y: newMaxY }  // 左下
-            ];
+            // 4. [Fix] 保留使用者手繪輪廓：以仿射變換把原多邊形
+            // 從舊外接矩形映射到新外接矩形（原本是硬換成矩形，形狀全失）
+            const oldW = Math.max(1, maxX - minX);
+            const oldH = Math.max(1, maxY - minY);
+            const scaleX = (newMaxX - newMinX) / oldW;
+            const scaleY = (newMaxY - newMinY) / oldH;
+
+            newShapes[lc.id] = lc.points.map(pt => ({
+                x: newMinX + (pt.x - minX) * scaleX,
+                y: newMinY + (pt.y - minY) * scaleY
+            }));
         });
 
         return newShapes;

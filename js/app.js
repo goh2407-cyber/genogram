@@ -24,6 +24,16 @@ class GenogramApp {
         ORIGIN_Y: 60          // 格子起點 Y (半格偏移)
     };
 
+    // 生活圈色票（半透明填色；屬性面板色票與 getNextLifeCircleColor 共用）
+    static LIFE_CIRCLE_COLORS = [
+        'rgba(74, 144, 226, 0.15)',   // 藍色
+        'rgba(80, 200, 120, 0.15)',   // 綠色
+        'rgba(255, 165, 0, 0.15)',    // 橙色
+        'rgba(148, 103, 189, 0.15)',  // 紫色
+        'rgba(255, 99, 132, 0.15)',   // 粉紅
+        'rgba(75, 192, 192, 0.15)'    // 青色
+    ];
+
     // [Bug Fix] 統一婚姻類型清單，避免多處重複定義
     static MARRIAGE_TYPES = [
         'married', 'engaged', 'cohabiting', 'legal-cohabiting',
@@ -426,6 +436,7 @@ class GenogramApp {
         this.selectedPersonIds = [];
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null; // [Fix] 漏清會導致 Del 刪錯對象
     }
 
     /**
@@ -439,6 +450,7 @@ class GenogramApp {
             this.canvas.isPanning = false;
             this.canvas.draggedPerson = null;
             this.canvas.draggedHousehold = null;
+            this.canvas.draggedLifeCircle = null; // [Fix] 漏清會劫持下一次拖曳
         }
 
         // 清理框選狀態
@@ -458,6 +470,13 @@ class GenogramApp {
 
         // 清理拖曳快照 (避免遺留)
         this.dragStartSnapshot = null;
+
+        // [Snap] 清理拖曳吸附狀態與輔助線（否則失焦後桃紅輔助線會殘留在畫布上）
+        this.dragVirtual = null;
+        this.dragGuides = null;
+        if (this.canvas) {
+            this.canvas.dragGuides = null;
+        }
 
         this.render();
     }
@@ -539,11 +558,20 @@ class GenogramApp {
      * 處理指標按下 (Pointer Events 統一滑鼠與觸控)
      */
     handlePointerDown(e) {
+        // [Fix] 只處理主鍵（左鍵/觸控/筆）：右鍵、中鍵不該加生活圈頂點或觸發拖曳
+        if (typeof e.button === 'number' && e.button > 0) return;
+
         // Pointer capture for robust drag handling
         if (e.target === this.canvas.canvas) {
             this.activePointerId = e.pointerId;
             this.canvas.canvas.setPointerCapture(e.pointerId);
         }
+
+        // [Snap] 每次 pointerdown 都重置拖曳吸附狀態，
+        // 避免前一次拖曳被中斷（Esc/pointercancel 漏網）時殘留過期的虛擬座標
+        this.dragVirtual = null;
+        this.dragGuides = null;
+        this.canvas.dragGuides = null;
 
         const point = this.canvas.getMousePos(e);
 
@@ -745,6 +773,7 @@ class GenogramApp {
                     this.selectRelationship(clickedRel.id); // 仍選取線
                     this.updatePropertyPanel();
 
+                    this.dragStartSnapshot = this.getState(); // [Fix] 家庭拖曳也要能 undo
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedHousehold = relHousehold;
@@ -758,7 +787,29 @@ class GenogramApp {
                 }
             }
 
-            // 3. 檢查是否點擊到圈選框 (空白處)
+            // 3. 檢查是否點擊到生活圈「邊界帶」
+            // [Fix] 生活圈改邊界帶命中且優先於同住框：圈邊框壓在框內部時仍點得到圈，
+            // 圈內空白則讓給同住框 / 畫布平移
+            const clickedLifeCircle = this.getLifeCircleAt(point.x, point.y);
+            if (clickedLifeCircle && !e.shiftKey) {
+                this.selectedLifeCircleId = clickedLifeCircle.id;
+                this.selectedPersonId = null;
+                this.selectedPersonIds = [];
+                this.selectedRelationshipId = null;
+                this.selectedHouseholdId = null;
+                this.updatePropertyPanel();
+                this.render();
+
+                // 開始拖曳生活圈
+                this.dragStartSnapshot = this.getState(); // [Fix] 生活圈拖曳也要能 undo
+                this.canvas.isDragging = true;
+                this.canvas.dragStart = point;
+                this.canvas.draggedLifeCircle = clickedLifeCircle;
+                this.updateStatus(`已選取「${clickedLifeCircle.label}」，拖曳邊框移動，右側面板可改名稱/顏色`, 'info');
+                return;
+            }
+
+            // 3.5 檢查是否點擊到圈選框 (空白處)
             const clickedHousehold = this.getHouseholdAt(point.x, point.y);
             if (clickedHousehold) {
                 // 如果按住 Shift 鍵，我們假設使用者想要進行「範圍圈選」（Box Selection）
@@ -774,31 +825,13 @@ class GenogramApp {
                     this.updatePropertyPanel();
                     this.render();
 
+                    this.dragStartSnapshot = this.getState(); // [Fix] 家庭拖曳也要能 undo
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedHousehold = clickedHousehold;
                     this.updateStatus('正在拖曳同住家庭 (放開滑鼠以完成)', 'info');
                     return;
                 }
-            }
-
-            // 3.5 檢查是否點擊到生活圈
-            const clickedLifeCircle = this.getLifeCircleAt(point.x, point.y);
-            if (clickedLifeCircle && !e.shiftKey) {
-                this.selectedLifeCircleId = clickedLifeCircle.id;
-                this.selectedPersonId = null;
-                this.selectedPersonIds = [];
-                this.selectedRelationshipId = null;
-                this.selectedHouseholdId = null;
-                this.updatePropertyPanel();
-                this.render();
-
-                // 開始拖曳生活圈
-                this.canvas.isDragging = true;
-                this.canvas.dragStart = point;
-                this.canvas.draggedLifeCircle = clickedLifeCircle;
-                this.updateStatus(`已選取「${clickedLifeCircle.label}」，拖曳移動或按 Del 刪除`, 'info');
-                return;
             }
 
             // 4. 點擊空白處 (或 Shift+點擊家庭內部)，開始拖曳畫布或範圍圈選
@@ -840,6 +873,13 @@ class GenogramApp {
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
+
+        // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
+        if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
+            this.lifeCircleMousePos = point;
+            this.render();
+            return;
+        }
 
         if (this.isBoxSelecting) {
             this.boxSelectEnd = point;
@@ -895,15 +935,46 @@ class GenogramApp {
                 let finalDx = dx;
                 let finalDy = dy;
 
-                // [UPDATED] 允許垂直移動以支援輩分切換
-                // 放開後會自動 snap 到最近的輩分
+                // [Snap] 即時對齊吸附：以「虛擬位置」追蹤滑鼠的未吸附座標，
+                // 吸附只作用在顯示位置，避免吸附點附近來回抖動
+                const anchor = this.canvas.draggedPerson || movingPersons[0];
+                if (anchor) {
+                    if (!this.dragVirtual || this.dragVirtual.anchorId !== anchor.id) {
+                        this.dragVirtual = {
+                            anchorId: anchor.id,
+                            x: anchor.x,
+                            y: anchor.y,
+                            startX: anchor.x, // 拖曳起點（吸附啟動閾值用）
+                            startY: anchor.y,
+                            offsets: movingPersons.map(p => ({
+                                id: p.id, dx: p.x - anchor.x, dy: p.y - anchor.y
+                            }))
+                        };
+                    }
+                    this.dragVirtual.x += finalDx;
+                    this.dragVirtual.y += finalDy;
 
-                // 執行移動
-                movingPersons.forEach(person => {
-                    person.x = person.x + finalDx;
-                    // 如果被鎖定 (上面 finalDy=0)，這裡就不會動
-                    person.y = person.y + finalDy;
-                });
+                    const movingIdSet = new Set(movingPersonIds);
+                    const snap = this.computeDragSnap(
+                        this.dragVirtual.x, this.dragVirtual.y, movingIdSet, anchor
+                    );
+                    this.dragGuides = snap.guides;
+                    this.canvas.dragGuides = snap.guides;
+
+                    this.dragVirtual.offsets.forEach(off => {
+                        const p = this.personMap.get(off.id);
+                        if (p) {
+                            p.x = snap.x + off.dx;
+                            p.y = snap.y + off.dy;
+                        }
+                    });
+                } else {
+                    // 理論上不會發生（movingPersons 為空），保留原始自由移動
+                    movingPersons.forEach(person => {
+                        person.x = person.x + finalDx;
+                        person.y = person.y + finalDy;
+                    });
+                }
             }
 
             this.canvas.dragStart = point;
@@ -1005,8 +1076,33 @@ class GenogramApp {
         }
 
         if (this.canvas.isDragging) {
+            // [Snap] 點擊容差：拖曳總位移小於螢幕 3px 視為「點擊」而非拖曳，
+            // 完全不重排（不 grid 吸附、不換輩分、不寫 history）。
+            // 否則誤觸會把已精準對齊的 off-grid 位置硬拉到半格點。
+            const clickTolerance = 3 / ((this.canvas && this.canvas.scale) || 1);
+            const dragMovedDist = this.dragVirtual
+                ? Math.hypot(this.dragVirtual.x - this.dragVirtual.startX,
+                             this.dragVirtual.y - this.dragVirtual.startY)
+                : 0;
+            const isMicroDrag = (this.canvas.draggedPerson || this.canvas.draggedHousehold) &&
+                dragMovedDist < clickTolerance;
+
+            if (isMicroDrag) {
+                // 還原到拖曳起點（位移途中可能已被移動 1~2px）
+                if (this.dragVirtual) {
+                    this.dragVirtual.offsets.forEach(off => {
+                        const p = this.personMap.get(off.id);
+                        if (p) {
+                            p.x = this.dragVirtual.startX + off.dx;
+                            p.y = this.dragVirtual.startY + off.dy;
+                        }
+                    });
+                }
+                this.render();
+            }
+
             // [Fix] 拖曳結束後執行對齊格子 (Snap to Grid) - 並確保不重疊
-            if (this.canvas.draggedPerson || this.canvas.draggedHousehold) {
+            if (!isMicroDrag && (this.canvas.draggedPerson || this.canvas.draggedHousehold)) {
                 let movingPersonIds = [];
                 if (this.canvas.draggedPerson) {
                     movingPersonIds = this.selectedPersonIds.includes(this.canvas.draggedPerson.id)
@@ -1016,10 +1112,37 @@ class GenogramApp {
                     movingPersonIds = this.canvas.draggedHousehold.ids;
                 }
 
+                // [Snap] 拖曳中若已吸附到對齊輔助線，放開時保留精準 X
+                // （不再被半格 grid 吸附拉離對齊位置）；Y 仍走輩分列吸附
+                const keepAlignedX = !!(this.dragGuides && this.dragGuides.x);
+
+                // [Fix] 拖曳「整個同住框」改剛體平移：只對錨點做吸附，
+                // 其餘成員維持原相對偏移 — 不再逐人 grid 吸附導致家內精調間距變形
+                if (this.canvas.draggedHousehold && this.dragVirtual) {
+                    const anchor = this.personMap.get(this.dragVirtual.anchorId);
+                    if (anchor) {
+                        const grid = GenogramApp.GRID;
+                        const targetX = keepAlignedX ? anchor.x : this.snapToGrid(anchor.x, 'x');
+                        const genIndex = this.getGenerationIndexByY(anchor.y);
+                        const targetY = grid.ORIGIN_Y + genIndex * grid.CELL_HEIGHT;
+                        const ddx = targetX - anchor.x;
+                        const ddy = targetY - anchor.y;
+
+                        movingPersonIds.forEach(id => {
+                            const p = this.personMap.get(id);
+                            if (!p) return;
+                            p.x += ddx;
+                            p.y += ddy;
+                            p.generation = this.getGenerationStringByIndex(this.getGenerationIndexByY(p.y));
+                        });
+                    }
+                    this.render();
+                } else {
+
                 movingPersonIds.forEach(id => {
-                    const p = this.persons.find(per => per.id === id);
+                    const p = this.personMap.get(id);
                     if (p) {
-                        let targetX = this.snapToGrid(p.x, 'x');
+                        let targetX = keepAlignedX ? p.x : this.snapToGrid(p.x, 'x');
                         let targetY = this.snapToGrid(p.y, 'y');
 
                         // [Disabled] 停用父母中點吸附，避免子女被拉到非預期位置
@@ -1108,12 +1231,19 @@ class GenogramApp {
                     }
                 });
                 this.render(); // Snap 後重繪
+                } // end else（個別人物拖曳的逐人吸附路徑）
             }
 
             this.canvas.isDragging = false;
             this.canvas.draggedPerson = null;
             this.canvas.draggedHousehold = null; // 清除家庭拖曳狀態
             this.canvas.draggedLifeCircle = null; // 清除生活圈拖曳狀態
+
+            // [Snap] 清除拖曳吸附狀態與輔助線
+            this.dragVirtual = null;
+            this.dragGuides = null;
+            this.canvas.dragGuides = null;
+            this.render();
 
             // [Bug Fix #3] 拖曳 History 合併：拖曳結束時才 push 一筆
             // 加入位移閾值檢查，避免記錄意外點擊或極小位移
@@ -1456,24 +1586,39 @@ class GenogramApp {
      * 取得指定座標的圈選框
      */
     getHouseholdAt(x, y) {
-        // 從後往前檢查（後建立的在上層）
+        // [Fix] 容差隨縮放換算（螢幕上 ~15px 恆定，限 8~25 世界 px）
+        const tolerance = Math.min(25, Math.max(8, 15 / ((this.canvas && this.canvas.scale) || 1)));
+
+        // [Fix] 巢狀/重疊框：收集所有命中者，回傳「面積最小」的框，
+        // 內層小框才選得到（原本依陣列順序先中先贏，小框永遠輸給大框）
+        let best = null;
+        let bestArea = Infinity;
         for (let i = this.households.length - 1; i >= 0; i--) {
             const household = this.households[i];
-            if (this.canvas.isPointOnHouseholdBoundary(x, y, household, this.persons, this.relationships, 15)) {
-                return household;
+            if (this.canvas.isPointOnHouseholdBoundary(x, y, household, this.persons, this.relationships, tolerance)) {
+                const b = this.canvas.getHouseholdBounds(household, this.persons, this.relationships);
+                const area = b ? (b.maxX - b.minX) * (b.maxY - b.minY) : Infinity;
+                if (area < bestArea) {
+                    bestArea = area;
+                    best = household;
+                }
             }
         }
-        return null;
+        return best;
     }
 
     /**
-     * 偵測點擊位置是否在生活圈內
+     * 偵測點擊位置是否在生活圈「邊界帶或頂點」上
+     * [Fix] 改為平滑曲線邊界帶判定：
+     * 1. 命中區域與畫面上實際看到的平滑形狀一致（原本用平滑前多邊形，外凸區點不到）
+     * 2. 圈內空白不再攔截點擊 — 大生活圈罩住全圖時仍可平移畫布、選取人物
      */
     getLifeCircleAt(x, y) {
+        const tol = Math.min(20, Math.max(8, 12 / ((this.canvas && this.canvas.scale) || 1)));
         // 從後往前檢查（後建立的在上層）
         for (let i = this.lifeCircles.length - 1; i >= 0; i--) {
             const lc = this.lifeCircles[i];
-            if (this.isPointInPolygon(x, y, lc.points)) {
+            if (this.canvas.isPointOnLifeCircleEdge(lc, x, y, tol)) {
                 return lc;
             }
         }
@@ -2124,6 +2269,7 @@ class GenogramApp {
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null;
         // 保留 selectedPersonIds 多選狀態（如果是 Shift+點擊）
         this.selectedPersonId = id;
         this.updatePropertyPanel();
@@ -2138,6 +2284,7 @@ class GenogramApp {
         this.selectedPersonId = null;
         this.selectedPersonIds = [];
         this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null;
         this.selectedRelationshipId = id;
         this.updatePropertyPanel();
         this.render();
@@ -2275,6 +2422,100 @@ class GenogramApp {
             return;
         }
 
+        // [New] 同住框屬性：成員清單 + 備註（原本選中只有空白面板，notes 永遠無法編輯）
+        if (this.selectedHouseholdId) {
+            const household = this.households.find(h => h.id === this.selectedHouseholdId);
+            if (household) {
+                const memberNames = household.ids
+                    .map(id => this.personMap.get(id))
+                    .filter(p => p)
+                    .map(p => p.name || '未命名')
+                    .join('、');
+
+                content.innerHTML = `
+                    <div class="property-form">
+                        <div class="form-group">
+                            <label>同住家庭（${household.ids.length} 位成員）</label>
+                            <div style="padding: 8px 12px; background: var(--bg-light); border-radius: 4px; font-size: 13px; line-height: 1.6;">${memberNames || '（無成員）'}</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="householdNotes">備註</label>
+                            <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明">${household.notes || ''}</textarea>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住框</button>
+                        </div>
+                    </div>
+                `;
+
+                const notesInput = document.getElementById('householdNotes');
+                if (notesInput) {
+                    notesInput.addEventListener('input', (e) => {
+                        household.notes = e.target.value;
+                        this.autoSave();
+                    });
+                }
+                const delHouseholdBtn = document.getElementById('deleteHouseholdBtn');
+                if (delHouseholdBtn) {
+                    delHouseholdBtn.addEventListener('click', () => this.deleteSelected());
+                }
+                return;
+            }
+        }
+
+        // [New] 生活圈屬性：名稱 + 顏色色票（原本 label/color 終生不可改、也看不到）
+        if (this.selectedLifeCircleId) {
+            const lc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+            if (lc) {
+                const swatches = GenogramApp.LIFE_CIRCLE_COLORS.map(c => {
+                    const solid = c.replace(/,\s*[\d.]+\)/, ', 0.85)');
+                    const isActive = lc.color === c;
+                    return `<button type="button" class="lc-color-swatch" data-color="${c}"
+                        style="width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+                               background: ${solid};
+                               border: 2px solid ${isActive ? 'var(--text-primary)' : 'var(--border-color)'};"></button>`;
+                }).join('');
+
+                content.innerHTML = `
+                    <div class="property-form">
+                        <div class="form-group">
+                            <label for="lifeCircleLabel">生活圈名稱（顯示於圈上）</label>
+                            <input type="text" id="lifeCircleLabel" value="${(lc.label || '').replace(/"/g, '&quot;')}" placeholder="例如：學校、教會、社區據點">
+                        </div>
+                        <div class="form-group">
+                            <label>顏色</label>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${swatches}</div>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
+                        </div>
+                    </div>
+                `;
+
+                const labelInput = document.getElementById('lifeCircleLabel');
+                if (labelInput) {
+                    labelInput.addEventListener('input', (e) => {
+                        lc.label = e.target.value;
+                        this.autoSave();
+                        this.render();
+                    });
+                }
+                content.querySelectorAll('.lc-color-swatch').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        lc.color = btn.dataset.color;
+                        this.autoSave();
+                        this.updatePropertyPanel();
+                        this.render();
+                    });
+                });
+                const delLcBtn = document.getElementById('deleteLifeCircleBtn');
+                if (delLcBtn) {
+                    delLcBtn.addEventListener('click', () => this.deleteSelected());
+                }
+                return;
+            }
+        }
+
         if (!this.selectedPersonId) {
             content.innerHTML = '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>';
             return;
@@ -2380,14 +2621,21 @@ class GenogramApp {
             return;
         }
 
-        // 如果成員原本就屬於其他同住框，將舊的刪除 (避免人屬於多個同住框)
-        this.households = this.households.filter(h => {
-            const hasOverlap = h.ids.some(id => this.householdSelection.includes(id));
-            return !hasOverlap;
-        });
+        // [Fix] undo 語意：必須在資料變更「之前」存快照，否則第一次 Ctrl+Z 無效
+        this.saveState();
+
+        // [Fix] 成員原本就屬於其他同住框時，只把重疊成員移出舊框，
+        // 不再整框無聲刪除（舊框剩餘成員仍保留；剩 0 人才移除）
+        const selectedSet = new Set(this.householdSelection);
+        let movedOut = 0;
+        this.households = this.households.map(h => {
+            const remain = h.ids.filter(id => !selectedSet.has(id));
+            movedOut += h.ids.length - remain.length;
+            return { ...h, ids: remain };
+        }).filter(h => h.ids.length > 0);
 
         const newHousehold = {
-            id: 'house_' + Date.now(),
+            id: 'house_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
             ids: [...this.householdSelection],
             notes: ''
         };
@@ -2398,11 +2646,14 @@ class GenogramApp {
         this.selectedHouseholdId = newHousehold.id;
         this.selectedPersonId = null;
         this.selectedPersonIds = [];
+        this.selectedRelationshipId = null;
+        this.selectedLifeCircleId = null;
         this.householdSelection = [];
 
         this.setTool('select');
-        this.updateStatus('同住圈選已建立', 'success');
-        this.saveState();
+        this.updateStatus(movedOut > 0
+            ? `同住圈選已建立（${movedOut} 位成員已從原同住框移出）`
+            : '同住圈選已建立', 'success');
         this.autoSave();
         this.render();
     }
@@ -2411,14 +2662,30 @@ class GenogramApp {
      * 完成生活圈繪製
      */
     finishLifeCircle() {
-        if (this.currentLifeCirclePoints.length < 3) {
+        // [Fix] 去除相鄰重複頂點（雙擊完成前的兩次 pointerdown 會塞入同一點，
+        // Catmull-Rom 遇重複點會在收尾處畫出打結小圈）；頭尾也比對一次
+        let pts = this.currentLifeCirclePoints.filter((p, i, a) =>
+            i === 0 || Math.hypot(p.x - a[i - 1].x, p.y - a[i - 1].y) > 8
+        );
+        if (pts.length >= 2) {
+            const first = pts[0];
+            const last = pts[pts.length - 1];
+            if (Math.hypot(first.x - last.x, first.y - last.y) <= 8) {
+                pts = pts.slice(0, -1);
+            }
+        }
+
+        if (pts.length < 3) {
             this.updateStatus('生活圈至少需要3個頂點', 'warning');
             return;
         }
 
+        // [Fix] undo 語意：資料變更前先存快照
+        this.saveState();
+
         const newLifeCircle = {
-            id: 'lc_' + Date.now(),
-            points: [...this.currentLifeCirclePoints],
+            id: 'lc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            points: pts,
             color: this.getNextLifeCircleColor(),
             label: `生活圈 ${this.lifeCircles.length + 1}`
         };
@@ -2433,8 +2700,7 @@ class GenogramApp {
         // 選取剛建立的生活圈
         this.selectedLifeCircleId = newLifeCircle.id;
 
-        this.updateStatus(`已建立「${newLifeCircle.label}」`, 'success');
-        this.saveState();
+        this.updateStatus(`已建立「${newLifeCircle.label}」，點選邊框可編輯名稱與顏色`, 'success');
         this.autoSave();
         this.render();
     }
@@ -2454,15 +2720,11 @@ class GenogramApp {
      * 獲取下一個生活圈的顏色
      */
     getNextLifeCircleColor() {
-        const colors = [
-            'rgba(74, 144, 226, 0.15)',   // 藍色
-            'rgba(80, 200, 120, 0.15)',   // 綠色
-            'rgba(255, 165, 0, 0.15)',    // 橙色
-            'rgba(148, 103, 189, 0.15)',  // 紫色
-            'rgba(255, 99, 132, 0.15)',   // 粉紅
-            'rgba(75, 192, 192, 0.15)'    // 青色
-        ];
-        return colors[this.lifeCircles.length % colors.length];
+        // [Fix] 改取「第一個未被使用」的顏色：原本以 length 取模，刪除後再建會與既有圈撞色
+        const colors = GenogramApp.LIFE_CIRCLE_COLORS;
+        const used = new Set(this.lifeCircles.map(lc => lc.color));
+        const unused = colors.find(c => !used.has(c));
+        return unused || colors[this.lifeCircles.length % colors.length];
     }
 
     /**
@@ -3339,6 +3601,10 @@ class GenogramApp {
     render() {
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
+        // [Fix] 生活圈改由 canvas.render 在「最底層」繪製（與匯出 z-order 一致，
+        // 不再以 overlay 蓋在人物符號上罩染臨床底色）
+        this.canvas.lifeCirclesToDraw = this.lifeCircles || [];
+        this.canvas.selectedLifeCircleId = this.selectedLifeCircleId || null;
         this.canvas.render(
             this.persons,
             this.relationships,
@@ -3354,12 +3620,7 @@ class GenogramApp {
             this.hoveredPersonId // hover 的角色 ID
         );
 
-        // 繪製生活圈（在最底層，但因為是 overlay 方式，需要特殊處理）
-        if (this.lifeCircles && this.lifeCircles.length > 0) {
-            this.canvas.drawLifeCircles(this.lifeCircles, this.selectedLifeCircleId);
-        }
-
-        // 繪製生活圈預覽（正在繪製中）
+        // 繪製生活圈預覽（正在繪製中，維持最上層）
         if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
             this.canvas.drawLifeCirclePreview(this.currentLifeCirclePoints, this.lifeCircleMousePos);
         }
@@ -3427,6 +3688,169 @@ class GenogramApp {
     }
 
     /**
+     * [Snap] 拖曳即時吸附計算
+     * 候選來源（X 軸）：其他人物的 X 對齊、父母兩人中點、同列鄰居等距位置
+     * 候選來源（Y 軸）：輩分列（GRID）、其他人物的 Y 對齊
+     * @param {number} vx - 虛擬（未吸附）X
+     * @param {number} vy - 虛擬（未吸附）Y
+     * @param {Set} movingIdSet - 正在移動中的人物 id（不可作為吸附參考）
+     * @param {Person} anchor - 拖曳錨點人物
+     * @returns {{x:number, y:number, guides:Object}} 吸附後座標與輔助線描述
+     */
+    computeDragSnap(vx, vy, movingIdSet, anchor) {
+        const grid = GenogramApp.GRID;
+        const scale = (this.canvas && this.canvas.scale) || 1;
+        // 閾值以螢幕 8px 為基準換算到世界座標，限制在 4~14px 之間
+        const threshold = Math.max(4, Math.min(14, 8 / scale));
+
+        // [防手震] 拖曳總位移未達啟動閾值（螢幕 5px）前不吸附：
+        // 避免 1px 抖動的點擊被吸到鄰近 X 並寫進 history
+        if (this.dragVirtual && this.dragVirtual.anchorId === anchor.id) {
+            const moved = Math.hypot(vx - this.dragVirtual.startX, vy - this.dragVirtual.startY);
+            if (moved < 5 / scale) {
+                return { x: vx, y: vy, guides: null };
+            }
+        }
+
+        const others = this.persons.filter(p => !movingIdSet.has(p.id));
+
+        let bestX = null; // { pos, dist, kind, xs? }
+        let bestY = null;
+
+        // 判斷某 Y 是否剛好位於輩分列上（pointerup 的列吸附不會把它移走）
+        const isOnRow = (y) => {
+            const nearest = grid.ORIGIN_Y + Math.round((y - grid.ORIGIN_Y) / grid.CELL_HEIGHT) * grid.CELL_HEIGHT;
+            return Math.abs(y - nearest) < 0.5;
+        };
+
+        // --- Y：輩分列吸附 ---
+        const genIndex = Math.round((vy - grid.ORIGIN_Y) / grid.CELL_HEIGHT);
+        const rowY = grid.ORIGIN_Y + genIndex * grid.CELL_HEIGHT;
+        if (Math.abs(rowY - vy) <= threshold) {
+            bestY = { pos: rowY, dist: Math.abs(rowY - vy), kind: 'row' };
+        }
+        // --- Y：其他人物對齊 ---
+        // 僅限位於輩分列上的人：放開時 Y 一律吸附輩分列，
+        // 對齊到自由 Y 的人會在放開瞬間被覆寫，形成「假對齊」誤導
+        for (const o of others) {
+            if (!isOnRow(o.y)) continue;
+            const d = Math.abs(o.y - vy);
+            if (d <= threshold && (!bestY || d < bestY.dist)) {
+                bestY = { pos: o.y, dist: d, kind: 'align' };
+            }
+        }
+
+        // --- X：其他人物對齊 ---
+        for (const o of others) {
+            const d = Math.abs(o.x - vx);
+            if (d <= threshold && (!bestX || d < bestX.dist)) {
+                bestX = { pos: o.x, dist: d, kind: 'align' };
+            }
+        }
+
+        // --- X：父母兩人中點（讓子女線可精準回正、垂直） ---
+        let parentsMid = null;
+        let parentIds = [];
+        try {
+            parentIds = this.getKinshipEngine().getParentIds(anchor.id) || [];
+            if (parentIds.length === 2) {
+                const pa = this.personMap.get(parentIds[0]);
+                const pb = this.personMap.get(parentIds[1]);
+                if (pa && pb && !movingIdSet.has(pa.id) && !movingIdSet.has(pb.id)) {
+                    parentsMid = (pa.x + pb.x) / 2;
+                    const d = Math.abs(parentsMid - vx);
+                    if (d <= threshold && (!bestX || d < bestX.dist)) {
+                        bestX = { pos: parentsMid, dist: d, kind: 'parent-mid' };
+                    }
+                }
+            }
+        } catch (e) { /* kinship 不可用時略過此候選 */ }
+
+        // --- X：等距吸附（讓子女線/同輩間距平均） ---
+        // 候選一律帶 xs（標尺刻度，由左至右等距），由 considerSpacing 統一比較。
+        // 全部候選另存一份：即使 align/parent-mid 勝出，若位置與某等距候選重合，
+        // 仍附上等距標尺（例如吸到母親 X 時恰為手足鏡像位置）
+        const spacingCandidates = [];
+        const considerSpacing = (pos, xs) => {
+            const d = Math.abs(pos - vx);
+            if (d > threshold) return;
+            spacingCandidates.push({ pos, xs });
+            // 同距離時讓 align/parent-mid 優先（-0.01）
+            if (!bestX || d < bestX.dist - 0.01) {
+                bestX = { pos, dist: d, kind: 'spacing', xs };
+            }
+        };
+
+        const effY = bestY ? bestY.pos : vy;
+        const rowMates = others
+            .filter(o => Math.abs(o.y - effY) < grid.CELL_HEIGHT / 2)
+            .sort((a, b) => a.x - b.x);
+
+        // (1) 同列每對相鄰者：右延伸 R+(R-L)、左延伸 L-(R-L)、正中 (L+R)/2
+        if (rowMates.length >= 2) {
+            for (let i = 0; i < rowMates.length - 1; i++) {
+                const L = rowMates[i];
+                const R = rowMates[i + 1];
+                const gap = R.x - L.x;
+                if (gap < 10) continue;
+                considerSpacing(R.x + gap, [L.x, R.x, R.x + gap]);
+                considerSpacing(L.x - gap, [L.x - gap, L.x, R.x]);
+                considerSpacing((L.x + R.x) / 2, [L.x, (L.x + R.x) / 2, R.x]);
+            }
+        }
+
+        // (2) 單一鄰居也能等距：以標準格寬 CELL_WIDTH 為間距
+        //（兩名子女互拖時同列只剩一人，(1) 無法成對 — 此候選補上）
+        for (const M of rowMates) {
+            considerSpacing(M.x + grid.CELL_WIDTH, [M.x, M.x + grid.CELL_WIDTH]);
+            considerSpacing(M.x - grid.CELL_WIDTH, [M.x - grid.CELL_WIDTH, M.x]);
+        }
+
+        // (3) 手足鏡像：以父母中點為軸，吸附到非移動手足的對稱位置
+        //（兩名子女時可一步把子女排成在父母正下方左右平均）
+        if (parentsMid !== null) {
+            try {
+                const kinship = this.getKinshipEngine();
+                const sibIds = kinship.getChildrenIds(parentIds[0])
+                    .filter(id => kinship.getParentIds(id).includes(parentIds[1]));
+                for (const sid of sibIds) {
+                    if (sid === anchor.id || movingIdSet.has(sid)) continue;
+                    const sib = this.personMap.get(sid);
+                    if (!sib || Math.abs(sib.y - effY) >= grid.CELL_HEIGHT / 2) continue;
+                    const pos = 2 * parentsMid - sib.x;
+                    if (Math.abs(pos - sib.x) < 10) continue;
+                    considerSpacing(pos, [
+                        Math.min(sib.x, pos), parentsMid, Math.max(sib.x, pos)
+                    ]);
+                }
+            } catch (e) { /* kinship 不可用時略過此候選 */ }
+        }
+
+        const outX = bestX ? bestX.pos : vx;
+        const outY = bestY ? bestY.pos : vy;
+
+        // 組裝輔助線描述（canvas.drawAlignmentGuides 使用）
+        const guides = { x: null, y: null, spacing: null };
+        if (bestX) {
+            guides.x = { pos: outX, kind: bestX.kind };
+            // 勝出位置若與任一等距候選重合（不限 kind），附上等距標尺
+            const coincident = spacingCandidates.find(c => Math.abs(c.pos - outX) < 0.01);
+            if (coincident) {
+                guides.spacing = {
+                    y: outY,
+                    xs: coincident.xs,
+                    gap: Math.round(coincident.xs[1] - coincident.xs[0])
+                };
+            }
+        }
+        if (bestY) {
+            guides.y = { pos: outY, kind: bestY.kind };
+        }
+        const hasGuide = guides.x || guides.y;
+        return { x: outX, y: outY, guides: hasGuide ? guides : null };
+    }
+
+    /**
      * 將座標對齊至最近的格子點
      * @param {number} value - 座標值
      * @param {string} axis - 'x' 或 'y'
@@ -3452,6 +3876,18 @@ class GenogramApp {
     getGenerationIndexByY(y) {
         const grid = GenogramApp.GRID;
         return Math.round((y - grid.ORIGIN_Y) / grid.CELL_HEIGHT);
+    }
+
+    /**
+     * 由輩分索引取得 generation 字串（支援無限層級與負數祖先層）
+     * @param {number} genIndex
+     * @returns {string}
+     */
+    getGenerationStringByIndex(genIndex) {
+        const baseNames = ['grandparent', 'parent', 'child', 'grandchild'];
+        if (genIndex >= 0 && genIndex < baseNames.length) return baseNames[genIndex];
+        if (genIndex < 0) return `ancestor-${Math.abs(genIndex)}`;
+        return `descendant-${genIndex - baseNames.length + 1}`;
     }
 
     /**
@@ -3696,11 +4132,17 @@ class GenogramApp {
      * [Bug Fix #3] 取得當前狀態快照 (用於拖曳 History 比對)
      */
     getState() {
+        // [Fix] households / lifeCircles 也要深拷貝：
+        // 原本回傳活引用，拖曳期間 points/ids 被原地修改會污染快照
+        // （dragStartSnapshot 比對自己 vs 自己 → 永遠「無變化」→ 拖曳進不了 history）
         return {
             persons: this.persons.map(p => p.toJSON()),
             relationships: this.relationships.map(r => r.toJSON()),
-            households: this.households || [],
-            lifeCircles: this.lifeCircles || []
+            households: (this.households || []).map(h => ({ ...h, ids: [...(h.ids || [])] })),
+            lifeCircles: (this.lifeCircles || []).map(lc => ({
+                ...lc,
+                points: (lc.points || []).map(p => ({ x: p.x, y: p.y }))
+            }))
         };
     }
 
@@ -3730,6 +4172,20 @@ class GenogramApp {
 
             if (dx >= threshold || dy >= threshold) {
                 return true;
+            }
+        }
+
+        // [Fix] 生活圈拖曳也算顯著變化（否則拖圈的 snapshot 永遠不會進 history）
+        const oldCircles = {};
+        (oldState.lifeCircles || []).forEach(lc => { oldCircles[lc.id] = lc.points || []; });
+        for (const lc of (newState.lifeCircles || [])) {
+            const oldPts = oldCircles[lc.id];
+            if (!oldPts || !lc.points) continue;
+            for (let i = 0; i < Math.min(oldPts.length, lc.points.length); i++) {
+                if (Math.abs(lc.points[i].x - oldPts[i].x) >= threshold ||
+                    Math.abs(lc.points[i].y - oldPts[i].y) >= threshold) {
+                    return true;
+                }
             }
         }
 
@@ -3784,8 +4240,17 @@ class GenogramApp {
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
         this._syncPersonMap();
         this.relationships = (data.relationships || []).map(r => Relationship.fromJSON(r));
-        this.households = data.households || [];
-        this.lifeCircles = data.lifeCircles || [];
+        // [Fix] 清洗外部資料：移除指向不存在人物的 household 成員與空框（ghost household
+        // 看不見、點不到、刪不掉，卻會永久跟著存檔）；生活圈頂點也驗證合法性
+        this.households = (data.households || []).map(h => ({
+            ...h,
+            ids: (h.ids || []).filter(id => this.personMap.has(id))
+        })).filter(h => h.ids.length > 0);
+        this.lifeCircles = (data.lifeCircles || []).filter(lc =>
+            Array.isArray(lc.points) && lc.points.length >= 3 &&
+            lc.points.every(p => typeof p.x === 'number' && typeof p.y === 'number' &&
+                !isNaN(p.x) && !isNaN(p.y))
+        );
         const norm = this.normalizeLoadedFamilyRelationships();
         this.selectedPersonId = null;
         this.updatePropertyPanel();
@@ -4036,7 +4501,9 @@ class GenogramApp {
             this.cancelPreviewedLayout();
         }
 
-        if (this.persons.length === 0 && this.relationships.length === 0) {
+        // [Fix] 只有同住框/生活圈的畫布也要能清空
+        if (this.persons.length === 0 && this.relationships.length === 0 &&
+            (this.households || []).length === 0 && (this.lifeCircles || []).length === 0) {
             this.updateStatus('畫布已經是空的', 'info');
             return;
         }
@@ -4053,6 +4520,10 @@ class GenogramApp {
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null;
+        this.isDrawingLifeCircle = false;
+        this.currentLifeCirclePoints = [];
+        this.lifeCircleMousePos = null;
         this.updatePropertyPanel();
         this.autoSave();
         this.render();

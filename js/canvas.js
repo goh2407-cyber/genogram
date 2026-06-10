@@ -266,7 +266,15 @@ class GenogramCanvas {
         this.ctx.save();
         this.applyTransform();
 
-        // 1. 繪製同住家庭 (最底層)
+        // 0.5 繪製生活圈（最底層背景脈絡；由 App.render 注入）
+        // [Fix] 原本以 overlay 蓋在最上層，會罩染人物符號且與匯出 z-order 相反
+        if (this.lifeCirclesToDraw && this.lifeCirclesToDraw.length > 0) {
+            this.lifeCirclesToDraw.forEach(lc => {
+                this._drawSingleLifeCircle(lc, this.selectedLifeCircleId === lc.id);
+            });
+        }
+
+        // 1. 繪製同住家庭 (底層)
         if (households && households.length > 0) {
             this.drawHouseholds(households, persons, relationships, false, selectedHouseholdId);
         }
@@ -340,8 +348,8 @@ class GenogramCanvas {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
         }
 
-        // 8. 繪製快速新增按鈕 (hover 時顯示)
-        if (hoveredPersonId) {
+        // 8. 繪製快速新增按鈕 (hover 時顯示；拖曳中隱藏，避免與對齊輔助線重疊)
+        if (hoveredPersonId && !this.isDragging) {
             const hoveredPerson = this.personMap.get(hoveredPersonId);
             if (hoveredPerson) {
                 this.drawQuickAddButtons(hoveredPerson);
@@ -372,7 +380,74 @@ class GenogramCanvas {
             });
         }
 
+        // 10. [Snap] 拖曳對齊輔助線（最上層；由 App 在拖曳時注入 dragGuides）
+        if (this.dragGuides) {
+            this.drawAlignmentGuides(this.dragGuides);
+        }
+
         this.ctx.restore();
+    }
+
+    /**
+     * [Snap] 繪製拖曳對齊輔助線
+     * guides.x / guides.y：對齊線（品牌桃紅細線，貫穿可視範圍）
+     * guides.spacing：同列等距標尺（|—gap—| 刻度 + 間距數字）
+     */
+    drawAlignmentGuides(guides) {
+        const ctx = this.ctx;
+        // 可視範圍的世界座標
+        const x0 = (0 - this.offsetX) / this.scale;
+        const y0 = (0 - this.offsetY) / this.scale;
+        const x1 = (this.width - this.offsetX) / this.scale;
+        const y1 = (this.height - this.offsetY) / this.scale;
+        const lw = 1.2 / this.scale; // 螢幕上固定約 1.2px（除以 scale 抵銷縮放）
+
+        ctx.save();
+        ctx.strokeStyle = '#ed1261';
+        ctx.fillStyle = '#ed1261';
+        ctx.lineWidth = lw;
+        ctx.setLineDash(DASH_PATTERNS.solid);
+        ctx.lineCap = 'butt';
+
+        if (guides.x) {
+            ctx.beginPath();
+            ctx.moveTo(guides.x.pos, y0);
+            ctx.lineTo(guides.x.pos, y1);
+            ctx.stroke();
+        }
+        if (guides.y) {
+            ctx.beginPath();
+            ctx.moveTo(x0, guides.y.pos);
+            ctx.lineTo(x1, guides.y.pos);
+            ctx.stroke();
+        }
+
+        if (guides.spacing && Array.isArray(guides.spacing.xs) && guides.spacing.xs.length >= 2) {
+            const { xs, y, gap } = guides.spacing;
+            const ry = y - this.personSize / 2 - 22; // 標尺畫在符號上方
+            const tick = 5;
+
+            for (let i = 0; i < xs.length - 1; i++) {
+                ctx.beginPath();
+                ctx.moveTo(xs[i], ry - tick);
+                ctx.lineTo(xs[i], ry + tick);
+                ctx.moveTo(xs[i + 1], ry - tick);
+                ctx.lineTo(xs[i + 1], ry + tick);
+                ctx.moveTo(xs[i], ry);
+                ctx.lineTo(xs[i + 1], ry);
+                ctx.stroke();
+            }
+
+            const fontPx = 11 / this.scale; // 螢幕上固定 11px（除以 scale 抵銷縮放）
+            ctx.font = `${fontPx}px "Noto Sans TC", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            for (let i = 0; i < xs.length - 1; i++) {
+                ctx.fillText(String(gap), (xs[i] + xs[i + 1]) / 2, ry - 3);
+            }
+        }
+
+        ctx.restore();
     }
 
     /**
@@ -468,7 +543,7 @@ class GenogramCanvas {
         // 圓底
         this.ctx.beginPath();
         this.ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
-        this.ctx.fillStyle = '#ff5722'; // 鮮豔的橙紅色
+        this.ctx.fillStyle = '#ed1261'; // 品牌桃紅（與 UI 主色一致）
         this.ctx.fill();
         this.ctx.strokeStyle = '#fff';
         this.ctx.lineWidth = 2;
@@ -507,6 +582,16 @@ class GenogramCanvas {
             notesHalo:   { color: '#ffffff', lineWidth: 4 },
         };
     }
+
+    // [2026-06 視覺更新] 性別淡底色 — 大量人物時提升辨識度，
+    // 飽和度刻意壓低，不干擾醫學符號（斜線/填滿）與死亡 X 標記的判讀。
+    // 案主灰底 (#808080) 與臨床形狀語意不變。
+    static GENDER_FILLS = {
+        male:      '#edf4fc',  // 淡藍
+        female:    '#fdeff4',  // 淡粉
+        pregnancy: '#fdf6e7',  // 淡杏（懷孕/性別未定三角形）
+        same:      '#f4effb',  // 淡紫（同性別圓頂方底）
+    };
 
     drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
         const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
@@ -558,11 +643,13 @@ class GenogramCanvas {
         // 死亡：白底，黑 X
 
         // 決定填充顏色
-        let fillColor = '#fff';
+        let fillColor;
         if (isIdentifiedPatient) {
             fillColor = '#808080'; // 案主：灰底（方便看清醫學狀態）
+        } else if (isDeceased) {
+            fillColor = '#fafafa'; // 已過世：中性近白，X 標記主導視覺
         } else {
-            fillColor = '#fff'; // 其他（含普通死亡）：白底
+            fillColor = GenogramCanvas.GENDER_FILLS[gender] || '#ffffff';
         }
 
         // 如果是死亡但不是案主，背景是白的；如果是案主，背景是黑的
@@ -1122,6 +1209,10 @@ class GenogramCanvas {
         }
 
         this.ctx.save();
+
+        // [精緻化] 關係線一律圓角端點/轉角（波浪、鋸齒、虛線點均更柔和；匯出共用）
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
 
         // 如果被選中，繪製高亮外框
         if (isSelected) {
@@ -2369,10 +2460,8 @@ class GenogramCanvas {
      * 計算內容邊界 (包含所有人物、關係、同住框、生活圈)
      */
     _calculateContentBounds(persons, relationships, households, lifeCircles) {
-        if (persons.length === 0) {
-            return null;
-        }
-
+        // [Fix] 不再因 persons 為空提前 return：
+        // 純生活圈/同住框的畫布也要能匯出（最後以 Infinity 檢查是否真的全空）
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         // 1. 人物
@@ -2430,6 +2519,11 @@ class GenogramCanvas {
                     });
                 }
             });
+        }
+
+        // [Fix] 全空（無人物、無框、無圈、無關係）才回 null
+        if (minX === Infinity) {
+            return null;
         }
 
         // 加上安全邊距
@@ -2652,29 +2746,31 @@ class GenogramCanvas {
         const columnGap = 32; // 欄位間距
 
         // 圖例資料 - 分為左右兩欄
+        // [一致化] 顏色與虛線間距以 Relationship.getLineStyle() / DASH_PATTERNS 為準，
+        // 確保匯出圖例 = 側欄圖例 = 畫布實際線條
         const legendDataLeft = {
             family: {
                 title: '家庭關係',
                 items: [
-                    { label: '結婚', style: 'solid', color: '#000000' },
-                    { label: '訂婚', style: 'dashed', color: '#000000', pattern: [6, 4] },
-                    { label: '同居', style: 'dotted', color: '#000000', pattern: [3, 3] },
-                    { label: '法律同居', style: 'dotted', color: '#000000', pattern: [3, 3], decoration: 'house' },
-                    { label: '事實分居', style: 'solid', color: '#000000', decoration: 'single-slash' },
-                    { label: '法律分居', style: 'solid', color: '#000000', decoration: 'double-slash' },
-                    { label: '離婚', style: 'solid', color: '#000000', decoration: 'divorce-slash' },
-                    { label: '喪偶', style: 'solid', color: '#000000', decoration: 'x' },
-                    { label: '外遇', style: 'dashed', color: '#E53935' }
+                    { label: '結婚', style: 'solid', color: '#333333' },
+                    { label: '訂婚', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
+                    { label: '同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
+                    { label: '法律同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit, decoration: 'house' },
+                    { label: '事實分居', style: 'solid', color: '#333333', decoration: 'single-slash' },
+                    { label: '法律分居', style: 'solid', color: '#333333', decoration: 'double-slash' },
+                    { label: '離婚', style: 'solid', color: '#333333', decoration: 'divorce-slash' },
+                    { label: '喪偶', style: 'solid', color: '#333333', decoration: 'x' },
+                    { label: '外遇', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged }
                 ]
             },
             emotional_pos: {
                 title: '情感關係 (正向)',
                 items: [
-                    { label: '和諧', style: 'solid', color: '#28a745' },
-                    { label: '愛', style: 'solid', color: '#28a745', decoration: 'circle' },
-                    { label: '熱戀', style: 'solid', color: '#28a745', decoration: 'double-circle' },
-                    { label: '親密/友誼', style: 'double', color: '#28a745' },
-                    { label: '非常親密', style: 'triple', color: '#28a745' },
+                    { label: '和諧', style: 'solid', color: '#4caf50' },
+                    { label: '愛', style: 'solid', color: '#4caf50', decoration: 'circle' },
+                    { label: '熱戀', style: 'solid', color: '#4caf50', decoration: 'double-circle' },
+                    { label: '親密/友誼', style: 'double', color: '#4caf50' },
+                    { label: '非常親密', style: 'triple', color: '#4caf50' },
                     { label: '崇拜', style: 'solid', color: '#333333', decoration: 'circle-arrow' },
                     { label: '關注', style: 'solid', color: '#333333', decoration: 'arrow' }
                 ]
@@ -2685,9 +2781,9 @@ class GenogramCanvas {
             emotional_neg: {
                 title: '情感關係 (負向)',
                 items: [
-                    { label: '冷漠', style: 'dashed', color: '#dc3545' },
-                    { label: '疏離', style: 'dashed', color: '#333333', decoration: 'double-bar' },
-                    { label: '斷絕', style: 'dashed', color: '#E53935', decoration: 'double-bar' }, // 紅色斷絕
+                    { label: '冷漠', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged },
+                    { label: '疏離', style: 'dashed', color: '#9e9e9e', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' },
+                    { label: '斷絕', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' }, // 紅色斷絕
                     { label: '衝突', style: 'double', color: '#E53935' }, // Double Red
                     { label: '仇恨', style: 'triple', color: '#E53935' }, // Triple Red
                     { label: '敵對', style: 'wave', color: '#E53935' },
@@ -2769,11 +2865,13 @@ class GenogramCanvas {
             const endX = x + lineWidth;
             const lineY = currentY + lineHeight / 2 - 4; // 稍微調整垂直位置
 
-            // 設置樣式
+            // 設置樣式（圓角線帽/轉角 — 與畫布及側欄圖例一致）
             ctx.save();
             ctx.strokeStyle = item.color;
             ctx.fillStyle = item.color;
             ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
 
             if (item.style === 'double') {
                 this.drawDoubleLine(startX, lineY, endX, lineY, 4);
@@ -2782,13 +2880,23 @@ class GenogramCanvas {
             } else if (item.style === 'zigzag') {
                 this.drawZigzagLine(startX, lineY, endX, lineY);
             } else if (item.style === 'wave') {
-                this.drawWaveLine(startX, lineY, endX, lineY);
+                // [一致化] 有末端箭頭時，波浪先收斂成直線再接箭頭（同 canvas endMargin），
+                // 避免波浪穿過箭頭
+                if (item.decoration && /arrow/.test(item.decoration)) {
+                    this.drawWaveLine(startX, lineY, endX - 12, lineY);
+                    ctx.beginPath();
+                    ctx.moveTo(endX - 12, lineY);
+                    ctx.lineTo(endX, lineY);
+                    ctx.stroke();
+                } else {
+                    this.drawWaveLine(startX, lineY, endX, lineY);
+                }
             } else if (item.style === 'double-wave') {
                 this.drawWaveLine(startX, lineY - 2, endX, lineY - 2);
                 this.drawWaveLine(startX, lineY + 2, endX, lineY + 2);
             } else if (item.style === 'conflict-close') {
-                // 綠色實線 + 紅色鋸齒
-                ctx.strokeStyle = '#28a745';
+                // 綠色實線 + 紅色鋸齒（綠色同畫布 #4caf50）
+                ctx.strokeStyle = '#4caf50';
                 ctx.beginPath();
                 ctx.moveTo(startX, lineY - 3);
                 ctx.lineTo(endX, lineY - 3);
@@ -2885,12 +2993,12 @@ class GenogramCanvas {
                 ctx.fill();
                 ctx.stroke();
             } else if (item.decoration === 'double-circle') {
+                // 兩個相交空心圓（同 canvas decoration double-circle）
                 ctx.beginPath();
-                ctx.arc(midX - 3, lineY, 3, 0, Math.PI * 2);
-                ctx.fillStyle = '#fff'; // hollow
+                ctx.arc(midX - 2.5, lineY, 3.5, 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.arc(midX + 3, lineY, 3, 0, Math.PI * 2);
+                ctx.arc(midX + 2.5, lineY, 3.5, 0, Math.PI * 2);
                 ctx.stroke();
             } else if (item.decoration === 'arrow') {
                 // 末端箭頭
@@ -2949,16 +3057,14 @@ class GenogramCanvas {
                 // 情緒虐待 - wave 已在 line style 處理，這裡可能是額外裝飾？
                 // 暫不處理，或畫個小波浪
             } else if (item.decoration === 'arrow-bar') {
-                // 忽視 (Neglect): 箭頭 + 豎線
-                // 先畫箭頭
+                // 忽視 (Neglect): 箭頭 + 黑色豎線（豎線位於箭頭基部，同 canvas arrow-bar）
                 this.drawArrow(startX, lineY, endX, lineY, true);
-                // 再畫豎線 (黑色)
                 ctx.save();
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(midX - 5, lineY - 5);
-                ctx.lineTo(midX - 5, lineY + 5);
+                ctx.moveTo(endX - 10, lineY - 5);
+                ctx.lineTo(endX - 10, lineY + 5);
                 ctx.stroke();
                 ctx.restore();
             }
@@ -2987,6 +3093,12 @@ class GenogramCanvas {
     drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
         // 若未提供 kinship（例如外部直接呼叫），就地建立以保持函式可獨立使用
         if (!kinship) kinship = new KinshipEngine(persons, familyRels);
+
+        // [精緻化] 家庭結構線一律圓角端點/轉角；匯出共用此函式，螢幕與存檔一致
+        // save/restore 包住整個函式，避免 round cap/join 洩漏到後續的人物符號繪製
+        this.ctx.save();
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
 
         // 1. 整理每個孩子的父母
         const childParents = {}; // childId -> [parentId, parentId]
@@ -3220,6 +3332,14 @@ class GenogramCanvas {
                 barY = sourceY + 30;
             }
 
+            // [防超出] 子女垂直線端點：bar 低於子女符號下緣時改接下緣，
+            // 拖曳途中線條不會穿過符號再伸出去（一般情況仍接上緣）
+            const childDropEndY = (child) => {
+                const top = child.y - this.personSize / 2;
+                const bottom = child.y + this.personSize / 2;
+                return barY >= bottom ? bottom : top;
+            };
+
             // 如果有選中特定子女關係，先繪製該子女的高亮效果
             if (selectedChildId) {
                 const selectedChild = childObjs.find(c => c.id === selectedChildId);
@@ -3230,13 +3350,13 @@ class GenogramCanvas {
                     this.ctx.lineCap = 'round';
                     this.ctx.lineJoin = 'round';
 
-                    const childTop = selectedChild.y - this.personSize / 2;
+                    const childEndY = childDropEndY(selectedChild);
                     this.ctx.beginPath();
 
                     // 單一子女時，整條垂直線都可視為同一條子女線（避免只亮短段）
                     if (childObjs.length === 1 && Math.abs(sourceX - selectedChild.x) < 0.5) {
                         this.ctx.moveTo(selectedChild.x, sourceY);
-                        this.ctx.lineTo(selectedChild.x, childTop);
+                        this.ctx.lineTo(selectedChild.x, childEndY);
                     } else {
                         // 多子女：高亮該子女分支（主幹 + 橫接 + 子女垂直）
                         this.ctx.moveTo(sourceX, sourceY);
@@ -3244,7 +3364,7 @@ class GenogramCanvas {
                         if (Math.abs(selectedChild.x - sourceX) > 0.5) {
                             this.ctx.lineTo(selectedChild.x, barY);
                         }
-                        this.ctx.lineTo(selectedChild.x, childTop);
+                        this.ctx.lineTo(selectedChild.x, childEndY);
                     }
 
                     this.ctx.stroke();
@@ -3342,7 +3462,7 @@ class GenogramCanvas {
             // 繪製 Bar -> 每個孩子 的垂直線
             // 注意：多胞胎的連線已在 drawTwinConnector 中用 V 形處理
             childObjs.forEach(child => {
-                const childTop = child.y - this.personSize / 2;
+                const childEndY = childDropEndY(child);
                 const isThisChildSelected = selectedChildId === child.id;
 
                 // 如果是多胞胎且有有效群組，V 形連線已處理，跳過
@@ -3365,7 +3485,7 @@ class GenogramCanvas {
                     if (childObjs.length === 1 && Math.abs(sourceX - child.x) < 0.5) {
                         // 單一子女：整條垂直到子女
                         this.ctx.moveTo(child.x, sourceY);
-                        this.ctx.lineTo(child.x, childTop);
+                        this.ctx.lineTo(child.x, childEndY);
                     } else {
                         // 多子女：主幹 + 橫接 + 子女垂直
                         this.ctx.moveTo(sourceX, sourceY);
@@ -3377,7 +3497,7 @@ class GenogramCanvas {
                         if (Math.abs(child.x - sourceX) > 0.5) {
                             this.ctx.lineTo(child.x, barY);
                         }
-                        this.ctx.lineTo(child.x, childTop);
+                        this.ctx.lineTo(child.x, childEndY);
                     }
 
                     this.ctx.stroke();
@@ -3387,10 +3507,12 @@ class GenogramCanvas {
 
                 this.ctx.beginPath();
                 this.ctx.moveTo(child.x, barY);
-                this.ctx.lineTo(child.x, childTop);
+                this.ctx.lineTo(child.x, childEndY);
                 this.ctx.stroke();
             });
         });
+
+        this.ctx.restore(); // 對應函式開頭的 save（round cap/join 不外漏）
     }
 
     /**
@@ -3414,12 +3536,15 @@ class GenogramCanvas {
         const centerX = parentX !== null ? parentX : (leftmost + rightmost) / 2;
 
         // V 形連接：從連接點往下斜線到各子女頂部
+        // [防超出] 若連接點低於子女符號下緣（拖曳途中倒置），改接下緣避免線穿過符號
         sortedTwins.forEach(twin => {
             const twinTop = twin.y - this.personSize / 2;
+            const twinBottom = twin.y + this.personSize / 2;
+            const endY = parentBarY >= twinBottom ? twinBottom : twinTop;
 
             this.ctx.beginPath();
             this.ctx.moveTo(centerX, parentBarY);
-            this.ctx.lineTo(twin.x, twinTop);
+            this.ctx.lineTo(twin.x, endY);
             this.ctx.stroke();
         });
     }
@@ -3450,13 +3575,22 @@ class GenogramCanvas {
             const isSelected = selectedHouseholdId === household.id;
 
             // 判斷是否應該使用狗骨頭形狀（膠囊狀）
-            // 寬度 > 高度 * 1.2 且 寬度足夠容納兩個半圓時嘗試使用
+            // [Fix] 僅限「單列成員」（成員 Y 跨距 < 60）：斜對角/多列成員若用膠囊，
+            // 會把整個外接矩形框起來，連非成員都被包進去（臨床語意誤導）。
+            // 多列一律走凹包（凹包能貼合斜向帶狀分佈）。
             const aspectRatio = width / height;
-            const isDogBone = aspectRatio > 1.2;
+            const memberYs = household.ids
+                .map(id => this.personMap.get(id))
+                .filter(m => m)
+                .map(m => m.y);
+            const ySpan = memberYs.length ? Math.max(...memberYs) - Math.min(...memberYs) : 0;
+            const isDogBone = aspectRatio > 1.2 && ySpan < 60;
 
             // 繪製狗骨頭形狀（膠囊狀，上下平直）
             const drawDogBone = () => {
-                const padding = 25;
+                // [Fix] bounds 取樣點已含 25px padding，這裡只留少量呼吸空間，
+                // 避免 padding 重複疊加造成膠囊過度肥大
+                const padding = 8;
 
                 // 邊界（含 padding）
                 const left = minX - padding;
@@ -3513,7 +3647,7 @@ class GenogramCanvas {
                 if (hullPoints.length < 3) return;
 
                 // 圓角多邊形繪製邏輯
-                const cornerRadius = 10; // 更小的圓角
+                const cornerRadius = 18; // [精緻化] 較大圓角讓凹包框線更圓潤
                 for (let i = 0; i < hullPoints.length; i++) {
                     const p1 = hullPoints[i];
                     const p2 = hullPoints[(i + 1) % hullPoints.length];
@@ -3578,7 +3712,6 @@ class GenogramCanvas {
         if (members.length === 0) return null;
 
         const padding = 25; // 恢復較顯眼的邊距 (User 要求大一點)
-        const nameHeight = 20;
         const personRadius = this.personSize / 2;
 
         // 收集所有成員的影響點（圓形的邊界 + 關係連線點）
@@ -3588,21 +3721,43 @@ class GenogramCanvas {
         members.forEach(m => {
             if (!m || typeof m.x !== 'number' || typeof m.y !== 'number') return;
 
-            const bottomExtra = m.name ? nameHeight : 0;
             const r = personRadius + padding;
 
             for (let i = 0; i < 16; i++) {
                 const angle = (i * Math.PI * 2) / 16;
-                let px = m.x + Math.cos(angle) * r;
-                let py = m.y + Math.sin(angle) * r;
-
-                if (angle > 0 && angle < Math.PI) {
-                    py += bottomExtra;
-                }
+                const px = m.x + Math.cos(angle) * r;
+                const py = m.y + Math.sin(angle) * r;
 
                 if (!isNaN(px) && !isNaN(py)) {
                     points.push({ x: px, y: py });
                 }
+            }
+
+            // [Fix] 文字感知：量測姓名與備註的實際寬度/行數，
+            // 補上文字區塊的包絡點，避免長名或多行備註戳出框外
+            if (m.name) {
+                this.ctx.save();
+                this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
+                let textW = this.ctx.measureText(m.name).width;
+                let blockH = this.fontSize + 8; // 姓名行高（同 drawPerson 的 y+half+8 起繪）
+                if (m.notes) {
+                    this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`;
+                    const noteLines = m.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
+                    noteLines.forEach(l => {
+                        textW = Math.max(textW, this.ctx.measureText(l).width);
+                    });
+                    blockH += 4 + noteLines.length * (this.fontSize * 0.8 + 2);
+                }
+                this.ctx.restore();
+
+                const halfW = textW / 2 + 12;
+                const topY = m.y + personRadius;            // 文字起點（符號下緣）
+                const botY = m.y + personRadius + blockH + 14;
+                points.push({ x: m.x - halfW, y: topY });
+                points.push({ x: m.x + halfW, y: topY });
+                points.push({ x: m.x - halfW, y: botY });
+                points.push({ x: m.x + halfW, y: botY });
+                points.push({ x: m.x, y: botY + 4 });
             }
         });
 
@@ -3797,12 +3952,17 @@ class GenogramCanvas {
 
         const { hullPoints, minX, minY, maxX, maxY, width, height } = bounds;
 
-        // 判斷是否為狗骨頭形狀 (需與 drawHouseholds 邏輯一致)
+        // 判斷是否為狗骨頭形狀 (需與 drawHouseholds 邏輯一致：單列成員才用膠囊)
         const aspectRatio = width / height;
-        const isDogBone = aspectRatio > 1.2;
+        const memberYs = household.ids
+            .map(id => this.personMap.get(id))
+            .filter(m => m)
+            .map(m => m.y);
+        const ySpan = memberYs.length ? Math.max(...memberYs) - Math.min(...memberYs) : 0;
+        const isDogBone = aspectRatio > 1.2 && ySpan < 60;
 
         if (isDogBone) {
-            const padding = 25;
+            const padding = 8; // 與 drawHouseholds 的 drawDogBone 一致
             // 邊界（含 padding）
             const left = minX - padding;
             const right = maxX + padding;
@@ -4314,12 +4474,23 @@ class GenogramCanvas {
         this.ctx.shadowColor = 'transparent';
         this.ctx.shadowBlur = 0;
 
-        // 繪製鉛筆圖示
-        this.ctx.fillStyle = '#4a90d9';
-        this.ctx.font = 'bold 14px Arial, sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('✏', x, y);
+        // 繪製鉛筆圖示（向量繪製，避免 emoji 在不同平台渲染不一）
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        this.ctx.rotate(Math.PI / 4);
+        this.ctx.strokeStyle = '#4a90d9';
+        this.ctx.lineWidth = 1.6;
+        this.ctx.lineJoin = 'round';
+        this.ctx.lineCap = 'round';
+        // 筆身
+        this.ctx.strokeRect(-2.5, -7, 5, 9);
+        // 筆尖三角
+        this.ctx.beginPath();
+        this.ctx.moveTo(-2.5, 2);
+        this.ctx.lineTo(0, 6.5);
+        this.ctx.lineTo(2.5, 2);
+        this.ctx.stroke();
+        this.ctx.restore();
 
         this.ctx.restore();
 
@@ -4377,12 +4548,12 @@ class GenogramCanvas {
      * 快速新增按鈕配置
      */
     static QUICK_BUTTONS = {
-        parent: { label: '父母', icon: '👨‍👩', offsetX: 0, offsetY: -75, color: '#4a90d9' },
-        sibling: { label: '手足', icon: '⟷', offsetX: 55, offsetY: -25, color: '#5dae8b' },
-        partner: { label: '伴侶', icon: '❤', offsetX: 55, offsetY: 25, color: '#e85d75' },
-        son: { label: '兒子', icon: '👦', offsetX: -40, offsetY: 75, color: '#e8a849' },
-        daughter: { label: '女兒', icon: '👧', offsetX: 0, offsetY: 75, color: '#e8a849' },
-        pregnancy: { label: '懷孕', icon: '△', offsetX: 40, offsetY: 75, color: '#e8a849' }
+        parent: { label: '父母', offsetX: 0, offsetY: -75, color: '#4a90d9' },
+        sibling: { label: '手足', offsetX: 55, offsetY: -25, color: '#5dae8b' },
+        partner: { label: '伴侶', offsetX: 55, offsetY: 25, color: '#e8537a' },
+        son: { label: '兒子', offsetX: -40, offsetY: 75, color: '#e8a849' },
+        daughter: { label: '女兒', offsetX: 0, offsetY: 75, color: '#e8a849' },
+        pregnancy: { label: '懷孕', offsetX: 40, offsetY: 75, color: '#e8a849' }
     };
 
     /**
@@ -4413,33 +4584,83 @@ class GenogramCanvas {
             const bx = x + btn.offsetX;
             const by = y + btn.offsetY;
 
-            // 按鈕背景
+            // 按鈕背景（白底 + 色環 + 柔和陰影 — emoji 在各平台渲染不一，改用向量 glyph）
             this.ctx.save();
             this.ctx.beginPath();
             this.ctx.arc(bx, by, btnRadius, 0, Math.PI * 2);
-            this.ctx.fillStyle = btn.color;
-            this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
-            this.ctx.shadowBlur = 5;
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.shadowColor = 'rgba(15, 23, 42, 0.22)';
+            this.ctx.shadowBlur = 6;
             this.ctx.shadowOffsetY = 2;
             this.ctx.fill();
+            this.ctx.shadowColor = 'transparent';
+            this.ctx.shadowBlur = 0;
+            this.ctx.shadowOffsetY = 0;
+            this.ctx.strokeStyle = btn.color;
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
             this.ctx.restore();
 
-            // 按鈕圖示
-            this.ctx.font = '14px sans-serif';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillStyle = '#fff';
-            this.ctx.fillText(btn.icon, bx, by);
+            // 按鈕圖示（家系圖符號語意的小 glyph）
+            this.drawQuickButtonGlyph(type, bx, by, btn.color);
 
             // 按鈕標籤（小字說明）
             this.ctx.save();
             this.ctx.font = '10px "Noto Sans TC", sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'top';
-            this.ctx.fillStyle = '#555';
-            this.ctx.fillText(btn.label, bx, by + btnRadius + 2);
+            this.ctx.fillStyle = '#6b7280';
+            this.ctx.fillText(btn.label, bx, by + btnRadius + 3);
             this.ctx.restore();
         });
+    }
+
+    /**
+     * 快速新增按鈕的向量 glyph — 沿用家系圖符號語意（方=男、圓=女、三角=懷孕）
+     */
+    drawQuickButtonGlyph(type, cx, cy, color) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.8;
+        ctx.lineJoin = 'round';
+        switch (type) {
+            case 'parent': // 小方 + 小圓 並排（父母）
+                ctx.strokeRect(cx - 8.5, cy - 3.5, 7, 7);
+                ctx.beginPath();
+                ctx.arc(cx + 5, cy, 3.5, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            case 'sibling': // 兩個小方並排（手足）
+                ctx.strokeRect(cx - 8.5, cy - 3.5, 7, 7);
+                ctx.strokeRect(cx + 1.5, cy - 3.5, 7, 7);
+                break;
+            case 'partner': // 實心愛心（伴侶）
+                ctx.beginPath();
+                ctx.moveTo(cx, cy + 5.5);
+                ctx.bezierCurveTo(cx - 7.5, cy - 1, cx - 4.5, cy - 6.5, cx, cy - 2);
+                ctx.bezierCurveTo(cx + 4.5, cy - 6.5, cx + 7.5, cy - 1, cx, cy + 5.5);
+                ctx.fill();
+                break;
+            case 'son': // 小方（兒子）
+                ctx.strokeRect(cx - 4, cy - 4, 8, 8);
+                break;
+            case 'daughter': // 小圓（女兒）
+                ctx.beginPath();
+                ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            case 'pregnancy': // 小三角（懷孕）
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 5);
+                ctx.lineTo(cx + 5, cy + 4);
+                ctx.lineTo(cx - 5, cy + 4);
+                ctx.closePath();
+                ctx.stroke();
+                break;
+        }
+        ctx.restore();
     }
 
     /**
@@ -4515,112 +4736,158 @@ class GenogramCanvas {
         this.applyTransform();
 
         lifeCircles.forEach(lc => {
-            if (!lc.points || lc.points.length < 3) return;
-
-            const isSelected = selectedId === lc.id;
-
-            // 繪製填充多邊形 (改為平滑曲線)
-            this.ctx.beginPath();
-
-            // 使用平滑曲線連接所有點
-            // 如果點少於3個，無法構成封閉平滑曲線，退化為直線 (雖然後面有 check length < 3 return，但防呆)
-            if (lc.points.length < 3) {
-                this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
-                for (let i = 1; i < lc.points.length; i++) {
-                    this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
-                }
-            } else {
-                // Catmull-Rom Spline 模擬
-                this.drawSmoothClosedPath(this.ctx, lc.points);
-            }
-
-            this.ctx.closePath();
-
-            // 填充
-            this.ctx.fillStyle = lc.color || 'rgba(74, 144, 226, 0.15)';
-            this.ctx.fill();
-
-            // 邊框
-            this.ctx.strokeStyle = isSelected ? '#4a90d9' : 'rgba(74, 144, 226, 0.5)';
-            this.ctx.lineWidth = isSelected ? 3 : 2;
-            this.ctx.setLineDash(isSelected ? DASH_PATTERNS.solid : DASH_PATTERNS.liveCircle);
-            this.ctx.stroke();
-
-            // 繪製頂點（選中時）
-            if (isSelected) {
-                lc.points.forEach(p => {
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-                    this.ctx.fillStyle = '#4a90d9';
-                    this.ctx.fill();
-                });
-            }
+            this._drawSingleLifeCircle(lc, selectedId === lc.id);
         });
 
         this.ctx.restore();
     }
 
     /**
-     * 繪製封閉的平滑曲線 (通過所有頂點)
-     * 使用 Cardinal Spline / Catmull-Rom 算法
+     * [共用] 繪製單一生活圈（螢幕與匯出共用，確保兩邊長相一致）
+     * @param {Object} lc - 生活圈
+     * @param {boolean} isSelected - 是否選中（匯出時固定 false）
      */
-    drawSmoothClosedPath(ctx, points, tension = 0.5) {
-        if (points.length < 1) return;
+    _drawSingleLifeCircle(lc, isSelected = false) {
+        if (!lc.points || lc.points.length < 3) return;
 
-        ctx.moveTo(points[0].x, points[0].y);
+        const path = this.buildSmoothClosedPath(lc.points);
+        const fillColor = lc.color || 'rgba(74, 144, 226, 0.15)';
 
-        const size = points.length;
+        // 填充
+        this.ctx.fillStyle = fillColor;
+        this.ctx.fill(path);
 
-        // 為了閉合，我們需要虛擬點：
-        // 曲線段 i (p[i] 到 p[i+1]) 需要控制點 p[i-1] 和 p[i+2]
+        // 邊框（[Fix] 顏色跟隨填色 — 原本固定藍色，綠圈/橘圈邊框對不上）
+        this.ctx.strokeStyle = isSelected ? '#4a90d9' : this.lifeCircleStrokeColor(fillColor);
+        this.ctx.lineWidth = isSelected ? 3 : 2;
+        this.ctx.setLineDash(isSelected ? DASH_PATTERNS.solid : DASH_PATTERNS.liveCircle);
+        this.ctx.stroke(path);
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
 
-        for (let i = 0; i < size; i++) {
-            const p0 = points[(i - 1 + size) % size];     // 前一點
-            const p1 = points[i];                         // 當前點 (起點)
-            const p2 = points[(i + 1) % size];            // 下一點 (終點)
-            const p3 = points[(i + 2) % size];            // 下下點
+        // [New] 標籤：畫在最上緣頂點上方（白色 halo 確保可讀；原本 label 從未顯示）
+        if (lc.label) {
+            let top = lc.points[0];
+            lc.points.forEach(p => { if (p.y < top.y) top = p; });
+            this.ctx.save();
+            this.ctx.font = `600 13px ${this.fontFamily}`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.strokeText(lc.label, top.x, top.y - 6);
+            this.ctx.fillStyle = this.lifeCircleStrokeColor(fillColor, 1);
+            this.ctx.fillText(lc.label, top.x, top.y - 6);
+            this.ctx.restore();
+        }
 
-            // 計算控制點 (Derivative based)
-            // 簡化係數
-            const f = tension / 3;
-
-            const cp1x = p1.x + (p2.x - p0.x) * f;
-            const cp1y = p1.y + (p2.y - p0.y) * f;
-
-            const cp2x = p2.x - (p3.x - p1.x) * f;
-            const cp2y = p2.y - (p3.y - p1.y) * f;
-
-            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        // 繪製頂點（選中時）
+        if (isSelected) {
+            lc.points.forEach(p => {
+                this.ctx.beginPath();
+                this.ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                this.ctx.fillStyle = '#4a90d9';
+                this.ctx.fill();
+            });
         }
     }
 
     /**
+     * 由生活圈半透明填色推導邊框/標籤色（同 RGB、較高 alpha）
+     */
+    lifeCircleStrokeColor(fillColor, alpha = 0.65) {
+        const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(fillColor || '');
+        if (m) {
+            return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+        }
+        return 'rgba(74, 144, 226, 0.5)';
+    }
+
+    /**
+     * [共用] 建立封閉平滑曲線的 Path2D（Catmull-Rom / Cardinal Spline）
+     * 螢幕繪製、匯出、點擊判定三處共用同一條路徑 — 所見即所點、所存即所見。
+     * [Fix] 控制點長度夾制在鄰邊長的 45%，避免尖角多邊形（鋸齒/星形）嚴重過衝，
+     * 畫出來的形狀更貼近使用者實際點的頂點。
+     */
+    buildSmoothClosedPath(points, tension = 0.5) {
+        const path = new Path2D();
+        if (!points || points.length === 0) return path;
+
+        path.moveTo(points[0].x, points[0].y);
+        const size = points.length;
+        const f = tension / 3;
+
+        for (let i = 0; i < size; i++) {
+            const p0 = points[(i - 1 + size) % size];
+            const p1 = points[i];
+            const p2 = points[(i + 1) % size];
+            const p3 = points[(i + 2) % size];
+
+            const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            const maxHandle = segLen * 0.45;
+
+            let v1x = (p2.x - p0.x) * f;
+            let v1y = (p2.y - p0.y) * f;
+            const l1 = Math.hypot(v1x, v1y);
+            if (l1 > maxHandle && l1 > 0) {
+                v1x *= maxHandle / l1;
+                v1y *= maxHandle / l1;
+            }
+
+            let v2x = (p3.x - p1.x) * f;
+            let v2y = (p3.y - p1.y) * f;
+            const l2 = Math.hypot(v2x, v2y);
+            if (l2 > maxHandle && l2 > 0) {
+                v2x *= maxHandle / l2;
+                v2y *= maxHandle / l2;
+            }
+
+            path.bezierCurveTo(p1.x + v1x, p1.y + v1y, p2.x - v2x, p2.y - v2y, p2.x, p2.y);
+        }
+        path.closePath();
+        return path;
+    }
+
+    /**
+     * [相容保留] 直接在 ctx 上畫封閉平滑曲線（內部已改用 buildSmoothClosedPath 同邏輯）
+     */
+    drawSmoothClosedPath(ctx, points, tension = 0.5) {
+        const path = this.buildSmoothClosedPath(points, tension);
+        // 呼叫端負責 fill/stroke；這裡把 Path2D 內容附加到目前路徑無法直接做，
+        // 因此提供 Path2D 給呼叫端使用為主，此函式僅向後相容地直接描邊
+        ctx.stroke(path);
+    }
+
+    /**
+     * [Snap/HitTest] 點是否落在生活圈「平滑邊界帶」或頂點上
+     * 與畫面實際形狀一致（同一條 Path2D），消除「看得到點不到」
+     */
+    isPointOnLifeCircleEdge(lc, x, y, tolerance = 12) {
+        if (!lc || !lc.points || lc.points.length < 3) return false;
+
+        // 頂點優先（半徑略放寬，方便抓取）
+        for (const p of lc.points) {
+            if (Math.hypot(p.x - x, p.y - y) <= tolerance + 4) return true;
+        }
+
+        const path = this.buildSmoothClosedPath(lc.points);
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // 以世界座標檢測（路徑即世界座標）
+        ctx.lineWidth = tolerance * 2;
+        const hit = ctx.isPointInStroke(path, x, y);
+        ctx.restore();
+        return hit;
+    }
+
+    /**
      * 繪製生活圈（匯出用，不含選取高亮）
+     * [Fix] 與螢幕版共用 _drawSingleLifeCircle：平滑形狀、邊框色、標籤完全一致
      */
     drawLifeCirclesExport(lifeCircles) {
         if (!lifeCircles || lifeCircles.length === 0) return;
 
         lifeCircles.forEach(lc => {
-            if (!lc.points || lc.points.length < 3) return;
-
-            // 繪製填充多邊形
-            this.ctx.beginPath();
-            this.ctx.moveTo(lc.points[0].x, lc.points[0].y);
-            for (let i = 1; i < lc.points.length; i++) {
-                this.ctx.lineTo(lc.points[i].x, lc.points[i].y);
-            }
-            this.ctx.closePath();
-
-            // 填充
-            this.ctx.fillStyle = lc.color || 'rgba(74, 144, 226, 0.15)';
-            this.ctx.fill();
-
-            // 邊框
-            this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash(DASH_PATTERNS.liveCircle);
-            this.ctx.stroke();
-            this.ctx.setLineDash(DASH_PATTERNS.solid);
+            this._drawSingleLifeCircle(lc, false);
         });
     }
 
@@ -4642,7 +4909,7 @@ class GenogramCanvas {
             this.ctx.lineTo(points[i].x, points[i].y);
         }
 
-        // 如果有滑鼠位置，繪製到滑鼠的預覽線
+        // 如果有滑鼠位置，繪製到滑鼠的預覽線（橡皮筋）
         if (mousePos) {
             this.ctx.lineTo(mousePos.x, mousePos.y);
         }
@@ -4651,6 +4918,19 @@ class GenogramCanvas {
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash(DASH_PATTERNS.selection);
         this.ctx.stroke();
+
+        // [New] 閉合提示：已有 2 點以上時，畫一條更淡的虛線回到起點，
+        // 讓使用者預見封閉後的形狀
+        if (points.length >= 2) {
+            const tail = mousePos || points[points.length - 1];
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.35;
+            this.ctx.beginPath();
+            this.ctx.moveTo(tail.x, tail.y);
+            this.ctx.lineTo(points[0].x, points[0].y);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
 
         // 繪製頂點
         points.forEach((p, i) => {
