@@ -9,6 +9,7 @@
 # 測試與紀錄
 test_*
 refactor/*.png
+refactor/golden/
 refactor/adv_*.js
 refactor/verify_visual_extra.js
 refactor/vis_pixel_check.ps1

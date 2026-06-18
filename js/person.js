@@ -37,6 +37,11 @@ class Person {
         this.notes = data.notes || '';
         this.generation = data.generation || null; // 'grandparent', 'parent', 'child', 'grandchild'
         this.twinGroup = data.twinGroup || null; // 多胞胎群組ID，null表示非多胞胎
+        // [Phase 1] 合子性：'mono'(同卵→畫連接橫桿) / 'di' 或 null(異卵)。屬群組層級，群組成員應一致。
+        this.zygosity = data.zygosity || null;
+        // [Phase 1] 生育結果：null(正常) / 'miscarriage'(流產, 小實心圓點) / 'abortion'(人工流產, X)
+        // 註：死產(stillbirth) 已移除；舊資料若有此值會被當正常人物渲染。
+        this.lossType = data.lossType || null;
     }
 
     /**
@@ -126,7 +131,9 @@ class Person {
             y: this.y,
             notes: this.notes,
             generation: this.generation,
-            twinGroup: this.twinGroup
+            twinGroup: this.twinGroup,
+            zygosity: this.zygosity,
+            lossType: this.lossType
         };
     }
 

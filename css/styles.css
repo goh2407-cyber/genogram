@@ -708,6 +708,16 @@ body {
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14'%3E%3Cline x1='1' y1='7' x2='39' y2='7' stroke='%23333' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center;
 }
 
+.legend-line.parent-child-adopted {
+    /* 收養：虛線 12/6 — 同 DASH_PATTERNS.engaged（McGoldrick: adopted = dashed） */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14'%3E%3Cline x1='1' y1='7' x2='39' y2='7' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-dasharray='12,6'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.legend-line.parent-child-foster {
+    /* 寄養：點線 2/6 — 同 DASH_PATTERNS.cohabit（McGoldrick: foster = dotted） */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14'%3E%3Cline x1='2' y1='7' x2='38' y2='7' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-dasharray='2,6'/%3E%3C/svg%3E") no-repeat center;
+}
+
 .legend-line.engaged {
     /* 訂婚：長虛線 12/6 — 同 DASH_PATTERNS.engaged */
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14'%3E%3Cline x1='1' y1='7' x2='39' y2='7' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-dasharray='12,6'/%3E%3C/svg%3E") no-repeat center;
@@ -1042,6 +1052,8 @@ body {
     transform: translateY(-1px);
     box-shadow: var(--shadow-sm);
 }
+
+/* [Phase 2A.2] 婚姻線走法手動覆寫：已改為畫布上「走法鈕」(canvas.drawRelationshipRouteButtons)，無 HTML 元件 */
 
 .btn-cancel {
     padding: 8px 20px;

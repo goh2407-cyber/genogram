@@ -49,6 +49,9 @@ class GenogramApp {
         // [Sprint 2 Phase A] personMap 主索引：所有 O(n) 的 persons.find 改查表
         // 維護規則見 refactor/PERSONMAP_INDEX_DESIGN.md §3
         this.personMap = new Map();
+        // [Phase 0a] 結構版本號：persons/relationships 的「結構」變動（增刪/改型別/改端點）時 +1，
+        // 位置變動不算。供 getKinshipEngine / getRelationshipSplit 以 O(1) 判斷快取是否仍有效。
+        this._dataVersion = 0;
 
         // 狀態
         this.currentTool = 'select'; // select, addMale, addFemale, connect, boxSelect, household
@@ -312,22 +315,30 @@ class GenogramApp {
         // 關係對話框取消
         this.elements.cancelRelationship.addEventListener('click', () => this.closeRelationshipModal());
 
+        // [Phase 1] 對調關係方向（編輯模式；修正畫反的虐待箭頭/親子上下等）
+        const swapBtn = document.getElementById('swapRelationshipDirection');
+        if (swapBtn) swapBtn.addEventListener('click', () => this.swapRelationshipDirection());
+
         // 關係類型按鈕
         document.querySelectorAll('.rel-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 // 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)
                 const type = e.currentTarget.dataset.type;
+                // [Phase 1] 親子按鈕帶 data-link-type（biological/adopted/foster）；其餘關係無此屬性
+                const linkType = e.currentTarget.dataset.linkType || null;
 
                 // 判斷是編輯模式還是新建模式
                 if (this.editingRelationshipId) {
                     // 編輯模式：更新現有關係的類型
-                    this.updateRelationshipType(type);
+                    this.updateRelationshipType(type, linkType);
                 } else {
                     // 新建模式：建立新關係
-                    this.createRelationship(type);
+                    this.createRelationship(type, linkType);
                 }
             });
         });
+
+        // [Phase 2A.2] 婚姻線走法改為畫布上「走法鈕」（鉛筆旁，見 canvas.drawRelationshipRouteButtons）
 
         // 圖例面板收合/展開
         const legendTitle = this.elements.legendPanel.querySelector('.panel-title');
@@ -575,13 +586,13 @@ class GenogramApp {
 
         const point = this.canvas.getMousePos(e);
 
-        // [NEW] 快速按鈕點擊偵測
-        if (this.hoveredPersonId && this.currentTool === 'select') {
-            const hoveredPerson = this.personMap.get(this.hoveredPersonId);
-            if (hoveredPerson) {
-                const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
+        // [NEW] 快速按鈕點擊偵測（角色選取後才顯示鈕，故用 selectedPersonId）
+        if (this.selectedPersonId && this.currentTool === 'select') {
+            const selPerson = this.personMap.get(this.selectedPersonId);
+            if (selPerson) {
+                const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, selPerson);
                 if (buttonType) {
-                    this.handleQuickAddClick(hoveredPerson, buttonType);
+                    this.handleQuickAddClick(selPerson, buttonType);
                     return;
                 }
             }
@@ -652,6 +663,9 @@ class GenogramApp {
                 } else if (this.connectingFrom.person.id !== clickedPerson.id) {
                     this.connectingTo = clickedPerson;
                     this.showRelationshipModal();
+                } else {
+                    // [Fix B9] 點到同一人：明確提示，不要靜默無反應
+                    this.updateStatus('不能連接到自己，請點選另一位成員', 'warning');
                 }
             } else {
                 // 如果點擊空白處，取消連接
@@ -663,6 +677,35 @@ class GenogramApp {
         }
 
         if (this.currentTool === 'select') {
+            // 0. [Z-index] 關係已選取時，編輯鈕群（鉛筆/⇄/走法）的點擊「優先於節點」。
+            //    鈕群繪製在最上層，即使疊在角色上，也應點到鈕、而非選到底下的人。
+            if (this.selectedRelationshipId) {
+                const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+                if (selectedRel) {
+                    const fromPerson = this.personMap.get(selectedRel.fromPersonId);
+                    const toPerson = this.personMap.get(selectedRel.toPersonId);
+                    if (fromPerson && toPerson) {
+                        // 婚姻線「走法」鈕（自動/ㄇ/一/ㄩ）
+                        const rmode = this.canvas.getRouteButtonModeAt(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships);
+                        if (rmode) {
+                            this.setRouteModeById(selectedRel.id, rmode);
+                            return;
+                        }
+                        // 「對調方向 ⇄」鈕（在鉛筆外側；婚姻不顯示）
+                        if (this.canvas.isPointOnSwapButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
+                            this.swapRelationshipDirectionById(selectedRel.id);
+                            return;
+                        }
+                        // 鉛筆（編輯關係類型）
+                        if (this.canvas.isPointOnEditButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
+                            this.editingRelationshipId = selectedRel.id;
+                            this.showRelationshipEditModal();
+                            return;
+                        }
+                    }
+                }
+            }
+
             // 優先檢查滑鼠下的「家庭」（這現在包含了家庭成員）
             // 如果點擊了某人，我們需要判斷意圖：
             // A. 如果該人在家庭內 -> 拖曳家庭 (User Request: "就算拉到人員或關係線也應該整體一起移動")
@@ -732,23 +775,6 @@ class GenogramApp {
                 this.render();
                 return;
 
-            }
-
-            // 2. 先檢查是否點擊在編輯按鈕上（優先於關係線檢測）
-            if (this.selectedRelationshipId) {
-                const selectedRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
-                if (selectedRel) {
-                    const fromPerson = this.personMap.get(selectedRel.fromPersonId);
-                    const toPerson = this.personMap.get(selectedRel.toPersonId);
-                    if (fromPerson && toPerson) {
-                        if (this.canvas.isPointOnEditButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
-                            // 點擊了編輯按鈕，開啟關係類型編輯選單
-                            this.editingRelationshipId = selectedRel.id;
-                            this.showRelationshipEditModal();
-                            return;
-                        }
-                    }
-                }
             }
 
             // 3. 檢查是否點擊到關係線
@@ -877,6 +903,15 @@ class GenogramApp {
         // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
         if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
             this.lifeCircleMousePos = point;
+            this.render();
+            return;
+        }
+
+        // [Fix B2] 連接工具：已選第一位後，預覽線跟隨滑鼠
+        // （canvas 端只在 connectingFrom.targetX 有值時才畫，原本此值從未被更新 → 看不到橡皮筋線）
+        if (this.currentTool === 'connect' && this.connectingFrom) {
+            this.connectingFrom.targetX = point.x;
+            this.connectingFrom.targetY = point.y;
             this.render();
             return;
         }
@@ -1023,31 +1058,31 @@ class GenogramApp {
             }
 
 
-            // [NEW] 快速按鈕 hover 追蹤
-            // 修正：使用擴展區域來保持按鈕可見
-            let newHoveredId = person ? person.id : null;
-
-            // 如果目前沒有 hover 到人物，但之前有 hoveredPersonId，
-            // 檢查是否在擴展的按鈕區域內
-            if (!newHoveredId && this.hoveredPersonId) {
-                const prevHoveredPerson = this.personMap.get(this.hoveredPersonId);
-                if (prevHoveredPerson && this.canvas.isPointInQuickAddZone(point.x, point.y, prevHoveredPerson)) {
-                    // 滑鼠在擴展區域內，保持 hover 狀態
-                    newHoveredId = this.hoveredPersonId;
+            // 快速新增鈕「選取角色後」才顯示（不再 hover 顯示）；
+            // 滑鼠移到「選取角色的」快速鈕上時，游標變 pointer 以提示可點。
+            if (this.hoveredPersonId !== null) {
+                this.hoveredPersonId = null; // 不再以 hover 觸發快速鈕
+            }
+            if (this.selectedPersonId) {
+                const selPerson = this.personMap.get(this.selectedPersonId);
+                if (selPerson && this.canvas.getQuickButtonAt(point.x, point.y, selPerson)) {
+                    this.canvas.canvas.style.cursor = 'pointer';
                 }
             }
 
-            if (this.hoveredPersonId !== newHoveredId) {
-                this.hoveredPersonId = newHoveredId;
-                this.render();
-            }
-
-            // 檢查是否 hover 在快速按鈕上
-            if (this.hoveredPersonId) {
-                const hoveredPerson = this.personMap.get(this.hoveredPersonId);
-                const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, hoveredPerson);
-                if (buttonType) {
-                    this.canvas.canvas.style.cursor = 'pointer';
+            // [Fix] 選取關係線時，滑鼠移到 鉛筆 / ⇄ / 走法鈕(自ㄇ一ㄩ) 上 → 游標變 pointer（手）
+            if (this.selectedRelationshipId) {
+                const selRel = this.relationships.find(r => r.id === this.selectedRelationshipId);
+                if (selRel) {
+                    const fp = this.personMap.get(selRel.fromPersonId);
+                    const tp = this.personMap.get(selRel.toPersonId);
+                    if (fp && tp && (
+                        this.canvas.getRouteButtonModeAt(point.x, point.y, selRel, fp, tp, this.relationships) ||
+                        this.canvas.isPointOnEditButton(point.x, point.y, selRel, fp, tp, this.relationships) ||
+                        this.canvas.isPointOnSwapButton(point.x, point.y, selRel, fp, tp, this.relationships)
+                    )) {
+                        this.canvas.canvas.style.cursor = 'pointer';
+                    }
                 }
             }
         }
@@ -2316,12 +2351,31 @@ class GenogramApp {
     }
 
     /**
+     * [Fix F-2] 取得「全同胞」：父母集合與此人完全相同者。
+     * 雙胞胎候選只能是全同胞——半同胞（再婚的同父異母/同母異父）與他人的孩子都不可成為雙胞胎。
+     * @param {Person} person
+     * @returns {Person[]}
+     */
+    getFullSiblings(person) {
+        const kinship = this.getKinshipEngine();
+        const mine = kinship.getParentIds(person.id).slice().sort();
+        if (mine.length === 0) return [];
+        const key = mine.join(',');
+        return this.persons.filter(p => {
+            if (p.id === person.id) return false;
+            const pp = kinship.getParentIds(p.id).slice().sort();
+            return pp.length > 0 && pp.join(',') === key;
+        });
+    }
+
+    /**
      * 生成多胞胎設定區塊的 HTML
      * @param {Person} person 
      * @returns {string}
      */
     generateTwinSettingsHTML(person) {
-        const siblings = this.getSiblings(person);
+        // [Fix F-2] 只列全同胞（父母完全相同）為雙胞胎候選，避免半同胞/別人的孩子被誤勾
+        const siblings = this.getFullSiblings(person);
 
         // 總是顯示區塊，即使沒有兄弟姊妹（方便除錯）
         let html = `
@@ -2352,6 +2406,17 @@ class GenogramApp {
                 </div>
             `;
         });
+
+        // [Phase 1] 同卵/異卵切換：僅在此人已組成多胞胎群組時顯示（合子性為群組層級屬性）
+        if (currentTwinGroupId) {
+            const isMono = person.zygosity === 'mono';
+            html += `
+                <div class="checkbox-group" style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
+                    <input type="checkbox" id="twin_zygosity_mono" class="twin-zygosity-checkbox" ${isMono ? 'checked' : ''}>
+                    <label for="twin_zygosity_mono">同卵雙胞胎（加畫連接橫桿）</label>
+                </div>
+            `;
+        }
 
         html += '</div>';
         return html;
@@ -2552,6 +2617,14 @@ class GenogramApp {
                         <input type="checkbox" id="personDeceased" ${person.isDeceased ? 'checked' : ''}>
                         <label for="personDeceased">已過世</label>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label for="personLossType">生育結果</label>
+                    <select id="personLossType">
+                        <option value="" ${!person.lossType ? 'selected' : ''}>正常</option>
+                        <option value="miscarriage" ${person.lossType === 'miscarriage' ? 'selected' : ''}>流產（自然）</option>
+                        <option value="abortion" ${person.lossType === 'abortion' ? 'selected' : ''}>人工流產</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <div class="checkbox-group">
@@ -2785,6 +2858,17 @@ class GenogramApp {
             this.autoSave();
         });
 
+        // [Phase 1] 生育結果（流產/人工流產/死產）
+        const lossSel = document.getElementById('personLossType');
+        if (lossSel) {
+            lossSel.addEventListener('change', (e) => {
+                this.saveState();
+                person.lossType = e.target.value || null;
+                this.render();
+                this.autoSave();
+            });
+        }
+
         // 醫學屬性處理 helper
         const updateMedical = (key, value) => {
             this.saveState();
@@ -2868,6 +2952,22 @@ class GenogramApp {
                 this.render();
             });
         });
+
+        // [Phase 1] 同卵/異卵切換：套用到整個多胞胎群組（合子性為群組屬性，成員須一致）
+        const zygCheckbox = document.querySelector('.twin-zygosity-checkbox');
+        if (zygCheckbox) {
+            zygCheckbox.addEventListener('change', (e) => {
+                if (!person.twinGroup) return;
+                this.saveState();
+                const z = e.target.checked ? 'mono' : 'di';
+                this.persons.forEach(p => {
+                    if (p.twinGroup === person.twinGroup) p.zygosity = z;
+                });
+                this.updateStatus(e.target.checked ? '已標記為同卵雙胞胎' : '已標記為異卵雙胞胎', 'info');
+                this.autoSave();
+                this.render();
+            });
+        }
     }
 
     /**
@@ -2887,6 +2987,8 @@ class GenogramApp {
      * 顯示關係選擇對話框
      */
     showRelationshipModal() {
+        const sb = document.getElementById('swapRelationshipDirection');
+        if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
         this.elements.relationshipModal.classList.add('active');
     }
 
@@ -2899,6 +3001,8 @@ class GenogramApp {
         if (modalTitle) {
             modalTitle.textContent = '修改關係類型';
         }
+        const sb = document.getElementById('swapRelationshipDirection');
+        if (sb) sb.style.display = ''; // 編輯模式才顯示對調方向
         this.elements.relationshipModal.classList.add('active');
     }
 
@@ -2907,6 +3011,8 @@ class GenogramApp {
      */
     closeRelationshipModal() {
         this.elements.relationshipModal.classList.remove('active');
+        const sb = document.getElementById('swapRelationshipDirection');
+        if (sb) sb.style.display = 'none';
 
         // 恢復標題為預設
         const modalTitle = this.elements.relationshipModal.querySelector('.modal-title');
@@ -2926,10 +3032,54 @@ class GenogramApp {
     }
 
     /**
+     * [Phase 1] 對調關係方向（fromPersonId ⇄ toPersonId）。
+     * 用途：修正畫反的方向性關係——如虐待箭頭指錯人、親子上下顛倒。
+     */
+    swapRelationshipDirection() {
+        // modal 版：對調目前編輯中的關係，然後關閉
+        const id = this.editingRelationshipId;
+        this.closeRelationshipModal();
+        if (id) this.swapRelationshipDirectionById(id);
+    }
+
+    /**
+     * [Fix D] 依 id 對調關係方向（fromPersonId ⇄ toPersonId）。畫布上的 ⇄ 鈕直接呼叫此函式（不經 modal）。
+     */
+    swapRelationshipDirectionById(id) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel) return;
+        this.saveState();
+        const tmp = rel.fromPersonId;
+        rel.fromPersonId = rel.toPersonId;
+        rel.toPersonId = tmp;
+        this._dataVersion++; // 結構方向變動 → 快取失效
+        this.updateStatus('已對調關係方向', 'info');
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * [Phase 2A.2] 設定婚姻線走法（auto / over / straight / under），畫布上「走法鈕」直接呼叫。
+     * 不經 modal；套用後立即重繪，使用者當場看到結果。
+     */
+    setRouteModeById(id, mode) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel) return;
+        if ((rel.routeMode || 'auto') === mode) return;
+        this.saveState();
+        rel.routeMode = mode;
+        this._dataVersion++; // 繞線變動 → 快取失效
+        const label = { auto: '自動', over: 'ㄇ 上折', straight: '一 直線', under: 'ㄩ 下折' }[mode] || mode;
+        this.updateStatus('婚姻線走法：' + label, 'info');
+        this.autoSave();
+        this.render();
+    }
+
+    /**
      * 更新關係類型（編輯模式）
      * @param {string} type - 新的關係類型
      */
-    updateRelationshipType(type) {
+    updateRelationshipType(type, linkType = null) {
         if (!type || type === 'undefined') return;
         if (!this.editingRelationshipId) return;
 
@@ -2939,8 +3089,9 @@ class GenogramApp {
             return;
         }
 
-        // 如果類型相同，不做任何變更
-        if (relationship.type === type) {
+        // 如果類型相同、且（未指定 linkType 或子女線型也相同），才視為無變更
+        // [Phase 1] 否則「同為 parent-child、只改親生→收養」會被誤擋
+        if (relationship.type === type && (!linkType || relationship.linkType === linkType)) {
             this.closeRelationshipModal();
             return;
         }
@@ -2966,6 +3117,14 @@ class GenogramApp {
         const oldType = relationship.type;
         relationship.type = type;
 
+        // [Fix B1] 切換到親子關係時即正規化方向（parent 在上）。
+        // 情感線沒有方向語意，沿用其 from->to 會違反 KinshipEngine 的 from=parent 契約。
+        if (type === 'parent-child') {
+            if (linkType) relationship.linkType = linkType; // [Phase 1] 親生/收養/寄養
+            this.normalizeParentChildDirection(relationship);
+        }
+        this._dataVersion++; // [Phase 0a] 關係型別/方向變動 → 使快取失效
+
         // 顯示更新成功訊息
         const newTypeName = Relationship.getTypeName(type);
         const oldTypeName = Relationship.getTypeName(oldType);
@@ -2977,9 +3136,30 @@ class GenogramApp {
     }
 
     /**
+     * [Fix B1/B3] 將單一親子關係的方向正規化為 parent(上) -> child(下)。
+     * 規則與 normalizeLoadedFamilyRelationships 的 Y 軸判斷一致（Y 小者為 parent），
+     * 供「建立 / 切換型別」時即時套用，避免反向 from->to 直到存檔重載才被修正。
+     * 僅交換單一關係的端點，不重排 relationships 陣列（避免影響情感線平行偏移順序）。
+     * @param {Relationship} rel
+     */
+    normalizeParentChildDirection(rel) {
+        if (!rel || rel.type !== 'parent-child') return;
+        if (!rel.fromPersonId || !rel.toPersonId || rel.fromPersonId === rel.toPersonId) return;
+        const p1 = this.personMap.get(rel.fromPersonId);
+        const p2 = this.personMap.get(rel.toPersonId);
+        if (!p1 || !p2) return;
+        // 目前 from 在下、to 在上 → 交換，使 from = 上方的 parent。Y 相等則維持原方向。
+        if (p2.y < p1.y) {
+            const tmp = rel.fromPersonId;
+            rel.fromPersonId = rel.toPersonId;
+            rel.toPersonId = tmp;
+        }
+    }
+
+    /**
      * 建立關係
      */
-    createRelationship(type) {
+    createRelationship(type, linkType = null) {
         if (!type || type === 'undefined') return; // 安全檢查：防止 undefined 類型
         if (!this.connectingFrom || !this.connectingTo) return;
 
@@ -3032,26 +3212,32 @@ class GenogramApp {
             );
         }
 
+        let affectedRel;
         if (relationshipToReplace) {
             // 如果已存在同類別的結構化關係，更新它
             this.saveState();
             relationshipToReplace.type = type;
+            affectedRel = relationshipToReplace;
         } else {
             // 新增為獨立的關係
             this.saveState();
-            const relationship = new Relationship({
+            affectedRel = new Relationship({
                 fromPersonId: fromId,
                 toPersonId: toId,
                 type: type
             });
-            this.relationships.push(relationship);
+            this.relationships.push(affectedRel);
         }
 
-        // 若是親子關係，自動置中父母於子女上方
+        // 若是親子關係：先正規化方向（避免使用者「先點子再點父」存成反向邊 [Fix B3]），
+        // 再自動置中父母於子女上方。
         if (type === 'parent-child') {
+            if (linkType) affectedRel.linkType = linkType; // [Phase 1] 親生/收養/寄養
+            this.normalizeParentChildDirection(affectedRel);
             this.centerParentsAboveChildren();
         }
 
+        this._dataVersion++; // [Phase 0a] 新增/取代關係 → 結構變動，使快取失效
         this.closeRelationshipModal();
         this.autoSave();
         this.render();
@@ -3336,6 +3522,7 @@ class GenogramApp {
         });
 
         this.relationships = nextRels;
+        this._dataVersion++; // [Phase 0a] 關係正規化改了型別/端點/數量 → 使快取失效
         return stats;
     }
 
@@ -3347,7 +3534,36 @@ class GenogramApp {
         if (typeof window === 'undefined' || !window.KinshipEngine) {
             throw new Error('KinshipEngine 未載入；請確認 index.html 中 js/domain/kinship-engine.js 在 js/app.js 之前載入');
         }
-        return new window.KinshipEngine(this.persons, this.relationships);
+        // [Phase 0a] 依 dataVersion + 人數/關係數 快取（長度當 backstop，接住漏 bump 的增刪）。
+        // 親屬只依關係結構、與座標無關，故拖曳（純位置變動）期間沿用同一引擎、不重建。
+        const sig = this._dataVersion + '|' + this.persons.length + '|' + this.relationships.length;
+        if (this._kinshipCache && this._kinshipCacheSig === sig) {
+            return this._kinshipCache;
+        }
+        this._kinshipCache = new window.KinshipEngine(this.persons, this.relationships);
+        this._kinshipCacheSig = sig;
+        return this._kinshipCache;
+    }
+
+    /**
+     * [Phase 0a] 取得 family / 其他關係的分類（與 canvas.render 內原分類同邏輯），
+     * 同樣依 dataVersion 快取，避免每幀重新分類。回傳物件為共用快取，呼叫端勿改動。
+     * @returns {{familyRels: Relationship[], otherRels: Relationship[]}}
+     */
+    getRelationshipSplit() {
+        const sig = this._dataVersion + '|' + this.relationships.length;
+        if (this._relSplitCache && this._relSplitCacheSig === sig) {
+            return this._relSplitCache;
+        }
+        const familyRels = [];
+        const otherRels = [];
+        for (const rel of this.relationships) {
+            const category = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
+            (category === 'family' ? familyRels : otherRels).push(rel);
+        }
+        this._relSplitCache = { familyRels, otherRels };
+        this._relSplitCacheSig = sig;
+        return this._relSplitCache;
     }
 
     /**
@@ -3360,6 +3576,8 @@ class GenogramApp {
         for (const p of this.persons) {
             this.personMap.set(p.id, p);
         }
+        // [Phase 0a] 批次覆寫（load/undo/redo/clear/migrate/filter 重建）必然是結構變動 → 快取失效
+        this._dataVersion++;
     }
 
     /**
@@ -3601,6 +3819,12 @@ class GenogramApp {
     render() {
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
+        // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
+        // 直接呼叫 canvas.render（測試/外部）時取不到 → 自行 fallback 重建，避免取到舊值。
+        this.canvas._renderInputs = {
+            kinship: this.getKinshipEngine(),
+            split: this.getRelationshipSplit()
+        };
         // [Fix] 生活圈改由 canvas.render 在「最底層」繪製（與匯出 z-order 一致，
         // 不再以 overlay 蓋在人物符號上罩染臨床底色）
         this.canvas.lifeCirclesToDraw = this.lifeCircles || [];

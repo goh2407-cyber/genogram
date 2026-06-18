@@ -119,7 +119,9 @@ class Relationship {
      * @returns {string}
      */
     static getCategory(type) {
-        if (type === 'parent-child') return 'family';
+        // [Fix B4] 'family' 是 'parent-child' 的舊版別名，必須同歸 family 類，
+        // 否則建立關係時的去重/取代判斷會漏掉它（舊資料可同時殘存 family + parent-child 重複邊）。
+        if (type === 'parent-child' || type === 'family') return 'family';
 
         const marriageTypes = [
             'married', 'engaged', 'cohabiting', 'legal-cohabiting',
@@ -142,6 +144,13 @@ class Relationship {
         this.type = data.type || Relationship.TYPES.MARRIED;
         this.notes = data.notes || '';
         this.date = data.date || ''; // 時間/說明
+        // [Phase 1] parent-child 子女線型：biological(實線) / adopted(虛線) / foster(點線)。
+        // 僅對 parent-child 有意義；預設 biological，舊資料無此欄位即視為 biological。
+        this.linkType = data.linkType || 'biological';
+        // [Phase 2A.2] 婚姻線繞線手動覆寫：auto(自動) / over(ㄇ上折) / straight(一直線) / under(ㄩ下折)。
+        // 僅對 marriage 類有意義；預設 auto = 系統自動判斷（同列直線、夾人下折、同側多婚上折天橋）。
+        // 舊資料無此欄位即視為 auto。
+        this.routeMode = data.routeMode || 'auto';
     }
 
     /**
@@ -206,16 +215,16 @@ class Relationship {
             'close-hostile': { color: '#E53935', width: 3, pattern: 'close-hostile' },
             // 融合敵對：灰色雙線夾紅色鋸齒 (Fused Hostile)
             'fused-hostile': { color: '#E53935', width: 3, pattern: 'fused-hostile' },
-            // 暴力：藍色鋸齒線 (Revert to Blue per UI Legend)
-            'violence': { color: '#007BFF', width: 3, pattern: 'zigzag' },
-            // 虐待：藍色波浪線
-            'abuse': { color: '#007BFF', width: 3, pattern: 'wave' },
-            // 身體虐待：藍色波浪 + 黑色直線 (UI Legend Style)
-            'physical-abuse': { color: '#007BFF', width: 3, pattern: 'physical-abuse' },
-            // 情緒虐待：藍色鋸齒 + 黑色直線 (UI Legend Style)
-            'emotional-abuse': { color: '#007BFF', width: 3, pattern: 'emotional-abuse' },
-            // 性虐待：藍色雙鋸齒線 (UI Legend: Double Zigzag)
-            'sexual-abuse': { color: '#007BFF', width: 3, pattern: 'sexual-abuse' },
+            // 暴力：藍色鋸齒線 + 末端箭頭指向受害者（McGoldrick 方向性）
+            'violence': { color: '#007BFF', width: 3, pattern: 'zigzag', decoration: 'arrow' },
+            // 虐待：藍色波浪線 + 末端箭頭指向受害者
+            'abuse': { color: '#007BFF', width: 3, pattern: 'wave', decoration: 'arrow' },
+            // 身體虐待：藍色波浪 + 黑色直線 + 末端箭頭指向受害者
+            'physical-abuse': { color: '#007BFF', width: 3, pattern: 'physical-abuse', decoration: 'arrow' },
+            // 情緒虐待：藍色鋸齒 + 黑色直線 + 末端箭頭指向受害者
+            'emotional-abuse': { color: '#007BFF', width: 3, pattern: 'emotional-abuse', decoration: 'arrow' },
+            // 性虐待：藍色雙鋸齒線 + 末端箭頭指向受害者
+            'sexual-abuse': { color: '#007BFF', width: 3, pattern: 'sexual-abuse', decoration: 'arrow' },
             // 忽視：藍色實線 + 箭頭 + 豎線 (UI Legend: Arrow + Bar)
             'neglect': { color: '#007BFF', width: 3, pattern: 'solid', decoration: 'arrow-bar' },
             // 操控：黑色實線 + 紅色 X (UI Legend)
@@ -247,7 +256,9 @@ class Relationship {
             toPersonId: this.toPersonId,
             type: this.type,
             notes: this.notes,
-            date: this.date
+            date: this.date,
+            linkType: this.linkType,
+            routeMode: this.routeMode
         };
     }
 

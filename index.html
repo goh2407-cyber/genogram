@@ -253,6 +253,9 @@
                     <div class="panel-content legend-content">
                         <div class="legend-category">
                             <h4>家庭關係</h4>
+                            <div class="legend-item"><span class="legend-line parent-child"></span><span>親生子女</span></div>
+                            <div class="legend-item"><span class="legend-line parent-child-adopted"></span><span>收養子女</span></div>
+                            <div class="legend-item"><span class="legend-line parent-child-foster"></span><span>寄養子女</span></div>
                             <div class="legend-item"><span class="legend-line married"></span><span>結婚</span></div>
                             <div class="legend-item"><span class="legend-line engaged"></span><span>訂婚</span></div>
                             <div class="legend-item"><span class="legend-line cohabiting"></span><span>同居</span></div>
@@ -407,8 +410,12 @@
                     <div class="relationship-type-group">
                         <h4>親屬/結構關係</h4>
                         <div class="btn-grid">
-                            <button class="rel-btn" data-type="parent-child"><span
-                                    class="legend-line parent-child"></span>親子關係</button>
+                            <button class="rel-btn" data-type="parent-child" data-link-type="biological"><span
+                                    class="legend-line parent-child"></span>親生子女</button>
+                            <button class="rel-btn" data-type="parent-child" data-link-type="adopted"><span
+                                    class="legend-line parent-child-adopted"></span>收養子女</button>
+                            <button class="rel-btn" data-type="parent-child" data-link-type="foster"><span
+                                    class="legend-line parent-child-foster"></span>寄養子女</button>
                             <button class="rel-btn" data-type="married"><span
                                     class="legend-line married"></span>結婚</button>
                             <button class="rel-btn" data-type="engaged"><span
@@ -491,6 +498,7 @@
                     </div>
                 </div>
                 <div class="modal-actions">
+                    <button class="btn-cancel" id="swapRelationshipDirection" style="display:none;">⇄ 對調方向</button>
                     <button class="btn-cancel" id="cancelRelationship">取消</button>
                 </div>
             </div>

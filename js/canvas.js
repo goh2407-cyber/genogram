@@ -279,21 +279,30 @@ class GenogramCanvas {
             this.drawHouseholds(households, persons, relationships, false, selectedHouseholdId);
         }
 
-        // 分類關係
-        const familyRels = [];
-        const otherRels = [];
-
-        relationships.forEach(rel => {
-            const category = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
-            if (category === 'family') {
-                familyRels.push(rel);
-            } else {
-                otherRels.push(rel);
-            }
-        });
-
-        // 2. 繪製親子關係（以 KinshipEngine 提供方向判斷，避免 Y 座標誤判）
-        const kinship = new KinshipEngine(persons, relationships);
+        // 分類關係 + 親屬引擎
+        // [Phase 0a] 優先用 App.render 一次性注入的快取（讀取後即清，避免外部直接呼叫時取到舊值）；
+        // 無注入（測試/外部直接呼叫）時 fallback 自行計算，確保不依賴 App 也能正確繪製。
+        const _inj = this._renderInputs;
+        this._renderInputs = null;
+        let familyRels, otherRels, kinship;
+        if (_inj && _inj.split && _inj.kinship) {
+            familyRels = _inj.split.familyRels;
+            otherRels = _inj.split.otherRels;
+            kinship = _inj.kinship;
+        } else {
+            familyRels = [];
+            otherRels = [];
+            relationships.forEach(rel => {
+                const category = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
+                if (category === 'family') {
+                    familyRels.push(rel);
+                } else {
+                    otherRels.push(rel);
+                }
+            });
+            // 以 KinshipEngine 提供方向判斷，避免 Y 座標誤判
+            kinship = new KinshipEngine(persons, relationships);
+        }
         this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId, kinship);
 
         // 3. 繪製非親子關係
@@ -348,11 +357,11 @@ class GenogramCanvas {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
         }
 
-        // 8. 繪製快速新增按鈕 (hover 時顯示；拖曳中隱藏，避免與對齊輔助線重疊)
-        if (hoveredPersonId && !this.isDragging) {
-            const hoveredPerson = this.personMap.get(hoveredPersonId);
-            if (hoveredPerson) {
-                this.drawQuickAddButtons(hoveredPerson);
+        // 8. 繪製快速新增按鈕（選取角色後才顯示，不再 hover 顯示；拖曳中隱藏避免與對齊輔助線重疊）
+        if (selectedId && !this.isDragging) {
+            const selPerson = this.personMap.get(selectedId);
+            if (selPerson) {
+                this.drawQuickAddButtons(selPerson);
             }
         }
 
@@ -364,6 +373,7 @@ class GenogramCanvas {
                 const toPerson = this.personMap.get(selectedRel.toPersonId);
                 if (fromPerson && toPerson) {
                     this.drawRelationshipEditButton(selectedRel, fromPerson, toPerson, relationships);
+                    this.drawRelationshipRouteButtons(selectedRel, fromPerson, toPerson, relationships);
                 }
             }
         }
@@ -593,6 +603,61 @@ class GenogramCanvas {
         same:      '#f4effb',  // 淡紫（同性別圓頂方底）
     };
 
+    /**
+     * [Phase 1] 繪製生育結果小符號（流產/人工流產/死產）。
+     * McGoldrick：流產=小型實心三角；人工流產=小 X；死產=縮小性別符號 + 死亡 X。
+     * 與正常人物共用姓名標籤位置（以 personSize 為基準），符號本身縮小。
+     */
+    _drawLossSymbol(person, isActive) {
+        const { x, y, name, lossType } = person;
+        const h = this.personSize * 0.42 / 2; // 縮小符號半徑
+        this.ctx.save();
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 2;
+
+        if (isActive) {
+            const S = GenogramCanvas.DRAW_PERSON_STYLES;
+            this.ctx.save();
+            this.ctx.strokeStyle = S.selected.ring;
+            this.ctx.lineWidth = S.selected.ringWidth;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, h + 6, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
+        if (lossType === 'miscarriage') {
+            // 流產：小型實心圓點（基本符號表 / genogramai 慣例）
+            this.ctx.fillStyle = '#333';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, h * 0.6, 0, Math.PI * 2);
+            this.ctx.fill();
+        } else if (lossType === 'abortion') {
+            // 人工流產：X
+            this.ctx.lineWidth = 2.5;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x - h, y - h);
+            this.ctx.lineTo(x + h, y + h);
+            this.ctx.moveTo(x + h, y - h);
+            this.ctx.lineTo(x - h, y + h);
+            this.ctx.stroke();
+        }
+
+        // 姓名標籤（與正常人物同基準位置）
+        if (name) {
+            const S = GenogramCanvas.DRAW_PERSON_STYLES;
+            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'top';
+            this.ctx.lineWidth = S.nameHalo.lineWidth;
+            this.ctx.strokeStyle = S.nameHalo.color;
+            this.ctx.strokeText(name, x, y + this.personSize / 2 + 8);
+            this.ctx.fillStyle = '#333';
+            this.ctx.fillText(name, x, y + this.personSize / 2 + 8);
+        }
+        this.ctx.restore();
+    }
+
     drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
         const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
         const size = this.personSize;
@@ -600,6 +665,14 @@ class GenogramCanvas {
         const S = GenogramCanvas.DRAW_PERSON_STYLES; // shorthand
 
         this.ctx.save();
+
+        // [Phase 1] 生育結果（流產/人工流產）：畫專屬小符號 + 標籤後結束，不走正常性別/醫療/死亡路徑
+        // 僅認 miscarriage/abortion；其餘值（含已移除的 stillbirth、舊資料）走正常人物渲染
+        if (person.lossType === 'miscarriage' || person.lossType === 'abortion') {
+            this._drawLossSymbol(person, isSelected || isConnecting || isHighlighted);
+            this.ctx.restore();
+            return;
+        }
 
         // [A3] State ring: draw outer halo before the shape so it sits beneath the shape stroke.
         // No shadowBlur — instead we stroke a slightly-expanded path in the state colour.
@@ -906,9 +979,14 @@ class GenogramCanvas {
         let finalX, finalY;
 
         if (config.isBridge) {
-            // 天橋模式：文字顯示在天橋水平段中央
+            // 天橋模式(ㄇ)：文字顯示在天橋水平段中央（橋的上方）
             finalX = (fromPerson.x + toPerson.x) / 2;
             finalY = config.bridgeY;
+            angle = 0; // 強制水平
+        } else if (config.isArch) {
+            // [Fix] ㄩ 下折：文字跟著線到下折橫桿（放橫桿下方，避免被列上符號/姓名擋住）
+            finalX = (fromPerson.x + toPerson.x) / 2;
+            finalY = config.archBarY;
             angle = 0; // 強制水平
         } else {
             // 一般模式
@@ -963,6 +1041,11 @@ class GenogramCanvas {
         // 如果是垂直線，增加偏移量以避免遮擋人物下方的備註
         if (Math.abs(dy) > Math.abs(dx) * 2) {
             textOffsetY = -25; // 增加偏移量，讓文字水平移動更多
+        }
+
+        // [Fix] ㄩ 下折：文字改放橫桿「下方」（正向 offset），不放線上方以免卡進姓名區
+        if (config.isArch) {
+            textOffsetY = totalHeight + 8;
         }
 
         // 畫半透明背景
@@ -1089,6 +1172,19 @@ class GenogramCanvas {
     }
 
     /**
+     * [Fix] 人物「符號 + 姓名(+ 最多 2 行備註)」文字區的底緣 Y。
+     * 用於 ㄩ 下折橫桿避開被夾成員的姓名文字（與 drawPerson 的 y+half+8 起繪、字高 fontSize 一致）。
+     */
+    _labelBottomY(p) {
+        let b = p.y + this.personSize / 2;
+        if (p && p.name) {
+            b += 8 + this.fontSize;                              // 姓名行
+            if (p.notes) b += 4 + 2 * (this.fontSize * 0.8 + 2); // 備註最多 2 行
+        }
+        return b;
+    }
+
+    /**
      * [New] 計算婚姻關係的天橋配置
      * @returns {Object} { level, bridgeY, isBridge }
      */
@@ -1097,44 +1193,219 @@ class GenogramCanvas {
         const cat = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
         if (cat !== 'marriage') return { level: 0, bridgeY: (p1.y + p2.y) / 2, isBridge: false };
 
-        // 2. 取得 p1 的所有婚姻並排序
-        const getRank = (pid) => {
+        // 2. 天橋層級 = 「同側、且比本配偶更靠近 hub 的其他配偶數」。
+        //    [Phase 2A.2] 同側才需跨過 → 架天橋；對側 / 單獨配偶 = 0 = 直線側接。
+        //    取代舊「純按婚期排序架橋」——舊法讓「對側配偶（前妻左、現任右）」也被架天橋，
+        //    天橋腳與親子下行共用本人正上方走廊而疊線（13/14/15/16 之根因）。
+        //    需其他配偶座標：用 this.personMap（render 注入），fallback this.lastPersons。
+        //    確定性：只用幾何 x 比較 + 計數，與陣列順序 / 日期皆無關。
+        const _pm = (this.personMap instanceof Map && this.personMap.size) ? this.personMap : null;
+        const _lookup = (id) => _pm ? _pm.get(id) : (this.lastPersons || []).find(p => p.id === id);
+        const getRank = (hub, spouse) => {
             const myRels = allRels.filter(r =>
-                (r.fromPersonId === pid || r.toPersonId === pid) &&
+                (r.fromPersonId === hub.id || r.toPersonId === hub.id) &&
                 (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'marriage'
             );
-            // Sort: Oldest First
-            myRels.sort((a, b) => {
-                const dA = a.date || '9999-99-99';
-                const dB = b.date || '9999-99-99';
-                return dA.localeCompare(dB) || a.id.localeCompare(b.id);
-            });
-            const idx = myRels.findIndex(r => r.id === rel.id);
-            const count = myRels.length;
-            // Oldest (idx=0) -> Level = count - 1 (High)
-            // Newest (idx=max) -> Level = 0
-            return Math.max(0, count - 1 - idx);
+            if (myRels.length <= 1) return 0;
+            const spouseLeft = spouse.x < hub.x; // 本配偶在 hub 哪一側
+            let count = 0;
+            for (const r of myRels) {
+                if (r.id === rel.id) continue;
+                const otherId = r.fromPersonId === hub.id ? r.toPersonId : r.fromPersonId;
+                const other = _lookup(otherId);
+                if (!other) continue;
+                const otherLeft = other.x < hub.x;
+                if (otherLeft !== spouseLeft) continue; // 對側配偶 → 不需跨過
+                // 同側：other 是否比本配偶更靠近 hub（夾在 hub 與本配偶之間）→ 需跨過它
+                if (spouseLeft ? (other.x > spouse.x) : (other.x < spouse.x)) count++;
+            }
+            return count;
         };
 
-        const level1 = getRank(p1.id);
-        const level2 = getRank(p2.id);
+        const level1 = getRank(p1, p2);
+        const level2 = getRank(p2, p1);
         const level = Math.max(level1, level2);
 
-        // 3. 計算 Bridge Y
-        // 基礎高度: 頭頂上方 20px (HEAD_Y in user example was center, BRIDGE was above)
-        // 我們從 Top Edge (y - size/2) 再往上
+        // 3. 計算各種 bar Y 基準
+        // 基礎高度: 頭頂上方 20px，每層天橋 +30px
         const p1Top = p1.y - this.personSize / 2;
         const p2Top = p2.y - this.personSize / 2;
         const baseY = Math.min(p1Top, p2Top) - 20;
-
         const step = 30; // 每層高度 30px
         const bridgeY = baseY - (level * step);
 
-        return { level, bridgeY, isBridge: level > 0 };
+        // 走廊障礙（自動越障 + 手動 under 都會用到）。橫桿須越過配偶與被夾者的
+        // 「姓名(+備註)文字」下緣，否則 ㄩ 下折只 +符號底緣太淺、會壓在姓名文字上。
+        let botMost = Math.max(this._labelBottomY(p1), this._labelBottomY(p2));
+        let hasObstacle = false;
+        if (Math.abs(p1.y - p2.y) <= 1) {
+            const obstacles = this._marriageCorridorObstacles(p1, p2);
+            if (obstacles.length > 0) {
+                hasObstacle = true;
+                for (const o of obstacles) botMost = Math.max(botMost, this._labelBottomY(o));
+            }
+        }
+        const underBarY = botMost + 14;
+
+        // [Phase 2A.2] 手動繞線覆寫優先（auto / over / straight / under）。
+        const routeMode = rel.routeMode || 'auto';
+        if (routeMode === 'straight') {
+            // 一：強制直線側接（即使會穿過中間人物 — 使用者明示選擇）
+            return { level: 0, bridgeY, isBridge: false, isArch: false, archBarY: null, routeMode };
+        }
+        if (routeMode === 'over') {
+            // ㄇ：強制上折（頂端連接天橋）。無多婚層級時抬一層；有則沿用層級高度。
+            const overY = baseY - step * Math.max(level, 1);
+            return { level: Math.max(level, 1), bridgeY: overY, isBridge: true, isArch: false, archBarY: null, routeMode };
+        }
+        if (routeMode === 'under') {
+            // ㄩ：強制下折（底部連接、越過被夾者）。
+            return { level, bridgeY, isBridge: false, isArch: true, archBarY: underBarY, routeMode };
+        }
+
+        // routeMode === 'auto'：系統自動判斷
+        if (level > 0) {
+            // 同側多婚 → 上折天橋
+            return { level, bridgeY, isBridge: true, isArch: false, archBarY: null, routeMode };
+        }
+        if (hasObstacle) {
+            // 同列夾人 → 下折越障（預設往下：避開被夾者上方親子線、子女自然垂下）
+            return { level, bridgeY, isBridge: false, isArch: true, archBarY: underBarY, routeMode };
+        }
+        // 同列淨空 / 跨列 → 直線 / 正交（由 getMarriageGeometry 決定）
+        return { level, bridgeY, isBridge: false, isArch: false, archBarY: null, routeMode };
+    }
+
+    /**
+     * [Phase 2A.0] 婚姻線「唯一幾何來源」(single source of truth)。
+     * 主線繪製、選中高亮、點擊命中(hit-test)、匯出全部呼叫此函式，確保
+     * export==screen 且「畫得到 = 點得到 = 高亮一致」。回傳純幾何（不碰 ctx）：
+     *   { points: [{x,y}...], decoration: {x,y} }
+     * 形狀：天橋 → 頂端上折ㄇ(up→across→down)；同列 → 直線(一)；
+     *       跨列 → 正交三折(水平出→中點垂直腿→水平入)。
+     * 注意：本函式刻意「純函數於幾何輸入」(只用座標 + config)，不查渲染狀態、
+     *       不依賴陣列順序，以保 golden 逐 pixel 確定性。
+     */
+    getMarriageGeometry(fromPerson, toPerson, config) {
+        // 天橋（多段婚姻層級）：頂端上折ㄇ
+        if (config && config.isBridge) {
+            return this._bridgeGeometry(fromPerson, toPerson, config.bridgeY);
+        }
+        // Level 0：左右側邊連接點（與 drawRelationship 既有邏輯一致）
+        const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
+        const toPt = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
+        const centerX = (fromPt.x + toPt.x) / 2;
+        const centerY = (fromPt.y + toPt.y) / 2;
+        if (config && config.isArch) {
+            // [Phase 2A.1] 走廊有人夾住 → ㄩ 從下方繞過，避免婚姻線「穿過」中間人物符號，
+            // 同時避開被夾者「從上方來的親子線」。連接點用「正下方中心」(cardinal bottom)：
+            // 線自底部中心垂直下行 → 橫越 → 上行，不貼節點角邊（使用者要求 cardinal 接線）。
+            // archBarY 由 getMarriageConfiguration 算出（在下方；與 drawFamilies 子女掛接點共用同一值）。
+            const barY = config.archBarY;
+            const fromB = fromPerson.getConnectionPoint('bottom');
+            const toB = toPerson.getConnectionPoint('bottom');
+            return {
+                points: [
+                    { x: fromB.x, y: fromB.y },
+                    { x: fromB.x, y: barY },
+                    { x: toB.x, y: barY },
+                    { x: toB.x, y: toB.y }
+                ],
+                decoration: { x: (fromB.x + toB.x) / 2, y: barY }
+            };
+        }
+        if (Math.abs(fromPt.y - toPt.y) <= 1) {
+            // 同列淨空：直線（一）→ 保護既有 golden，pixel 完全不變
+            return {
+                points: [{ x: fromPt.x, y: fromPt.y }, { x: toPt.x, y: toPt.y }],
+                decoration: { x: centerX, y: centerY }
+            };
+        }
+        // 跨列：正交三折（水平出 → 垂直段在 centerX → 水平入）。
+        // 裝飾落在 (centerX, centerY)，恰為垂直段中點。
+        return {
+            points: [
+                { x: fromPt.x, y: fromPt.y },
+                { x: centerX, y: fromPt.y },
+                { x: centerX, y: toPt.y },
+                { x: toPt.x, y: toPt.y }
+            ],
+            decoration: { x: centerX, y: centerY }
+        };
+    }
+
+    /**
+     * [Phase 2A.0] 頂端上折ㄇ 幾何（多段婚姻天橋 + 同列越障共用）。
+     * 垂直腿落在兩節點「頂端中心 X」，橫段在 bridgeY，裝飾落橫段中點。
+     */
+    _bridgeGeometry(fromPerson, toPerson, bridgeY) {
+        const fromPt = fromPerson.getConnectionPoint('top');
+        const toPt = toPerson.getConnectionPoint('top');
+        return {
+            points: [
+                { x: fromPt.x, y: fromPt.y },
+                { x: fromPt.x, y: bridgeY },
+                { x: toPt.x, y: bridgeY },
+                { x: toPt.x, y: toPt.y }
+            ],
+            decoration: { x: (fromPt.x + toPt.x) / 2, y: bridgeY }
+        };
+    }
+
+    /**
+     * [Phase 2A.1] 找出「同列婚姻水平走廊內、夾在配偶之間」的他人節點。
+     * 用於決定婚姻線是否需要 ㄇ 越過（避免穿過中間手足/他人符號）。
+     * 確定性：只用座標篩選，結果以 (x, id) 字典序排序，不依賴 personMap 迭代序。
+     * 障礙來源用 this.personMap（render 注入）；無則 fallback this.lastPersons。
+     */
+    _marriageCorridorObstacles(fromPerson, toPerson) {
+        const persons = (this.personMap instanceof Map && this.personMap.size)
+            ? Array.from(this.personMap.values())
+            : (this.lastPersons || []);
+        if (!persons.length) return [];
+        const rowY = (fromPerson.y + toPerson.y) / 2;
+        const loX = Math.min(fromPerson.x, toPerson.x);
+        const hiX = Math.max(fromPerson.x, toPerson.x);
+        const pad = 4; // 忽略貼著配偶邊緣的極近節點
+        const obstacles = persons.filter(p =>
+            p.id !== fromPerson.id && p.id !== toPerson.id &&
+            p.x > loX + pad && p.x < hiX - pad &&   // 嚴格夾在 X 之間
+            Math.abs(p.y - rowY) < 60               // 大致同列才算擋路（子女/父母在別列不算）
+        );
+        obstacles.sort((a, b) => (a.x - b.x) || a.id.localeCompare(b.id));
+        return obstacles;
+    }
+
+    /**
+     * [Phase 2A.0] 依 getMarriageGeometry 的點集繪製婚姻主線 + 裝飾。
+     * 取代舊 drawBridgeLine / drawMarriageLine 的重複繪圖邏輯（兩者已停用）。
+     * 呼叫前須先設好 ctx.strokeStyle / lineWidth。
+     */
+    drawMarriagePath(points, decoration, style) {
+        // 虛線樣式（訂婚=長虛線、同居=短點線；其餘依 pattern）
+        this.ctx.setLineDash(this.getLineDash(style.pattern));
+        if (style.pattern === 'dashed') this.ctx.setLineDash(DASH_PATTERNS.engaged);
+        else if (style.pattern === 'dotted') this.ctx.setLineDash(DASH_PATTERNS.cohabit);
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) this.ctx.lineTo(points[i].x, points[i].y);
+        this.ctx.stroke();
+
+        this.ctx.setLineDash(DASH_PATTERNS.solid); // 重置以繪製裝飾
+
+        const dx = decoration.x, dy = decoration.y;
+        if (style.decoration === 'house') this.drawHouse(dx, dy);
+        else if (style.decoration === 'single-slash') this.drawSlash(dx, dy);
+        else if (style.decoration === 'double-slash') this.drawDoubleSlash(dx, dy);
+        else if (style.decoration === 'divorce-slash') this.drawDivorceSlash(dx, dy);
+        else if (style.decoration === 'x') this.drawX(dx, dy);
+        else if (style.decoration === 'x-double') this.drawX(dx, dy);
     }
 
     /**
      * [New] 繪製天橋式婚姻線
+     * @deprecated Phase 2A.0：幾何已收斂至 getMarriageGeometry + drawMarriagePath，此函式不再被呼叫。
      */
     drawBridgeLine(from, to, style, bridgeY) {
         // from/to 是 Person 物件
@@ -1219,19 +1490,15 @@ class GenogramCanvas {
             this.ctx.save();
             this.ctx.strokeStyle = '#4a90d9';
 
-            if (config.isBridge) {
-                // 天橋模式高亮
+            if (category === 'marriage') {
+                // [Phase 2A.0] 婚姻高亮：與主線共用 getMarriageGeometry（含天橋/同列/跨列正交），
+                // 修正舊 Level-0 高亮永遠畫直線、與跨列正交主線不符的 bug。
                 this.ctx.lineWidth = style.width + 8;
                 this.ctx.globalAlpha = 0.6;
-                const fromPt = fromPerson.getConnectionPoint('top');
-                const toPt = toPerson.getConnectionPoint('top');
-                const bridgeY = config.bridgeY;
-
+                const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
                 this.ctx.beginPath();
-                this.ctx.moveTo(fromPt.x, fromPt.y);
-                this.ctx.lineTo(fromPt.x, bridgeY);
-                this.ctx.lineTo(toPt.x, bridgeY);
-                this.ctx.lineTo(toPt.x, toPt.y);
+                this.ctx.moveTo(geom.points[0].x, geom.points[0].y);
+                for (let i = 1; i < geom.points.length; i++) this.ctx.lineTo(geom.points[i].x, geom.points[i].y);
                 this.ctx.stroke();
 
             } else if (category === 'family') {
@@ -1245,17 +1512,6 @@ class GenogramCanvas {
                 this.ctx.moveTo(fromPoint.x, fromPoint.y);
                 this.ctx.lineTo(fromPoint.x, midY);
                 this.ctx.lineTo(toPoint.x, midY);
-                this.ctx.lineTo(toPoint.x, toPoint.y);
-                this.ctx.stroke();
-            } else if (category === 'marriage') {
-                // 一般婚姻(Level 0)高亮
-                this.ctx.lineWidth = style.width + 8;
-                this.ctx.globalAlpha = 0.6;
-                const fromPoint = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
-                const toPoint = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
-
-                this.ctx.beginPath();
-                this.ctx.moveTo(fromPoint.x, fromPoint.y);
                 this.ctx.lineTo(toPoint.x, toPoint.y);
                 this.ctx.stroke();
             } else {
@@ -1291,9 +1547,10 @@ class GenogramCanvas {
         this.ctx.strokeStyle = style.color;
         this.ctx.lineWidth = style.width;
 
-        if (config.isBridge) {
-            // [New] 繪製天橋
-            this.drawBridgeLine(fromPerson, toPerson, style, config.bridgeY);
+        if (category === 'marriage') {
+            // [Phase 2A.0] 婚姻主線：天橋 / 同列直線 / 跨列正交三折，全部走唯一幾何來源
+            const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
+            this.drawMarriagePath(geom.points, geom.decoration, style);
 
         } else if (category === 'family') {
             // 親子關係：from=parent → to=child 方向由資料決定（不看 Y 座標）。
@@ -1301,18 +1558,6 @@ class GenogramCanvas {
             const fromPoint = fromPerson.getConnectionPoint('bottom');
             const toPoint = toPerson.getConnectionPoint('top');
             this.drawStandardLine(fromPoint, toPoint, style);
-
-        } else if (category === 'marriage') {
-            // 一般婚姻 (Level 0)
-            let fromPoint, toPoint;
-            if (fromPerson.x < toPerson.x) {
-                fromPoint = fromPerson.getConnectionPoint('right');
-                toPoint = toPerson.getConnectionPoint('left');
-            } else {
-                fromPoint = fromPerson.getConnectionPoint('left');
-                toPoint = toPerson.getConnectionPoint('right');
-            }
-            this.drawMarriageLine(fromPoint, toPoint, style);
 
         } else {
             // 情感
@@ -1367,6 +1612,7 @@ class GenogramCanvas {
 
     /**
      * 繪製婚姻關係線
+     * @deprecated Phase 2A.0：幾何已收斂至 getMarriageGeometry + drawMarriagePath，此函式不再被呼叫。
      */
     drawMarriageLine(from, to, style) {
         // 設定虛線樣式
@@ -1379,13 +1625,23 @@ class GenogramCanvas {
             this.ctx.setLineDash(DASH_PATTERNS.cohabit); // 同居：短點線 · · · · (點短間隔長)
         }
 
-        // 繪製主線（左右直線）
+        // 繪製主線
         const centerX = (from.x + to.x) / 2;
         const centerY = (from.y + to.y) / 2;
 
         this.ctx.beginPath();
-        this.ctx.moveTo(from.x, from.y);
-        this.ctx.lineTo(to.x, to.y);
+        if (Math.abs(from.y - to.y) <= 1) {
+            // 同列（常見）：維持原本直線 → 既有圖 pixel 完全不變
+            this.ctx.moveTo(from.x, from.y);
+            this.ctx.lineTo(to.x, to.y);
+        } else {
+            // [Phase 2A.1] 非並排配偶：正交繞線（水平出 → 垂直 → 水平入），取代醜斜線。
+            // 裝飾仍落在 (centerX, centerY) = 垂直段中點，故下方裝飾碼無需改動。
+            this.ctx.moveTo(from.x, from.y);
+            this.ctx.lineTo(centerX, from.y);
+            this.ctx.lineTo(centerX, to.y);
+            this.ctx.lineTo(to.x, to.y);
+        }
         this.ctx.stroke();
 
         this.ctx.setLineDash(DASH_PATTERNS.solid); // 重置虛線以繪製裝飾
@@ -2752,6 +3008,9 @@ class GenogramCanvas {
             family: {
                 title: '家庭關係',
                 items: [
+                    { label: '親生子女', style: 'solid', color: '#333333' },
+                    { label: '收養子女', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
+                    { label: '寄養子女', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
                     { label: '結婚', style: 'solid', color: '#333333' },
                     { label: '訂婚', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
                     { label: '同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
@@ -2796,11 +3055,11 @@ class GenogramCanvas {
             abuse: {
                 title: '虐待/暴力',
                 items: [
-                    { label: '暴力', style: 'zigzag', color: '#007BFF' },
-                    { label: '虐待', style: 'wave', color: '#007BFF' },
-                    { label: '身體虐待', style: 'physical-abuse', color: '#007BFF' },
-                    { label: '情緒虐待', style: 'emotional-abuse', color: '#007BFF' },
-                    { label: '性虐待', style: 'sexual-abuse', color: '#007BFF' },
+                    { label: '暴力', style: 'zigzag', color: '#007BFF', decoration: 'arrow' },
+                    { label: '虐待', style: 'wave', color: '#007BFF', decoration: 'arrow' },
+                    { label: '身體虐待', style: 'physical-abuse', color: '#007BFF', decoration: 'arrow' },
+                    { label: '情緒虐待', style: 'emotional-abuse', color: '#007BFF', decoration: 'arrow' },
+                    { label: '性虐待', style: 'sexual-abuse', color: '#007BFF', decoration: 'arrow' },
                     { label: '忽視', style: 'solid', color: '#007BFF', decoration: 'arrow-bar' },
                     { label: '操控', style: 'solid', color: '#000000', decoration: 'x' },
                     { label: '控制', style: 'solid', color: '#E53935', decoration: 'box-cross-arrow' }
@@ -3093,6 +3352,8 @@ class GenogramCanvas {
     drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
         // 若未提供 kinship（例如外部直接呼叫），就地建立以保持函式可獨立使用
         if (!kinship) kinship = new KinshipEngine(persons, familyRels);
+        // [Phase 1] relId -> relationship，供推導每個子女的 linkType（親生/收養/寄養）以決定下行線型
+        const relById = new Map(familyRels.map(r => [r.id, r]));
 
         // [精緻化] 家庭結構線一律圓角端點/轉角；匯出共用此函式，螢幕與存檔一致
         // save/restore 包住整個函式，避免 round cap/join 洩漏到後續的人物符號繪製
@@ -3239,6 +3500,15 @@ class GenogramCanvas {
                         sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
                         sourceX = sourceAnchorX;
                         sourceY = config.bridgeY;
+                    } else if (config.isArch) {
+                        // [Phase 2A.1] ㄩ 下折越障：婚姻線在 archBarY（列下方），子女掛在下折橫桿上，
+                        // 與 getMarriageGeometry 共用 config.archBarY → 子女線連到實際婚姻線、不浮空。
+                        // 跨距用「正下方中心」連接點 X（= 父母 x，與 arch 垂直腿同 X）。
+                        const minMarriageX = Math.min(p1.x, p2.x);
+                        const maxMarriageX = Math.max(p1.x, p2.x);
+                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                        sourceX = sourceAnchorX;
+                        sourceY = config.archBarY;
                     } else {
                         // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
                         const leftParent = p1.x <= p2.x ? p1 : p2;
@@ -3393,6 +3663,23 @@ class GenogramCanvas {
                 nonTwins.length === 0 &&
                 Object.keys(twinGroups).length === 1;
 
+            // [Phase 1 修正] 單一子女時，主幹即「該子女的下行線」→ 整條套用其 linkType 線型（收養虛線/寄養點線）；
+            // 多子女時主幹為共用幹線，維持實線（各子女各自的 drop 自帶 dash＝McGoldrick 正解）。
+            let _trunkDash = DASH_PATTERNS.solid;
+            if (childObjs.length === 1) {
+                const _rids = childToRelIds[childObjs[0].id] || [];
+                let _lk = 'biological';
+                for (const _rid of _rids) {
+                    const _r = relById.get(_rid);
+                    if (!_r) continue;
+                    if (_r.linkType === 'foster') { _lk = 'foster'; break; }
+                    if (_r.linkType === 'adopted') _lk = 'adopted';
+                }
+                if (_lk === 'adopted') _trunkDash = DASH_PATTERNS.engaged;
+                else if (_lk === 'foster') _trunkDash = DASH_PATTERNS.cohabit;
+            }
+            this.ctx.setLineDash(_trunkDash);
+
             // [Fix] 繪製從原始連接點到調整後 sourceY 的垂直線（如果全是多胞胎則跳過）
             if (!allSameTwinGroup && originalSourceY < sourceY) {
                 this.ctx.beginPath();
@@ -3412,6 +3699,7 @@ class GenogramCanvas {
                 }
                 this.ctx.stroke();
             }
+            this.ctx.setLineDash(DASH_PATTERNS.solid); // 重置：後續橫槓/其他維持實線
 
             // 計算橫槓 X 範圍
             // 非雙胞胎：使用各自的 X 座標
@@ -3505,10 +3793,26 @@ class GenogramCanvas {
                     return;
                 }
 
+                // [Phase 1] 子女下行線型：收養=虛線、寄養=點線、親生=實線（McGoldrick）。
+                // 任一條 parent→child 邊為非親生即採之（如繼親收養）；foster 優先於 adopted。
+                // 僅套用在此「子女下行段」，不影響上方共用的主幹/手足橫桿；畫完即重置避免洩漏。
+                let _link = 'biological';
+                const _rids = childToRelIds[child.id] || [];
+                for (const _rid of _rids) {
+                    const _r = relById.get(_rid);
+                    if (!_r) continue;
+                    if (_r.linkType === 'foster') { _link = 'foster'; break; }
+                    if (_r.linkType === 'adopted') _link = 'adopted';
+                }
+                if (_link === 'adopted') this.ctx.setLineDash(DASH_PATTERNS.engaged);
+                else if (_link === 'foster') this.ctx.setLineDash(DASH_PATTERNS.cohabit);
+
                 this.ctx.beginPath();
                 this.ctx.moveTo(child.x, barY);
                 this.ctx.lineTo(child.x, childEndY);
                 this.ctx.stroke();
+
+                if (_link !== 'biological') this.ctx.setLineDash(DASH_PATTERNS.solid);
             });
         });
 
@@ -3547,6 +3851,20 @@ class GenogramCanvas {
             this.ctx.lineTo(twin.x, endY);
             this.ctx.stroke();
         });
+
+        // [Phase 1] 同卵雙胞胎：在 V 形中段加一條水平連接橫桿（McGoldrick: monozygotic）
+        // 異卵（di / null）不畫；橫桿落在兩條斜線 50% 高度處、連接最外側兩條
+        if (twins.length >= 2 && twins.every(t => t && t.zygosity === 'mono')) {
+            const left = sortedTwins[0];
+            const right = sortedTwins[sortedTwins.length - 1];
+            const leftEndY = parentBarY >= (left.y + this.personSize / 2) ? (left.y + this.personSize / 2) : (left.y - this.personSize / 2);
+            const rightEndY = parentBarY >= (right.y + this.personSize / 2) ? (right.y + this.personSize / 2) : (right.y - this.personSize / 2);
+            const frac = 0.5;
+            this.ctx.beginPath();
+            this.ctx.moveTo(centerX + (left.x - centerX) * frac, parentBarY + (leftEndY - parentBarY) * frac);
+            this.ctx.lineTo(centerX + (right.x - centerX) * frac, parentBarY + (rightEndY - parentBarY) * frac);
+            this.ctx.stroke();
+        }
     }
 
     /**
@@ -4308,36 +4626,13 @@ class GenogramCanvas {
                 points.push({ x: selectedChild.x, y: childTop });
             }
         } else if (category === 'marriage') {
-            // 婚姻關係：配合 drawMarriageLine 使用左右側邊連接
-            const fromPt = fromPerson.x < toPerson.x ? fromPerson.getConnectionPoint('right') : fromPerson.getConnectionPoint('left');
-            const toPt = fromPerson.x < toPerson.x ? toPerson.getConnectionPoint('left') : toPerson.getConnectionPoint('right');
-
-            // [Fix] 支援天橋模式的點擊檢測
+            // [Phase 2A.0] 婚姻 hit-test：與主線/高亮共用 getMarriageGeometry。
+            // 修正舊版兩處與主線不符、點不準的 bug：
+            //   (1) 天橋用「側邊」連接點、主線用「頂端」→ 垂直腿差半個節點寬；
+            //   (2) Level-0 跨列婚姻主線是正交三折，hit-test 卻當直線。
             const config = this.getMarriageConfiguration(fromPerson, toPerson, relationship, allRelationships);
-
-            if (config.isBridge) {
-                // 回傳天橋路徑點 (4點)
-                points.push(fromPt);
-                points.push({ x: fromPt.x, y: config.bridgeY });
-                points.push({ x: toPt.x, y: config.bridgeY });
-                points.push(toPt);
-            } else {
-                // [Fix] 一般模式也要支援位移 (Offset)
-                // 這裡之前漏了 offset 邏輯，如果 drawRelationship 有位移，這裡也要位移
-                // 但目前 drawRelationship 的 marriage offset 邏輯較簡單，這裡暫時忽略微小位移，
-                // 或是直接加上去? drawRelationship 裡是有 offset 計算的。
-                // 為了保持一致性，如果是有位移的 marriage (雖然 marriage 通常只有 bridge 或 straight)，
-                // 這裡保持簡單直線即可，因為 drawRelationship 的 offset for marriage 也是直接改 fromPt/toPt
-
-                // 若需精確點擊位移後的線，需複製 drawRelationship 的 offset 邏輯
-                // 但 getRelationshipPath 參數 allRelationships 已經有了
-                let offset = 0;
-                // ... (省略複雜 offset 計算，因為目前 marriage 主要是 bridge 或 center)
-                // 如果是 Bridge=false，通常就是 Level 0，接近直線
-
-                points.push(fromPt);
-                points.push(toPt);
-            }
+            const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
+            for (const pt of geom.points) points.push({ x: pt.x, y: pt.y });
         } else {
             // 情感關係：直線路徑
             const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);
@@ -4418,40 +4713,62 @@ class GenogramCanvas {
      * @param {Person} toPerson - 終點人物
      * @param {Array} allRelationships - 所有關係（用於計算路徑）
      */
+    /**
+     * [Fix C] 關係編輯鉛筆的錨點。
+     * family（家系樹 L 形）：放「子女下行段（路徑最後一段）」中點——一定落在可見線上、
+     * 且明確對應該子女；避免弧長中點落在主幹/橫桿而讓鉛筆浮在線外（兩親家庭主幹 X 用夫妻中點，
+     * 與單親 x 不一致時尤其明顯）。其餘關係：維持弧長中點。
+     * @returns {{point:{x:number,y:number}, tangent:{x:number,y:number}}}
+     */
+    _editButtonAnchor(path, category) {
+        if (category === 'family' && path.length >= 2) {
+            const a = path[path.length - 2];
+            const b = path[path.length - 1];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            return { point: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, tangent: { x: dx / len, y: dy / len } };
+        }
+        const totalLen = this.getPathLength(path);
+        const info = this.getPointInfoAtDistance(path, totalLen / 2);
+        return { point: info.point, tangent: info.tangent };
+    }
+
+    /**
+     * [Fix] 編輯鈕群（鉛筆/⇄/走法）的「錨點 + 最終法向」，draw 與 hit-test 共用以保證一致。
+     * 預設偏螢幕上方（ny<0）；婚姻線 ㄩ 下折時（橫桿落在節點連接點「下方」）改朝下方清空區。
+     * 位置固定可預測（不依節點跳動）；疊到角色時靠「點擊判定優先於節點」(z-index) 保證可點。
+     * @returns {{point:{x:number,y:number}, nx:number, ny:number, baseOffset:number}}
+     */
+    _editButtonGeom(path, category) {
+        const info = this._editButtonAnchor(path, category);
+        let nx = -info.tangent.y;
+        let ny = info.tangent.x;
+        if (ny > 0) { nx = -nx; ny = -ny; }
+        else if (Math.abs(ny) < 0.001) { if (nx < 0) { nx = -nx; ny = -ny; } }
+        // 婚姻 ㄩ 下折：錨點(橫桿)在節點連接點下方 → 鈕改放下方（橫桿下緣的空白區）
+        if (category === 'marriage' && path.length >= 2 && info.point.y > path[0].y + 2) {
+            nx = -nx; ny = -ny;
+        }
+        return { point: info.point, nx, ny, baseOffset: 24 };
+    }
+
     drawRelationshipEditButton(relationship, fromPerson, toPerson, allRelationships = []) {
         const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
         if (path.length < 2) return null;
 
-        // 計算路徑中點
-        const totalLen = this.getPathLength(path);
-        const info = this.getPointInfoAtDistance(path, totalLen / 2);
+        // [Fix] 錨點 + 法向：draw/hit-test/swap 共用 _editButtonGeom（婚姻 ㄩ 下折改朝下方清空區）
+        const geom = this._editButtonGeom(path, relationship.getCategory());
+        const info = { point: geom.point };
+        const nx = geom.nx, ny = geom.ny;
 
         const buttonRadius = 14;
-        const offsetDist = 24; // 半徑 14 + 間隙 10
-
-        // 計算法向量 (垂直於切線)
-        let nx = -info.tangent.y;
-        let ny = info.tangent.x;
-
-        // 調整方向：偏好螢幕上方 (ny < 0)
-        // 如果線條接近水平，ny 會很大（負或正）。我們強迫 ny 為負。
-        // 如果線條接近垂直，ny 接近 0。這時按鈕可以放在右側。
-        if (ny > 0) {
-            nx = -nx;
-            ny = -ny;
-        } else if (Math.abs(ny) < 0.001) {
-            // 垂直線，確保往右移
-            if (nx < 0) {
-                nx = -nx;
-                ny = -ny;
-            }
-        }
+        const offsetDist = geom.baseOffset; // 預設 24；被其他角色擋住時已往外推
 
         const x = info.point.x + nx * offsetDist;
         const y = info.point.y + ny * offsetDist;
 
-        // 儲存按鈕位置供點擊偵測使用
-        this.lastEditButtonPosition = { x, y, radius: buttonRadius };
+        // [Fix B10] 移除死碼：lastEditButtonPosition 全專案只被寫、從未被讀
+        // （isPointOnEditButton 是用同一套 getRelationshipPath 自行重算，不依賴此快取）
 
         // 繪製按鈕背景（白色圓形 + 陰影）
         this.ctx.save();
@@ -4494,7 +4811,107 @@ class GenogramCanvas {
 
         this.ctx.restore();
 
+        // [Fix D] 鉛筆外側再加一顆「對調方向 ⇄」鈕（方向性關係才顯示；婚姻非方向性不顯示）
+        if (relationship.getCategory() !== 'marriage') {
+            const sx = info.point.x + nx * (geom.baseOffset + 30);
+            const sy = info.point.y + ny * (geom.baseOffset + 30);
+            this.ctx.save();
+            this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            this.ctx.shadowBlur = 4; this.ctx.shadowOffsetX = 1; this.ctx.shadowOffsetY = 1;
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.beginPath();
+            this.ctx.arc(sx, sy, buttonRadius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#4a90d9'; this.ctx.lineWidth = 2; this.ctx.stroke();
+            this.ctx.shadowColor = 'transparent'; this.ctx.shadowBlur = 0;
+            // ⇄ 向量字形：上橫線右箭頭、下橫線左箭頭
+            this.ctx.lineWidth = 1.6; this.ctx.lineJoin = 'round'; this.ctx.lineCap = 'round';
+            this.ctx.beginPath();
+            this.ctx.moveTo(sx - 5, sy - 3); this.ctx.lineTo(sx + 5, sy - 3);
+            this.ctx.moveTo(sx + 2, sy - 6); this.ctx.lineTo(sx + 5, sy - 3); this.ctx.lineTo(sx + 2, sy);
+            this.ctx.moveTo(sx + 5, sy + 3); this.ctx.lineTo(sx - 5, sy + 3);
+            this.ctx.moveTo(sx - 2, sy + 6); this.ctx.lineTo(sx - 5, sy + 3); this.ctx.lineTo(sx - 2, sy);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
         return { x, y, radius: buttonRadius };
+    }
+
+    /**
+     * [Phase 2A.2] 婚姻線「走法」按鈕（自動/ㄇ/一/ㄩ）的圓心座標。
+     * 沿橫桿方向排成一列，落在鉛筆外側（offset 56）的清空區；draw 與 hit-test 共用。
+     */
+    _routeButtonCenters(path) {
+        const geom = this._editButtonGeom(path, 'marriage');
+        // 垂直偏移到鉛筆外側清空區（baseOffset 已含避障推離）；水平固定螢幕左→右（自 ㄇ 一 ㄩ）。
+        const baseX = geom.point.x + geom.nx * (geom.baseOffset + 32);
+        const baseY = geom.point.y + geom.ny * (geom.baseOffset + 32);
+        const spacing = 30;
+        const modes = ['auto', 'over', 'straight', 'under'];
+        return modes.map((mode, i) => {
+            const k = i - 1.5; // -1.5,-0.5,0.5,1.5 → 置中
+            return { mode, x: baseX + k * spacing, y: baseY };
+        });
+    }
+
+    /**
+     * [Phase 2A.2] 繪製婚姻線走法按鈕（僅 marriage，選取時顯示在鉛筆旁）。
+     */
+    drawRelationshipRouteButtons(relationship, fromPerson, toPerson, allRelationships = []) {
+        if (relationship.getCategory() !== 'marriage') return;
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
+        if (path.length < 2) return;
+        const centers = this._routeButtonCenters(path);
+        const labels = { auto: '自', over: 'ㄇ', straight: '一', under: 'ㄩ' };
+        const cur = relationship.routeMode || 'auto';
+        const r = 13;
+        for (const c of centers) {
+            const active = c.mode === cur;
+            this.ctx.save();
+            this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            this.ctx.shadowBlur = 4; this.ctx.shadowOffsetX = 1; this.ctx.shadowOffsetY = 1;
+            this.ctx.fillStyle = active ? '#ed1261' : '#ffffff';
+            this.ctx.beginPath();
+            this.ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = active ? '#ed1261' : '#4a90d9';
+            this.ctx.lineWidth = 2; this.ctx.stroke();
+            this.ctx.shadowColor = 'transparent'; this.ctx.shadowBlur = 0;
+            this.ctx.fillStyle = active ? '#ffffff' : '#4a90d9';
+            this.ctx.font = '13px "Microsoft JhengHei", sans-serif';
+            this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(labels[c.mode], c.x, c.y + 0.5);
+            this.ctx.restore();
+        }
+    }
+
+    /**
+     * [Phase 2A.2] 點是否落在某個走法按鈕上；回傳該 mode，否則 null。
+     */
+    getRouteButtonModeAt(px, py, relationship, fromPerson, toPerson, allRelationships = []) {
+        if (relationship.getCategory() !== 'marriage') return null;
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
+        if (path.length < 2) return null;
+        const centers = this._routeButtonCenters(path);
+        for (const c of centers) {
+            if (Math.hypot(px - c.x, py - c.y) <= 13 + 4) return c.mode;
+        }
+        return null;
+    }
+
+    /**
+     * [Fix D] 點是否在「對調方向」鈕上（與 drawRelationshipEditButton 同錨點 + 同法線、offset 54）。
+     * 婚姻（非方向性）不顯示此鈕，故一律回 false。
+     */
+    isPointOnSwapButton(px, py, relationship, fromPerson, toPerson, allRelationships = []) {
+        if (relationship.getCategory() === 'marriage') return false;
+        const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
+        if (path.length < 2) return false;
+        const geom = this._editButtonGeom(path, relationship.getCategory());
+        const off = geom.baseOffset + 30;
+        const bx = geom.point.x + geom.nx * off, by = geom.point.y + geom.ny * off;
+        return Math.hypot(px - bx, py - by) <= 14 + 5;
     }
 
     /**
@@ -4511,31 +4928,14 @@ class GenogramCanvas {
         const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
         if (path.length < 2) return false;
 
-        // 計算路徑中點
-        const totalLen = this.getPathLength(path);
-        const info = this.getPointInfoAtDistance(path, totalLen / 2);
+        // [Fix] 與 drawRelationshipEditButton 共用 _editButtonGeom（錨點 + 法向一致）
+        const geom = this._editButtonGeom(path, relationship.getCategory());
 
         const buttonRadius = 14;
-        const offsetDist = 24;
+        const offsetDist = geom.baseOffset;
 
-        // 計算法向量 (垂直於切線)
-        let nx = -info.tangent.y;
-        let ny = info.tangent.x;
-
-        // 調整方向：偏好螢幕上方 (ny < 0)
-        if (ny > 0) {
-            nx = -nx;
-            ny = -ny;
-        } else if (Math.abs(ny) < 0.001) {
-            // 垂直線，確保往右移
-            if (nx < 0) {
-                nx = -nx;
-                ny = -ny;
-            }
-        }
-
-        const buttonX = info.point.x + nx * offsetDist;
-        const buttonY = info.point.y + ny * offsetDist;
+        const buttonX = geom.point.x + geom.nx * offsetDist;
+        const buttonY = geom.point.y + geom.ny * offsetDist;
 
         const dx = px - buttonX;
         const dy = py - buttonY;
