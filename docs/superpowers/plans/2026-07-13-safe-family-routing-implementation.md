@@ -30,7 +30,7 @@
 - Consumes: `planFamily({ parents, children, source, sourceRange, obstacles, personSize, margin })` with world-coordinate plain objects.
 - Produces: `{ mode, safe, sourcePath, barPath, childPaths, relationshipPaths, collisions, suggestedDx }` and static `pathIntersectsObstacles(points, obstacles, allowedOwnerIds)`.
 
-- [ ] **Step 1: Write the failing deterministic planner tests**
+- [x] **Step 1: Write the failing deterministic planner tests**
 
 ```js
 const assert = require('assert');
@@ -72,13 +72,13 @@ assert.equal(sameRow.mode, 'same-row');
 assert.ok(sameRow.relationshipPaths['dad->kid'].every((p, i, a) => i === 0 || p.x === a[i - 1].x || p.y === a[i - 1].y));
 ```
 
-- [ ] **Step 2: Run the planner test and verify RED**
+- [x] **Step 2: Run the planner test and verify RED**
 
 Run: `node refactor/verify_family_route_planner.js`
 
 Expected: FAIL with `Cannot find module '../js/domain/family-route-planner.js'`.
 
-- [ ] **Step 3: Implement the finite candidate planner**
+- [x] **Step 3: Implement the finite candidate planner**
 
 ```js
 class FamilyRoutePlanner {
@@ -100,13 +100,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = FamilyRout
 
 Implement `planNormal` with a constant candidate set: preferred source X, children center, source X ± 30/60 clamped to `sourceRange`, then left/right family lanes. Score candidates by collisions, vertical reversal, bends, length, then X. `planPairwise` tries the direct orthogonal middle lane followed by deterministic left/right lanes. Remove duplicate consecutive points and reject all non-finite output.
 
-- [ ] **Step 4: Run planner tests and verify GREEN**
+- [x] **Step 4: Run planner tests and verify GREEN**
 
 Run: `node refactor/verify_family_route_planner.js`
 
 Expected: all planner assertions print `PASS`, including normal, blocked, same-row, reversed, labels, twins, zero-length, and three-run determinism fixtures.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add js/domain/family-route-planner.js refactor/verify_family_route_planner.js
