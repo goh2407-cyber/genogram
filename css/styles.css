@@ -401,6 +401,8 @@ body {
 .zoom-btn {
     width: 30px;
     height: 30px;
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -412,6 +414,17 @@ body {
     font-weight: 600;
     color: var(--text-secondary);
     transition: all var(--transition-fast);
+}
+
+.zoom-btn::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+}
+
+#zoomOut::before {
+    left: -4px;
+    right: -2px;
 }
 
 .zoom-btn:hover {

@@ -180,6 +180,26 @@ async function checkIconOnlyAccessibility(page) {
     }
     await checkIconOnlyAccessibility(page);
 
+    const zoomTargetSizes = await page.locator('.zoom-btn').evaluateAll(buttons => buttons.map(button => {
+        const rect = button.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const ownsPoint = (x, y) => document.elementFromPoint(x, y) === button;
+        let hitLeft = rect.left;
+        let hitRight = rect.right;
+        let hitTop = rect.top;
+        let hitBottom = rect.bottom;
+        while (hitLeft > rect.left - 12 && ownsPoint(hitLeft - 0.5, centerY)) hitLeft -= 1;
+        while (hitRight < rect.right + 12 && ownsPoint(hitRight + 0.5, centerY)) hitRight += 1;
+        while (hitTop > rect.top - 12 && ownsPoint(centerX, hitTop - 0.5)) hitTop -= 1;
+        while (hitBottom < rect.bottom + 12 && ownsPoint(centerX, hitBottom + 0.5)) hitBottom += 1;
+        return { id: button.id, width: rect.width, height: rect.height,
+            hitWidth: hitRight - hitLeft, hitHeight: hitBottom - hitTop };
+    }));
+    check('zoom controls provide at least 36px pointer targets',
+        zoomTargetSizes.every(size => size.hitWidth >= 36 && size.hitHeight >= 36),
+        JSON.stringify(zoomTargetSizes));
+
     check('zero console/page errors', errors.length === 0, errors.join('; '));
     await browser.close();
 

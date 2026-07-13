@@ -409,9 +409,10 @@ class GenogramCanvas {
         this.ctx.save();
         try {
             const suppliedGhost = preview.ghostPerson || {};
-            const ghost = { gender: 'unknown', name: '', ...suppliedGhost, x: preview.x, y: preview.y };
+            const ghostDefaults = { gender: 'unknown', name: '', age: '' };
+            const ghost = { ...ghostDefaults, ...suppliedGhost, x: preview.x, y: preview.y };
             const ghosts = (preview.ghostPeople && preview.ghostPeople.length > 0)
-                ? preview.ghostPeople
+                ? preview.ghostPeople.map(person => ({ ...ghostDefaults, ...person }))
                 : [ghost];
             const ghostMap = new Map(ghosts.map(person => [person.id, person]));
 

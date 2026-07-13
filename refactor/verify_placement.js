@@ -435,6 +435,11 @@ function assert(name, condition, detail = '') {
             const session = app.beginPlacement({
                 kind: 'partner', basePersonId: base.id, personId: 'overlay-ghost'
             });
+            const renderedPlacementText = [];
+            const originalFillText = ctx.fillText;
+            const originalStrokeText = ctx.strokeText;
+            ctx.fillText = function(text, ...args) { renderedPlacementText.push(String(text)); return originalFillText.call(this, text, ...args); };
+            ctx.strokeText = function(text, ...args) { renderedPlacementText.push(String(text)); return originalStrokeText.call(this, text, ...args); };
             const realDrawPerson = app.canvas.drawPerson;
             if (suppressGhost) {
                 app.canvas.drawPerson = function(person, ...args) {
@@ -442,6 +447,8 @@ function assert(name, condition, detail = '') {
                 };
             }
             app.render();
+            ctx.fillText = originalFillText;
+            ctx.strokeText = originalStrokeText;
             const after = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             app.canvas.drawPerson = realDrawPerson;
             const exportDuring = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
@@ -568,6 +575,7 @@ function assert(name, condition, detail = '') {
             app.render();
             const exportAfterCancel = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
             return { brandPixels, ghostOnlyPixels, relationshipPixels, childRelationshipPixels, unavailableMarkerPixels,
+                renderedPlacementText,
                 restored, staleEndpointSkipped, exportOverlayCalls, jpegDuring, svgResult, pdfResult,
                 pairGhostsDrawn, pairRelationshipSegments,
                 exportsNonNull: Boolean(exportBefore && exportDuring && exportAfterCancel),
@@ -575,6 +583,8 @@ function assert(name, condition, detail = '') {
         }, suppressGhostMode);
         assert('placement render adds brand candidate-cell pixels', overlay.brandPixels > 0, `pixels=${overlay.brandPixels}`);
         assert('placement render adds translucent ghost pixels beyond cell-only layer', overlay.ghostOnlyPixels > 0, `pixels=${overlay.ghostOnlyPixels}`);
+        assert('placement ghost never renders undefined metadata text', !overlay.renderedPlacementText.includes('undefined'),
+            `text=${JSON.stringify(overlay.renderedPlacementText)}`);
         assert('partner placement draws relationship preview pixels at midpoint', overlay.relationshipPixels > 0, `pixels=${overlay.relationshipPixels}`);
         assert('child placement draws relationship preview pixels at endpoint path', overlay.childRelationshipPixels > 0, `pixels=${overlay.childRelationshipPixels}`);
         assert('occupied placement draws unavailable-marker-only pixels', overlay.unavailableMarkerPixels > 0, `pixels=${overlay.unavailableMarkerPixels}`);
