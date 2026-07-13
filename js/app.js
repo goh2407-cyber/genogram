@@ -4218,7 +4218,8 @@ class GenogramApp {
                 preferredX += grid.CELL_WIDTH;
             } else if (request.kind === 'child') {
                 preferredY = this.getGenerationYByIndex(baseGeneration + 1);
-                const spouse = this.getSpouses(base.id)[0] || null;
+                const spouses = this.getSpouses(base.id);
+                const spouse = this.pickSpouseForChildCreation(base, spouses);
                 if (spouse) preferredX = (base.x + spouse.x) / 2;
                 const parentIds = spouse ? [base.id, spouse.id] : [base.id];
                 relationshipPreview = parentIds.map(parentId => ({
