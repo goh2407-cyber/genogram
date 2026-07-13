@@ -70,10 +70,41 @@ async function canvasPng(page) {
     const automatic = await canvasPng(page);
     await page.evaluate(() => window.app.render());
     const expected = await canvasPng(page);
+    await page.unroute(/fonts\.gstatic\.com\/.*\.woff2/);
+    let releaseLifeCircleFonts;
+    const lifeCircleFontsReleased = new Promise(resolve => { releaseLifeCircleFonts = resolve; });
+    await page.route(/fonts\.gstatic\.com\/.*\.woff2/, async route => {
+        await lifeCircleFontsReleased;
+        await route.continue();
+    });
+    await page.evaluate(() => {
+        window.app.persons=[]; window.app.relationships=[]; window.app._syncPersonMap();
+        window.app.lifeCircles=[{id:'slow-label',label:'麤靐生活圈',color:'rgba(74,144,226,.15)',
+            points:[{x:300,y:220},{x:520,y:220},{x:520,y:440},{x:300,y:440}]}];
+        window.__lifeCircleExported=false;
+        window.app.storage.exportPNG=()=>{ window.__lifeCircleExported=true; };
+        window.app.render();
+    });
+    const lifeCircleFallback = await canvasPng(page);
+    const lifeCirclePromise = await page.evaluate(() => {
+        const promise=window.app.exportPNG(false,false,1);
+        return Boolean(promise&&typeof promise.then==='function');
+    });
+    await page.waitForTimeout(100);
+    const lifeCircleExportedEarly=await page.evaluate(()=>window.__lifeCircleExported);
+    releaseLifeCircleFonts();
+    await page.evaluate(()=>window.app.waitForCurrentCanvasFonts());
+    await page.waitForFunction(()=>window.__lifeCircleExported);
+    const lifeCircleAutomatic=await canvasPng(page);
+    await page.evaluate(()=>window.app.render());
+    const lifeCircleExpected=await canvasPng(page);
     await browser.close();
 
     if (equalPixels(fallback, expected)) throw new Error('setup failed: glyph did not transition from fallback to Noto Sans TC');
     if (!equalPixels(automatic, expected)) throw new Error('Canvas did not repaint after webfont loading completed');
     if (!exportState.allPromises || exportedEarly) throw new Error('PNG/JPEG/SVG/PDF exports did not await current glyph font readiness');
-    console.log('PASS | Canvas repaints and all image exports wait for arbitrary unicode-range glyph loading');
+    if (equalPixels(lifeCircleFallback,lifeCircleExpected)) throw new Error('setup failed: life-circle label glyph did not transition');
+    if (!equalPixels(lifeCircleAutomatic,lifeCircleExpected)) throw new Error('life-circle label did not repaint after font readiness');
+    if (!lifeCirclePromise||lifeCircleExportedEarly) throw new Error('life-circle export did not await label glyph readiness');
+    console.log('PASS | Canvas and life-circle labels repaint; all image exports await arbitrary unicode-range glyphs');
 })().catch(error => { console.error('FAIL | ' + error.message); process.exit(1); });

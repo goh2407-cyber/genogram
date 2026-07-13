@@ -78,6 +78,14 @@ function assert(name, condition, detail = '') {
         app.persons.push(...extraBlockers);
         extraBlockers.forEach(p => app.personMap.set(p.id, p));
         const consecutive = app.findNearestOpenCell(tieX, tieY);
+        const pairY = app.getGenerationYByIndex(9);
+        const pairStart = grid.ORIGIN_X + grid.CELL_WIDTH * 30;
+        const secondOnly = new Person({ id: 'pair-second-only', x: pairStart + grid.CELL_WIDTH, y: pairY });
+        app.persons.push(secondOnly); app.personMap.set(secondOnly.id, secondOnly);
+        const secondBlockedPair = app.getPlacementCandidate({ kind: 'parent-pair', basePersonId: base.id,
+            people: [{ personId: 'pair-a', x: pairStart, y: pairY },
+                { personId: 'pair-b', x: pairStart + grid.CELL_WIDTH, y: pairY }],
+            relationshipPreview: [] });
 
         const begun = app.beginPlacement({ kind: 'partner', basePersonId: base.id, personId: 'ghost-id' });
         const begunSnapshot = JSON.parse(JSON.stringify(begun));
@@ -93,7 +101,7 @@ function assert(name, condition, detail = '') {
 
         return { grid, base, spouse, selectedSpouse, partner, child, parent, sibling, reorderedChild,
             positionsBefore, positionsAfter, free, person, leftTie, consecutive,
-            begunSnapshot, updatedSnapshot, bypassedSnapshot, afterCancel, committed, afterCommit };
+            begunSnapshot, updatedSnapshot, bypassedSnapshot, afterCancel, committed, afterCommit, secondBlockedPair };
     });
 
     const { grid, base, spouse } = data;
@@ -131,6 +139,9 @@ function assert(name, condition, detail = '') {
     assert('open-cell tie chooses left before right', data.leftTie.x === data.grid.ORIGIN_X + data.grid.CELL_WIDTH * 19);
     assert('open-cell skips consecutive blockers in 0,-1,+1,-2,+2 order',
         data.consecutive.x === data.grid.ORIGIN_X + data.grid.CELL_WIDTH * 22);
+    assert('parent-pair blockedAt identifies the actually occupied second cell',
+        data.secondBlockedPair.preferredOccupied && data.secondBlockedPair.occupied===false &&
+        data.secondBlockedPair.blockedAt.x===data.grid.ORIGIN_X+data.grid.CELL_WIDTH*31);
     assert('beginPlacement stores request, candidate, and matching ghost', data.begunSnapshot.request.personId === 'ghost-id' &&
         data.begunSnapshot.ghostPerson.id === 'ghost-id' &&
         data.begunSnapshot.ghostPerson.x === data.begunSnapshot.candidate.x &&
@@ -140,9 +151,9 @@ function assert(name, condition, detail = '') {
         data.updatedSnapshot.updated.y === data.updatedSnapshot.session.candidate.y &&
         data.updatedSnapshot.session.ghostPerson.x === data.updatedSnapshot.updated.x &&
         data.updatedSnapshot.session.ghostPerson.y === data.updatedSnapshot.updated.y);
-    assert('quick-relative update preserves semantic rules even when bypass is requested',
+    assert('quick-relative Alt bypass is free while preserving semantic request and preview',
         data.bypassedSnapshot.session.request.kind === 'partner' &&
-        data.bypassedSnapshot.bypassed.y === base.y &&
+        data.bypassedSnapshot.bypassed.x === 123.25 && data.bypassedSnapshot.bypassed.y === 456.75 &&
         data.bypassedSnapshot.bypassed.relationshipPreview.length === 1);
     assert('cancelPlacement clears session', data.afterCancel === null);
     assert('commitPlacement returns session and clears state', data.committed &&
@@ -437,12 +448,27 @@ function assert(name, condition, detail = '') {
                 if(type==='partner'||type==='sibling'){ app.handleQuickAddClick(base,type); app.createQuickPersonWithGender('female'); }
                 else app.handleQuickAddClick(base,type);
                 const before={kind:app.placementSession.request.kind,base:app.placementSession.request.basePersonId,
-                    count:app.placementSession.candidate.relationshipPreview.length};
-                app.updatePlacement(base.x+g.CELL_WIDTH*4,base.y+g.CELL_HEIGHT*3);
+                    count:app.placementSession.candidate.relationshipPreview.length,
+                    x:app.placementSession.candidate.x,y:app.placementSession.candidate.y};
+                const pointerX=base.x+g.CELL_WIDTH*4.2;
+                app.updatePlacement(pointerX,base.y+g.CELL_HEIGHT*3);
                 result.pointerKinds[type]={before,kind:app.placementSession.request.kind,base:app.placementSession.request.basePersonId,
-                    count:app.placementSession.candidate.relationshipPreview.length};
-                app.cancelPlacement();
+                    count:app.placementSession.candidate.relationshipPreview.length,x:app.placementSession.candidate.x,
+                    y:app.placementSession.candidate.y,expectedY:type==='son'?base.y+g.CELL_HEIGHT:
+                        (type==='parent'?base.y-g.CELL_HEIGHT:base.y)};
+                app.commitPlacement();
+                const created=app.persons[app.persons.length-1];
+                result.pointerKinds[type].committed=type==='parent'
+                    ? app.persons.slice(-2).every((p,i,a)=>p.y===g.ORIGIN_Y&&Math.abs(a[1].x-a[0].x)===g.CELL_WIDTH)
+                    : created.x===result.pointerKinds[type].x&&created.y===result.pointerKinds[type].y;
             }
+            base=reset(); app.handleQuickAddClick(base,'son');
+            const altX=base.x+g.CELL_WIDTH*2.37,altY=base.y+g.CELL_HEIGHT*2.61;
+            app.updatePlacement(altX,altY,true);
+            result.altQuick={x:app.placementSession.candidate.x,y:app.placementSession.candidate.y,
+                preview:app.placementSession.candidate.relationshipPreview.length,kind:app.placementSession.request.kind};
+            app.commitPlacement();
+            result.altQuick.committed=app.persons[1].x===altX&&app.persons[1].y===altY;
             base=reset();
             const existingParent=new Person({id:'existing-parent',gender:'female',x:base.x,y:g.ORIGIN_Y});
             app.persons.push(existingParent); app.personMap.set(existingParent.id,existingParent);
@@ -469,8 +495,14 @@ function assert(name, condition, detail = '') {
         assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
         assert('occupied parent pair falls back as fixed-gap unit and commits correct atomic endpoints without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===5 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
         assert('quick-add pointermove retains child/partner/sibling/parent request semantics and previews',
-            Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base && item.count===item.before.count && item.count>0),
+            Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base &&
+                item.count===item.before.count && item.count>0 && item.x!==item.before.x && item.y===item.expectedY && item.committed),
             JSON.stringify(quickE2E.pointerKinds));
+        assert('Alt quick-add bypass is fully free while preserving semantic preview',
+            quickE2E.altQuick.kind==='child' && quickE2E.altQuick.preview===1 && quickE2E.altQuick.committed &&
+            quickE2E.altQuick.x===data.grid.ORIGIN_X+data.grid.CELL_WIDTH*2.37 &&
+            quickE2E.altQuick.y===data.grid.ORIGIN_Y+data.grid.CELL_HEIGHT*3.61,
+            JSON.stringify(quickE2E.altQuick));
         assert('parent quick-add with one existing parent creates exactly one missing parent without marriage',
             quickE2E.oneExistingParent.preview.people===undefined && quickE2E.oneExistingParent.preview.kind==='parent' &&
             quickE2E.oneExistingParent.preview.rels===1 && quickE2E.oneExistingParent.people===3 &&

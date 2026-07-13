@@ -4128,9 +4128,12 @@ class GenogramApp {
 
     getCurrentCanvasFontText() {
         const legend = document.getElementById('legendContent')?.textContent || '';
-        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes, person.medical]).filter(Boolean);
+        // Canvas text fields: person name/age/notes, relationship notes/date, and life-circle labels.
+        // Medical markers are vector/ASCII symbols and do not contribute arbitrary font glyphs.
+        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes]).filter(Boolean);
         const relationshipText = this.relationships.flatMap(rel => [rel.notes, rel.date]).filter(Boolean);
-        return [legend, ...personText, ...relationshipText].join('\n');
+        const lifeCircleText = (this.lifeCircles || []).map(lc => lc.label).filter(Boolean);
+        return [legend, ...personText, ...relationshipText, ...lifeCircleText].join('\n');
     }
 
     waitForCurrentCanvasFonts(repaint = false) {
@@ -4184,6 +4187,9 @@ class GenogramApp {
      */
     getPlacementCandidate(request = {}) {
         const grid = GenogramApp.GRID;
+        const pointerGridX = Number.isFinite(request.pointerX)
+            ? grid.ORIGIN_X + Math.round((request.pointerX - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH
+            : null;
         const previewPersonId = request.personId || '__placement__';
         let preferredX;
         let preferredY;
@@ -4191,7 +4197,7 @@ class GenogramApp {
 
         if (request.kind === 'parent-pair') {
             const first = request.people[0];
-            preferredX = first.x;
+            preferredX = pointerGridX ?? first.x;
             preferredY = first.y;
         } else if (request.kind === 'person' && !request.basePersonId) {
             preferredX = grid.ORIGIN_X + Math.round(((request.x || 0) - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH;
@@ -4244,16 +4250,19 @@ class GenogramApp {
                     };
                 });
             }
+            if (pointerGridX !== null) preferredX = pointerGridX;
         }
 
         let open;
         if (request.kind === 'parent-pair') {
             const gap = request.people[1].x - request.people[0].x;
             const excludedIds = request.excludedIds || new Set();
-            const pairFree = x => [x, x + gap].every(px => !this.persons.some(person =>
+            const occupiedPairCell = px => this.persons.some(person =>
                 !excludedIds.has(person.id) && Math.abs(person.x - px) < grid.CELL_WIDTH * 0.35 &&
-                Math.abs(person.y - preferredY) < grid.CELL_HEIGHT * 0.35));
+                Math.abs(person.y - preferredY) < grid.CELL_HEIGHT * 0.35);
+            const pairFree = x => [x, x + gap].every(px => !occupiedPairCell(px));
             const initiallyOccupied = !pairFree(preferredX);
+            const blockedX = [preferredX, preferredX + gap].find(occupiedPairCell);
             let x = preferredX;
             for (let distance = 0; distance <= this.persons.length + 4; distance++) {
                 const offsets = distance === 0 ? [0] : [-distance, distance];
@@ -4262,7 +4271,7 @@ class GenogramApp {
             }
             open = { x, y: preferredY, occupied: false,
                 preferredOccupied: initiallyOccupied,
-                blockedAt: initiallyOccupied ? { x: preferredX, y: preferredY } : null };
+                blockedAt: initiallyOccupied ? { x: blockedX, y: preferredY } : null };
         } else {
             open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
         }
@@ -4302,18 +4311,10 @@ class GenogramApp {
     updatePlacement(x, y, bypassSnap = false) {
         if (!this.placementSession) return null;
         const originalRequest = this.placementSession.request;
-        let request = originalRequest.kind === 'person' && !originalRequest.basePersonId
+        const request = originalRequest.kind === 'person' && !originalRequest.basePersonId
             ? { ...originalRequest, x, y }
-            : { ...originalRequest };
-        if (this.placementSession.request.people) {
-            const first = this.placementSession.request.people[0];
-            request = { ...this.placementSession.request,
-                people: this.placementSession.request.people.map(person => ({
-                    ...person, x: x + person.x - first.x, y: y + person.y - first.y
-                }))
-            };
-        }
-        const candidate = bypassSnap && originalRequest.kind === 'person' && !originalRequest.basePersonId
+            : { ...originalRequest, pointerX: x };
+        const candidate = bypassSnap
             ? { x, y, occupied: false, guides: null, relationshipPreview: this.placementSession.candidate.relationshipPreview }
             : this.getPlacementCandidate(request);
         candidate.relationshipPreview = this.placementSession.candidate.relationshipPreview;
