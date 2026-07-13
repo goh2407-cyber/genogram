@@ -357,26 +357,47 @@ function assert(name, condition, detail = '') {
                 const child=app.persons[1], edges=app.relationships.filter(r=>r.type==='parent-child');
                 result[type]={gender:child.gender,edges:edges.length,direction:edges.every(r=>r.fromPersonId===base.id&&r.toPersonId===child.id),history:app.history.getUndoCount(),selected:app.selectedPersonId===child.id,status:app.elements.statusBar.textContent,choosing};
             }
-            let base=reset(true); app.handleQuickAddClick(base,'sibling'); app.createQuickPersonWithGender('female'); app.commitPlacement();
+            let base=reset(true); app.handleQuickAddClick(base,'sibling'); app.createQuickPersonWithGender('female'); const siblingChoosing=app.elements.statusBar.textContent; app.commitPlacement();
             let created=app.persons[3], edges=app.relationships.filter(r=>r.toPersonId===created.id);
-            result.sibling={people:app.persons.length,edges:edges.length,direction:edges.every(r=>r.fromPersonId.startsWith('e2e-parent-')),linkTypes:edges.map(r=>r.linkType).sort(),history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent};
-            base=reset(); app.handleQuickAddClick(base,'partner'); app.createQuickPersonWithGender('female'); app.commitPlacement(); created=app.persons[1];
-            result.partner={people:app.persons.length,rels:app.relationships.length,type:app.relationships[0].type,history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent};
+            result.sibling={people:app.persons.length,edges:edges.length,direction:edges.every(r=>r.fromPersonId.startsWith('e2e-parent-')),linkTypes:edges.map(r=>r.linkType).sort(),history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent,choosing:siblingChoosing};
+            base=reset(); app.handleQuickAddClick(base,'partner'); app.createQuickPersonWithGender('female'); const partnerChoosing=app.elements.statusBar.textContent; app.commitPlacement(); created=app.persons[1];
+            result.partner={people:app.persons.length,rels:app.relationships.length,type:app.relationships[0].type,history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent,choosing:partnerChoosing};
             base=reset(); const spouseA=new Person({id:'sp-a',x:base.x-g.CELL_WIDTH,y:base.y}),spouseB=new Person({id:'sp-b',x:base.x+3*g.CELL_WIDTH,y:base.y}); app.persons.push(spouseA,spouseB); app.personMap.set(spouseA.id,spouseA); app.personMap.set(spouseB.id,spouseB); const ra=new Relationship({id:'sp-rel-a',type:'married',fromPersonId:base.id,toPersonId:spouseA.id}),rb=new Relationship({id:'sp-rel-b',type:'married',fromPersonId:base.id,toPersonId:spouseB.id}); app.relationships.push(ra,rb); app.selectedRelationshipId=rb.id; app.handleQuickAddClick(base,'son'); app.commitPlacement(); created=app.persons[3]; edges=app.relationships.filter(r=>r.type==='parent-child');
             result.selectedSpouse={edges:edges.length,parents:edges.map(r=>r.fromPersonId).sort(),child:edges.every(r=>r.toPersonId===created.id),history:app.history.getUndoCount()};
             base=reset(); const blocker=new Person({id:'occupied',x:base.x+g.CELL_WIDTH,y:base.y}); app.persons.push(blocker);app.personMap.set(blocker.id,blocker);const before=app.persons.map(p=>[p.id,p.x,p.y]);app.handleQuickAddClick(base,'partner');app.createQuickPersonWithGender('female');const candidate=app.placementSession.candidate;app.commitPlacement();
             result.occupied={fallback:candidate.x!==blocker.x,unchanged:before.every(([id,x,y])=>{const p=app.personMap.get(id);return p.x===x&&p.y===y;})};
             base=reset(); app.handleQuickAddClick(base,'parent'); app.commitPlacement();
             result.parent={people:app.persons.length,rels:app.relationships.length,edges:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId===base.id),history:app.history.getUndoCount(),selected:app.selectedPersonId!=='e2e-base',status:app.elements.statusBar.textContent};
+            base=reset();
+            const occupiedLeft=new Person({id:'pair-left',x:base.x-g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            const occupiedRight=new Person({id:'pair-right',x:base.x+g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            app.persons.push(occupiedLeft,occupiedRight); app.personMap.set(occupiedLeft.id,occupiedLeft); app.personMap.set(occupiedRight.id,occupiedRight);
+            const pairBefore=app.persons.map(p=>[p.id,p.x,p.y]);
+            app.handleQuickAddClick(base,'parent');
+            const pairGhosts=app.placementSession.ghostPeople.map(p=>({id:p.id,x:p.x,y:p.y}));
+            const pairFallback=pairGhosts.every(p=>p.x!==occupiedLeft.x&&p.x!==occupiedRight.x);
+            const pairSpacing=Math.abs(pairGhosts[1].x-pairGhosts[0].x);
+            app.commitPlacement();
+            const pairNewIds=new Set(app.persons.slice(3).map(p=>p.id));
+            const pairMarriage=app.relationships.find(r=>r.type==='married');
+            const pairChildEdges=app.relationships.filter(r=>r.type==='parent-child');
+            result.parentOccupied={fallback:pairFallback,spacing:pairSpacing,history:app.history.getUndoCount(),
+                existingUnchanged:pairBefore.every(([id,x,y])=>{const p=app.personMap.get(id);return p.x===x&&p.y===y;}),
+                people:app.persons.length,rels:app.relationships.length,
+                marriageEndpoints:pairMarriage&&pairNewIds.has(pairMarriage.fromPersonId)&&pairNewIds.has(pairMarriage.toPersonId),
+                childDirections:pairChildEdges.length===2&&pairChildEdges.every(r=>pairNewIds.has(r.fromPersonId)&&r.toPersonId===base.id)};
             base=reset(); for(const type of ['sibling','partner']){ app.handleQuickAddClick(base,type); const choosing=app.elements.statusBar.textContent; app.closeGenderModal(); result[type+'Cancel']={people:app.persons.length,rels:app.relationships.length,history:app.history.getUndoCount(),selected:app.selectedPersonId,choosing}; }
             return result;
         });
         ['son','daughter','pregnancy'].forEach(type => assert(`quick ${type} commit creates directed child in one history with selection/status`, quickE2E[type].edges===1 && quickE2E[type].direction && quickE2E[type].history===1 && quickE2E[type].selected && /已建立/.test(quickE2E[type].status) && /位置/.test(quickE2E[type].choosing)));
         assert('quick sibling commits both real parent edges with metadata in one history', quickE2E.sibling.people===4 && quickE2E.sibling.edges===2 && quickE2E.sibling.direction && quickE2E.sibling.linkTypes.join(',')==='adopted,foster' && quickE2E.sibling.history===1 && quickE2E.sibling.selected && /已建立/.test(quickE2E.sibling.status));
+        assert('quick sibling gender selection enters choosing-position placement before commit', /位置/.test(quickE2E.sibling.choosing));
+        assert('quick partner gender selection enters choosing-position placement before commit', /位置/.test(quickE2E.partner.choosing));
         assert('quick partner commits relationship in one history with selection/status', quickE2E.partner.people===2 && quickE2E.partner.rels===1 && quickE2E.partner.type==='married' && quickE2E.partner.history===1 && quickE2E.partner.selected && /已建立/.test(quickE2E.partner.status));
         assert('selected spouse child commit writes both parent-to-child edges', quickE2E.selectedSpouse.edges===2 && quickE2E.selectedSpouse.parents.join(',')==='e2e-base,sp-b' && quickE2E.selectedSpouse.child && quickE2E.selectedSpouse.history===1);
         assert('occupied quick-add falls back without moving existing people', quickE2E.occupied.fallback && quickE2E.occupied.unchanged);
         assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
+        assert('occupied parent pair falls back as fixed-gap unit and commits correct atomic endpoints without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===5 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
         assert('sibling gender-modal cancel writes nothing and retains selection', quickE2E.siblingCancel.people===1 && quickE2E.siblingCancel.rels===0 && quickE2E.siblingCancel.history===0 && quickE2E.siblingCancel.selected==='e2e-base');
         assert('partner gender-modal cancel writes nothing and retains selection', quickE2E.partnerCancel.people===1 && quickE2E.partnerCancel.rels===0 && quickE2E.partnerCancel.history===0 && quickE2E.partnerCancel.selected==='e2e-base');
         assert('quick parent previews two people and three relationships without writes', quick.parent.active && quick.parent.count===1 && quick.parent.rels===0 && quick.parent.history===0 && quick.parent.request.people.length===2 && quick.parent.ghostCount===2 && quick.parent.request.relationshipPreview.length===3);
