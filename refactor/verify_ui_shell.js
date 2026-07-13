@@ -18,20 +18,47 @@ function check(name, condition, detail = '') {
 
 async function checkIconOnlyAccessibility(page) {
     const missing = await page.locator('button:has(svg)').evaluateAll(buttons => buttons
-        .filter(button => button.getClientRects().length > 0)
-        .filter(button => !button.textContent.trim())
         .filter(button => {
-            const labelledBy = button.getAttribute('aria-labelledby');
-            const labelledByText = labelledBy
-                ? labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim()
-                : '';
-            return !button.getAttribute('aria-label')?.trim()
-                && !button.getAttribute('title')?.trim()
-                && !labelledByText;
+            if (!button.getClientRects().length) return false;
+            let element = button;
+            while (element) {
+                const style = getComputedStyle(element);
+                if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+                    return false;
+                }
+                element = element.parentElement;
+            }
+            return true;
         })
+        .filter(button => {
+            const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+                if (!node.textContent.trim()) continue;
+                let element = node.parentElement;
+                let visuallyHidden = false;
+                while (element && element !== button) {
+                    const style = getComputedStyle(element);
+                    const clipped = style.clip === 'rect(0px, 0px, 0px, 0px)'
+                        || style.clipPath === 'inset(50%)';
+                    if (style.display === 'none' || style.visibility === 'hidden'
+                        || Number(style.opacity) === 0 || clipped) {
+                        visuallyHidden = true;
+                        break;
+                    }
+                    element = element.parentElement;
+                }
+                if (visuallyHidden) continue;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                if ([...range.getClientRects()].some(rect => rect.width > 0 && rect.height > 0)) return false;
+            }
+            return true;
+        })
+        .filter(button => !button.getAttribute('title')?.trim() || !button.getAttribute('aria-label')?.trim())
         .map(button => button.id ? `#${button.id}` : button.outerHTML.slice(0, 80)));
-    check('icon-only commands have an accessible name', missing.length === 0,
-        `missing aria-label, title, or aria-labelledby text: ${missing.join(', ')}`);
+    check('icon-only commands have title and aria-label', missing.length === 0,
+        `missing title or aria-label: ${missing.join(', ')}`);
 }
 
 (async () => {
