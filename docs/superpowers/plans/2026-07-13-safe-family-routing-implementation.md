@@ -124,7 +124,7 @@ git commit -m "feat: add deterministic family route planner"
 - Consumes: `window.FamilyRoutePlanner` and normalized family groups from `KinshipEngine`.
 - Produces: `GenogramCanvas.getFamilyRoutePlans(familyRels, persons, otherRels, kinship)`, `getPersonRouteObstacles(persons)`, and `getFamilyRouteSafety(personId)`.
 
-- [ ] **Step 1: Add a failing browser regression**
+- [x] **Step 1: Add a failing browser regression**
 
 ```js
 const result = await page.evaluate(() => {
@@ -142,13 +142,13 @@ const result = await page.evaluate(() => {
 assert(result.plannerLoaded && result.finite && result.noObstacleCrossing && result.shared);
 ```
 
-- [ ] **Step 2: Run the browser regression and verify RED**
+- [x] **Step 2: Run the browser regression and verify RED**
 
 Run: `$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'; node refactor/verify_family_routing.js`
 
 Expected: FAIL because `FamilyRoutePlanner` is not loaded and `_familyRelationshipPaths` is absent.
 
-- [ ] **Step 3: Load the planner before Canvas**
+- [x] **Step 3: Load the planner before Canvas**
 
 ```html
 <script src="js/domain/kinship-engine.js"></script>
@@ -157,7 +157,7 @@ Expected: FAIL because `FamilyRoutePlanner` is not loaded and `_familyRelationsh
 <script src="js/canvas.js"></script>
 ```
 
-- [ ] **Step 4: Add exact symbol/name/note obstacle measurement**
+- [x] **Step 4: Add exact symbol/name/note obstacle measurement**
 
 ```js
 getPersonRouteObstacles(persons) {
@@ -171,11 +171,11 @@ getPersonRouteObstacles(persons) {
 }
 ```
 
-- [ ] **Step 5: Replace duplicate family geometry with planner output**
+- [x] **Step 5: Replace duplicate family geometry with planner output**
 
 `drawFamilies()` builds each normalized family once, asks `FamilyRoutePlanner.planFamily()`, stores every relationship path in `_familyRelationshipPaths`, and draws `sourcePath`, `barPath`, twin paths, and child paths. Existing `DASH_PATTERNS` selection remains unchanged: one-child routes use that child's link dash, shared trunks stay solid, and each child drop uses its current biological/adopted/foster dash. `getRelationshipPath()` returns the cached path when its family signature matches or calls the same plan builder on demand.
 
-- [ ] **Step 6: Run focused Canvas regressions**
+- [x] **Step 6: Run focused Canvas regressions**
 
 Run:
 
@@ -190,7 +190,7 @@ node refactor/verify_relationship_edges.js
 
 Expected: all assertions pass with zero console/page errors.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```powershell
 git add index.html js/canvas.js refactor/verify_family_routing.js

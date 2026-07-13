@@ -67,6 +67,11 @@ class GenogramCanvas {
         this.fontSize = 14;
         this.fontFamily = 'Noto Sans TC, sans-serif';
 
+        // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
+        this._familyRoutePlans = [];
+        this._familyRelationshipPaths = new Map();
+        this._familyRouteSignature = null;
+
         // 初始化
         this.resize();
         this.setupResizeObserver();
@@ -3434,10 +3439,394 @@ class GenogramCanvas {
 
 
 
+    _getFamilyRouteSignature(persons, relationships) {
+        const personData = (Array.isArray(persons) ? persons : [])
+            .map(person => [
+                String(person.id), person.x, person.y, person.name || '', person.notes || '',
+                person.twinGroup || '', person.zygosity || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        const relationshipData = (Array.isArray(relationships) ? relationships : [])
+            .map(rel => [
+                String(rel.id), rel.type, rel.fromPersonId, rel.toPersonId,
+                rel.linkType || '', rel.routeMode || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        return JSON.stringify([this.personSize, this.fontSize, personData, relationshipData]);
+    }
+
+    getPersonRouteObstacles(persons) {
+        const obstacles = [];
+        const half = this.personSize / 2;
+        const symbolMargin = 10;
+        const textMargin = 4;
+        this.ctx.save();
+
+        (Array.isArray(persons) ? persons : []).forEach(person => {
+            if (!person || !Number.isFinite(person.x) || !Number.isFinite(person.y)) return;
+            obstacles.push({
+                ownerId: person.id,
+                kind: 'symbol',
+                left: person.x - half - symbolMargin,
+                right: person.x + half + symbolMargin,
+                top: person.y - half - symbolMargin,
+                bottom: person.y + half + symbolMargin
+            });
+
+            if (!person.name) return;
+            const nameTop = person.y + half + 8;
+            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
+            const nameWidth = this.ctx.measureText(person.name).width;
+            obstacles.push({
+                ownerId: person.id,
+                kind: 'text',
+                left: person.x - nameWidth / 2 - textMargin,
+                right: person.x + nameWidth / 2 + textMargin,
+                top: nameTop - textMargin,
+                bottom: nameTop + this.fontSize + textMargin
+            });
+
+            if (!person.notes) return;
+            const noteLines = person.notes.split('\n').filter(line => line.length > 0).slice(0, 2);
+            const noteFontSize = this.fontSize * 0.8;
+            const noteLineHeight = noteFontSize + 2;
+            this.ctx.font = `${noteFontSize}px ${this.fontFamily}`;
+            noteLines.forEach((line, index) => {
+                const lineTop = nameTop + this.fontSize + 4 + index * noteLineHeight;
+                const width = this.ctx.measureText(line).width;
+                obstacles.push({
+                    ownerId: person.id,
+                    kind: 'text',
+                    left: person.x - width / 2 - textMargin,
+                    right: person.x + width / 2 + textMargin,
+                    top: lineTop - textMargin,
+                    bottom: lineTop + noteFontSize + textMargin
+                });
+            });
+        });
+
+        this.ctx.restore();
+        return obstacles;
+    }
+
+    _buildFamilyGroups(familyRels, kinship) {
+        const childParents = new Map();
+        const pairRelIds = new Map();
+        familyRels.forEach(rel => {
+            const normalized = kinship.normalizeParentChild(rel);
+            if (!normalized) return;
+            const { parentId, childId } = normalized;
+            if (!childParents.has(childId)) childParents.set(childId, new Set());
+            childParents.get(childId).add(parentId);
+            const pairKey = `${parentId}\u0000${childId}`;
+            if (!pairRelIds.has(pairKey)) pairRelIds.set(pairKey, []);
+            pairRelIds.get(pairKey).push(rel.id);
+        });
+
+        const familyMap = new Map();
+        Array.from(childParents.keys()).sort().forEach(childId => {
+            const parentIds = Array.from(childParents.get(childId)).sort();
+            const familyKey = parentIds.join('\u0001');
+            if (!familyMap.has(familyKey)) {
+                familyMap.set(familyKey, {
+                    key: familyKey,
+                    parentIds,
+                    childIds: [],
+                    relIds: [],
+                    childToRelIds: {},
+                    pairToRelIds: {}
+                });
+            }
+            const family = familyMap.get(familyKey);
+            family.childIds.push(childId);
+            family.childToRelIds[childId] = [];
+            parentIds.forEach(parentId => {
+                const pairKey = `${parentId}\u0000${childId}`;
+                const ids = [...(pairRelIds.get(pairKey) || [])].sort();
+                family.pairToRelIds[pairKey] = ids;
+                ids.forEach(relId => {
+                    family.childToRelIds[childId].push(relId);
+                    if (!family.relIds.includes(relId)) family.relIds.push(relId);
+                });
+            });
+            family.childToRelIds[childId].sort();
+            family.relIds.sort();
+        });
+        return Array.from(familyMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    }
+
+    _getFamilySource(parentObjs, childObjs, otherRels, obstacles) {
+        const half = this.personSize / 2;
+        const childCenterX = childObjs.reduce((sum, child) => sum + child.x, 0) / childObjs.length;
+        if (parentObjs.length >= 2) {
+            const p1 = parentObjs[0];
+            const p2 = parentObjs[1];
+            const marriageRel = otherRels.find(rel => {
+                const category = typeof rel.getCategory === 'function'
+                    ? rel.getCategory()
+                    : Relationship.getCategory(rel.type);
+                const connects = typeof rel.involvesPerson === 'function'
+                    ? rel.involvesPerson(p1.id) && rel.involvesPerson(p2.id)
+                    : ((rel.fromPersonId === p1.id && rel.toPersonId === p2.id) ||
+                       (rel.fromPersonId === p2.id && rel.toPersonId === p1.id));
+                return category === 'marriage' && connects;
+            });
+
+            if (marriageRel) {
+                const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
+                let minX;
+                let maxX;
+                let y;
+                if (config.isBridge) {
+                    const top1 = p1.getConnectionPoint('top');
+                    const top2 = p2.getConnectionPoint('top');
+                    minX = Math.min(top1.x, top2.x);
+                    maxX = Math.max(top1.x, top2.x);
+                    y = config.bridgeY;
+                } else if (config.isArch) {
+                    minX = Math.min(p1.x, p2.x);
+                    maxX = Math.max(p1.x, p2.x);
+                    y = config.archBarY;
+                } else {
+                    const leftParent = p1.x <= p2.x ? p1 : p2;
+                    const rightParent = p1.x <= p2.x ? p2 : p1;
+                    const leftPort = leftParent.getConnectionPoint('right');
+                    const rightPort = rightParent.getConnectionPoint('left');
+                    minX = Math.min(leftPort.x, rightPort.x);
+                    maxX = Math.max(leftPort.x, rightPort.x);
+                    y = (p1.y + p2.y) / 2;
+                }
+                const desiredX = childObjs.length === 1 ? childObjs[0].x : childCenterX;
+                return {
+                    source: { x: Math.max(minX, Math.min(maxX, desiredX)), y },
+                    sourceRange: { minX, maxX },
+                    sourcePrefix: [],
+                    marriageRel,
+                    virtualPair: false
+                };
+            }
+
+            const midpoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+            return {
+                source: midpoint,
+                sourceRange: { minX: midpoint.x, maxX: midpoint.x },
+                sourcePrefix: [],
+                marriageRel: null,
+                virtualPair: true
+            };
+        }
+
+        const parent = parentObjs[0];
+        const textBoxes = obstacles.filter(rect => rect.ownerId === parent.id && rect.kind === 'text');
+        if (textBoxes.length === 0) {
+            const source = { x: parent.x, y: parent.y + half };
+            return {
+                source,
+                sourceRange: { minX: source.x, maxX: source.x },
+                sourcePrefix: [],
+                marriageRel: null,
+                virtualPair: false
+            };
+        }
+
+        const direction = childCenterX >= parent.x ? 1 : -1;
+        const textEdge = direction > 0
+            ? Math.max(...textBoxes.map(rect => rect.right))
+            : Math.min(...textBoxes.map(rect => rect.left));
+        const outerX = direction > 0
+            ? Math.max(parent.x + half + 10, textEdge + 10)
+            : Math.min(parent.x - half - 10, textEdge - 10);
+        const port = { x: parent.x + direction * half, y: parent.y };
+        const source = { x: outerX, y: parent.y };
+        return {
+            source,
+            sourceRange: { minX: source.x, maxX: source.x },
+            sourcePrefix: [port, source],
+            marriageRel: null,
+            virtualPair: false
+        };
+    }
+
+    getFamilyRoutePlans(familyRels, persons, otherRels, kinship = null) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = [...(familyRels || []), ...(otherRels || [])];
+        if (typeof FamilyRoutePlanner === 'undefined') return [];
+        if (!(this.personMap instanceof Map) || allPersons.some(person => !this.personMap.has(person.id))) {
+            this.personMap = new Map(allPersons.map(person => [person.id, person]));
+        }
+        const engine = kinship || new KinshipEngine(allPersons, allRelationships);
+        const obstacles = this.getPersonRouteObstacles(allPersons);
+        const groups = this._buildFamilyGroups(familyRels || [], engine);
+        const relationshipPaths = new Map();
+
+        const plans = groups.map(group => {
+            const parentObjs = group.parentIds.map(id => this.personMap.get(id)).filter(Boolean);
+            const childObjs = group.childIds.map(id => this.personMap.get(id)).filter(Boolean);
+            if (parentObjs.length === 0 || childObjs.length === 0) return null;
+            const sourceInfo = this._getFamilySource(parentObjs, childObjs, otherRels || [], obstacles);
+            const plan = FamilyRoutePlanner.planFamily({
+                parents: parentObjs,
+                children: childObjs,
+                source: sourceInfo.source,
+                sourceRange: sourceInfo.sourceRange,
+                sourcePrefix: sourceInfo.sourcePrefix,
+                obstacles,
+                personSize: this.personSize,
+                margin: 10
+            });
+            plan.family = {
+                key: group.key,
+                parentIds: [...group.parentIds],
+                childIds: [...group.childIds],
+                relIds: [...group.relIds],
+                childToRelIds: group.childToRelIds,
+                pairToRelIds: group.pairToRelIds,
+                virtualPair: sourceInfo.virtualPair
+            };
+            group.parentIds.forEach(parentId => {
+                group.childIds.forEach(childId => {
+                    const path = plan.relationshipPaths[`${parentId}->${childId}`];
+                    const relIds = group.pairToRelIds[`${parentId}\u0000${childId}`] || [];
+                    if (!path) return;
+                    relIds.forEach(relId => relationshipPaths.set(relId, path.map(point => ({ ...point }))));
+                });
+            });
+            return plan;
+        }).filter(Boolean);
+
+        this._familyRoutePlans = plans;
+        this._familyRelationshipPaths = relationshipPaths;
+        this._familyRouteSignature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        return plans;
+    }
+
+    _getPlannedFamilyRelationshipPath(relationship, allRelationships) {
+        if (typeof FamilyRoutePlanner === 'undefined') return null;
+        const persons = Array.isArray(this.lastPersons) ? this.lastPersons : [];
+        const relationships = Array.isArray(allRelationships) && allRelationships.length > 0
+            ? allRelationships
+            : (Array.isArray(this.lastRelationships) ? this.lastRelationships : []);
+        const signature = this._getFamilyRouteSignature(persons, relationships);
+        if (signature !== this._familyRouteSignature || !this._familyRelationshipPaths.has(relationship.id)) {
+            const familyRels = [];
+            const otherRels = [];
+            relationships.forEach(rel => {
+                const category = typeof rel.getCategory === 'function'
+                    ? rel.getCategory()
+                    : Relationship.getCategory(rel.type);
+                (category === 'family' ? familyRels : otherRels).push(rel);
+            });
+            this.getFamilyRoutePlans(familyRels, persons, otherRels, new KinshipEngine(persons, relationships));
+        }
+        const path = this._familyRelationshipPaths.get(relationship.id);
+        return path ? path.map(point => ({ ...point })) : null;
+    }
+
+    _getFamilyLinkDash(relIds, relById) {
+        let linkType = 'biological';
+        for (const relId of relIds || []) {
+            const rel = relById.get(relId);
+            if (!rel) continue;
+            if (rel.linkType === 'foster') return DASH_PATTERNS.cohabit;
+            if (rel.linkType === 'adopted') linkType = 'adopted';
+        }
+        return linkType === 'adopted' ? DASH_PATTERNS.engaged : DASH_PATTERNS.solid;
+    }
+
+    _strokeFamilyPolyline(points, dash = DASH_PATTERNS.solid) {
+        if (!Array.isArray(points) || points.length < 2) return;
+        this.ctx.setLineDash(dash);
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        for (let index = 1; index < points.length; index++) {
+            this.ctx.lineTo(points[index].x, points[index].y);
+        }
+        this.ctx.stroke();
+    }
+
+    _drawFamilyPlan(plan, relById, selectedRelationshipId) {
+        const family = plan.family;
+        if (family.virtualPair && family.parentIds.length >= 2) {
+            const p1 = this.personMap.get(family.parentIds[0]);
+            const p2 = this.personMap.get(family.parentIds[1]);
+            if (p1 && p2) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#f0f0f0';
+                this._strokeFamilyPolyline([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }], DASH_PATTERNS.fosterLink);
+                this.ctx.restore();
+            }
+        }
+
+        const selectedPath = selectedRelationshipId
+            ? this._familyRelationshipPaths.get(selectedRelationshipId)
+            : null;
+        if (selectedPath && family.relIds.includes(selectedRelationshipId)) {
+            this.ctx.save();
+            this.ctx.strokeStyle = 'rgba(74, 144, 217, 0.3)';
+            this.ctx.lineWidth = 10;
+            this._strokeFamilyPolyline(selectedPath, DASH_PATTERNS.solid);
+            this.ctx.restore();
+        }
+
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 2;
+        const pairwise = plan.mode === 'reversed' || plan.mode === 'same-row';
+        if (pairwise) {
+            family.parentIds.forEach(parentId => {
+                family.childIds.forEach(childId => {
+                    const relIds = family.pairToRelIds[`${parentId}\u0000${childId}`] || [];
+                    const path = plan.relationshipPaths[`${parentId}->${childId}`];
+                    if (relIds.length > 0) this._strokeFamilyPolyline(path, this._getFamilyLinkDash(relIds, relById));
+                });
+            });
+        } else {
+            const singleChildDash = family.childIds.length === 1
+                ? this._getFamilyLinkDash(family.childToRelIds[family.childIds[0]], relById)
+                : DASH_PATTERNS.solid;
+            this._strokeFamilyPolyline(plan.sourcePath, singleChildDash);
+            this._strokeFamilyPolyline(plan.barPath, DASH_PATTERNS.solid);
+            family.childIds.forEach(childId => {
+                this._strokeFamilyPolyline(
+                    plan.childPaths[childId],
+                    this._getFamilyLinkDash(family.childToRelIds[childId], relById)
+                );
+            });
+            plan.twinGroups.forEach(group => {
+                if (group.monoBar) this._strokeFamilyPolyline(group.monoBar, DASH_PATTERNS.solid);
+            });
+        }
+
+        if (selectedPath && family.relIds.includes(selectedRelationshipId)) {
+            this.ctx.save();
+            this.ctx.strokeStyle = '#4a90d9';
+            this.ctx.lineWidth = 4;
+            this._strokeFamilyPolyline(selectedPath, DASH_PATTERNS.solid);
+            this.ctx.restore();
+        }
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
+    }
+
     /**
-     * 繪製家庭樹狀結構 (親子關係)
+     * 繪製家庭樹狀結構；正式路徑由 FamilyRoutePlanner 統一計算。
      */
     drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
+        if (typeof FamilyRoutePlanner === 'undefined') {
+            return this._drawFamiliesLegacy(familyRels, persons, otherRels, selectedRelationshipId, kinship);
+        }
+        const engine = kinship || new KinshipEngine(persons, [...familyRels, ...otherRels]);
+        const relById = new Map(familyRels.map(rel => [rel.id, rel]));
+        const plans = this.getFamilyRoutePlans(familyRels, persons, otherRels, engine);
+        this.ctx.save();
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+        plans.forEach(plan => this._drawFamilyPlan(plan, relById, selectedRelationshipId));
+        this.ctx.restore();
+    }
+
+    /**
+     * 舊版家庭幾何只保留為依賴載入失敗時的降級路徑。
+     */
+    _drawFamiliesLegacy(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
         // 若未提供 kinship（例如外部直接呼叫），就地建立以保持函式可獨立使用
         if (!kinship) kinship = new KinshipEngine(persons, familyRels);
         // [Phase 1] relId -> relationship，供推導每個子女的 linkType（親生/收養/寄養）以決定下行線型
@@ -4501,6 +4890,9 @@ class GenogramCanvas {
         }
 
         if (category === 'family') {
+            const plannedPath = this._getPlannedFamilyRelationshipPath(relationship, allRelationships);
+            if (plannedPath) return plannedPath;
+
             // 親子關係：使用與 drawFamilies 對齊的路徑，避免「只有小段能點」問題
             // 方向 (parent/child) 由資料決定 (from=parent, to=child)，不看 Y 座標
             const fallbackFamilyPath = () => {

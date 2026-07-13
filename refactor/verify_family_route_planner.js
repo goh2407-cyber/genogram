@@ -73,6 +73,22 @@ check('a central obstacle selects a safe offset inside the marriage segment', ()
     );
 });
 
+check('touching a safety-margin boundary is allowed but entering its interior is blocked', () => {
+    const obstacle = [{ ownerId: 'other', kind: 'symbol', left: 465, right: 535, top: 325, bottom: 395 }];
+    assert.equal(
+        FamilyRoutePlanner.pathIntersectsObstacles(
+            [{ x: 465, y: 300 }, { x: 465, y: 450 }], obstacle
+        ),
+        false
+    );
+    assert.equal(
+        FamilyRoutePlanner.pathIntersectsObstacles(
+            [{ x: 466, y: 300 }, { x: 466, y: 450 }], obstacle
+        ),
+        true
+    );
+});
+
 check('an unrelated parent label does not push a clear central trunk downward', () => {
     const input = baseInput();
     input.obstacles.push({
@@ -83,6 +99,28 @@ check('an unrelated parent label does not push a clear central trunk downward', 
     assert.equal(plan.safe, true);
     assert.equal(plan.trunkX, 500);
     assert.equal(plan.sourcePath[0].y, 300);
+});
+
+check('single-parent side prefix stays connected while routing outside the name box', () => {
+    const input = {
+        parents: [{ id: 'parent', x: 300, y: 300 }],
+        children: [{ id: 'kid', x: 300, y: 500 }],
+        source: { x: 350, y: 300 },
+        sourceRange: { minX: 350, maxX: 350 },
+        sourcePrefix: [{ x: 325, y: 300 }, { x: 350, y: 300 }],
+        obstacles: [{ ownerId: 'parent', kind: 'text', left: 260, right: 340, top: 330, bottom: 385 }],
+        personSize: 50,
+        margin: 10
+    };
+    const plan = FamilyRoutePlanner.planFamily(input);
+    assert.equal(plan.safe, true);
+    assert.deepEqual(plan.relationshipPaths['parent->kid'][0], { x: 325, y: 300 });
+    assert.equal(
+        FamilyRoutePlanner.pathIntersectsObstacles(
+            plan.relationshipPaths['parent->kid'], input.obstacles, new Set(['kid'])
+        ),
+        false
+    );
 });
 
 check('reversed generations use a finite upward orthogonal route', () => {

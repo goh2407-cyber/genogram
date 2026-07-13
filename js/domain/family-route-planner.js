@@ -51,6 +51,9 @@ class FamilyRoutePlanner {
             x: parents.reduce((sum, person) => sum + person.x, 0) / parents.length,
             y: Math.max(...parents.map(person => person.y + half))
         };
+        const sourcePrefix = this._dedupePoints(
+            (Array.isArray(input.sourcePrefix) ? input.sourcePrefix : []).filter(point => this._finitePoint(point))
+        );
         const rawRange = input.sourceRange || { minX: preferredSource.x, maxX: preferredSource.x };
         const range = {
             minX: Math.min(this._finite(rawRange.minX, preferredSource.x), this._finite(rawRange.maxX, preferredSource.x)),
@@ -88,7 +91,7 @@ class FamilyRoutePlanner {
                 const candidate = this._buildNormalCandidate({
                     parents, children, obstacles, personSize,
                     source: { x: trunkX, y: preferredSource.y },
-                    trunkX, barY
+                    sourcePrefix, trunkX, barY
                 });
                 if (!candidate.safe) continue;
                 candidate.score = this._routeScore(candidate.relationshipPaths, preferredSource.x, trunkX);
@@ -109,6 +112,7 @@ class FamilyRoutePlanner {
         const fallback = this._buildNormalCandidate({
             parents, children, obstacles, personSize,
             source: { x: clampX(preferredSource.x), y: preferredSource.y },
+            sourcePrefix,
             trunkX: laneX,
             barY: fallbackBarY,
             forceSideLane: true
@@ -120,16 +124,19 @@ class FamilyRoutePlanner {
         return fallback;
     }
 
-    static _buildNormalCandidate({ parents, children, obstacles, personSize, source, trunkX, barY, forceSideLane = false }) {
+    static _buildNormalCandidate({ parents, children, obstacles, personSize, source, sourcePrefix = [], trunkX, barY, forceSideLane = false }) {
         const half = personSize / 2;
+        const prefix = sourcePrefix.length > 0
+            ? this._dedupePoints([...sourcePrefix, source])
+            : [source];
         const sourcePath = forceSideLane && Math.abs(source.x - trunkX) > 0.01
             ? this._dedupePoints([
-                source,
+                ...prefix,
                 { x: source.x, y: source.y + 8 },
                 { x: trunkX, y: source.y + 8 },
                 { x: trunkX, y: barY }
             ])
-            : this._dedupePoints([source, { x: trunkX, y: barY }]);
+            : this._dedupePoints([...prefix, { x: trunkX, y: barY }]);
         const twinMap = new Map();
         const nonTwins = [];
         children.forEach(child => {
@@ -184,7 +191,7 @@ class FamilyRoutePlanner {
                 const path = this._dedupePoints([origin, end]);
                 childPaths[twin.id] = path;
                 const fullPath = allSameTwinGroup
-                    ? path
+                    ? this._dedupePoints([...prefix, end])
                     : this._dedupePoints([...sourcePath, { x: centerX, y: barY }, end]);
                 parents.forEach(parent => { relationshipPaths[`${parent.id}->${twin.id}`] = fullPath; });
                 return { childId: twin.id, points: path };
@@ -222,7 +229,7 @@ class FamilyRoutePlanner {
             trunkX,
             barY,
             source: { ...source },
-            sourcePath: allSameTwinGroup ? [] : sourcePath,
+            sourcePath: allSameTwinGroup && prefix.length < 2 ? [] : (allSameTwinGroup ? prefix : sourcePath),
             barPath,
             childPaths,
             twinGroups,
@@ -377,12 +384,22 @@ class FamilyRoutePlanner {
 
     static _segmentIntersectsRect(a, b, rect) {
         if (!this._finitePoint(a) || !this._finitePoint(b)) return true;
-        if (this._pointInRect(a, rect) || this._pointInRect(b, rect)) return true;
+        // Rectangles already include their visual safety margin. A route may run
+        // exactly on that outer boundary; only entering the interior is a collision.
+        const epsilon = 1e-7;
+        const inner = {
+            left: rect.left + epsilon,
+            right: rect.right - epsilon,
+            top: rect.top + epsilon,
+            bottom: rect.bottom - epsilon
+        };
+        if (inner.left >= inner.right || inner.top >= inner.bottom) return false;
+        if (this._pointInRect(a, inner) || this._pointInRect(b, inner)) return true;
         const edges = [
-            [{ x: rect.left, y: rect.top }, { x: rect.right, y: rect.top }],
-            [{ x: rect.right, y: rect.top }, { x: rect.right, y: rect.bottom }],
-            [{ x: rect.right, y: rect.bottom }, { x: rect.left, y: rect.bottom }],
-            [{ x: rect.left, y: rect.bottom }, { x: rect.left, y: rect.top }]
+            [{ x: inner.left, y: inner.top }, { x: inner.right, y: inner.top }],
+            [{ x: inner.right, y: inner.top }, { x: inner.right, y: inner.bottom }],
+            [{ x: inner.right, y: inner.bottom }, { x: inner.left, y: inner.bottom }],
+            [{ x: inner.left, y: inner.bottom }, { x: inner.left, y: inner.top }]
         ];
         return edges.some(([c, d]) => this._segmentsIntersect(a, b, c, d));
     }
