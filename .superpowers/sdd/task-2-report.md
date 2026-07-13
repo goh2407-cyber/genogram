@@ -58,6 +58,57 @@ Diagnostic comparison against detached pre-implementation `HEAD` (`33c159e`) usi
 
 Per the hard gate, this report does not claim full GREEN. A focused follow-up should stabilize font subset loading/rasterization without changing canvas semantics or the golden baseline.
 
+## Focused systematic-debugging follow-up (2026-07-13)
+
+Status: **GREEN**
+
+### Phase 1 — reproduction and evidence
+
+Fresh reproduction on `9730529` was stable: `09-twins diffPixels=183`; all other 15 fixtures were zero. A detached `33c159e` worktree remained 16/16 zero. The recent diff did not change `GenogramCanvas.fontFamily` (`Noto Sans TC, sans-serif`) or the 14px canvas name font; it changed the formerly visible legend into a default-hidden inspector tab.
+
+Same Chromium/session diagnostics showed both commits had identical computed body font, Canvas font, `document.fonts.status=loaded`, `document.fonts.check(..., '異卵A')=true`, and identical text metrics. The decisive difference was unicode-range face/request state: `33c159e` had 64 loaded Noto faces before fixture construction and requested subsets including `.106`, `.108`, and `.109`; `9730529` had only 48 loaded faces before construction and never requested those three because the legend subtree was hidden. After the fixture's synchronous `app.render()`, the implementation initiated four more faces but Canvas retained its already-painted fallback glyph because Canvas does not auto-repaint when a webfont finishes. Pixel inspection localized all 183 differences to the four `卵` glyphs.
+
+### Phase 2/3 — pattern and single hypothesis
+
+Hypothesis: hiding the previously visible legend removed its incidental Noto unicode-range warm-up, so `卵` was painted with fallback before its subset arrived and was never repainted. Minimal hypothesis test explicitly awaited `document.fonts.load('14px "Noto Sans TC"', '異卵A異卵B同卵A同卵B')` and rendered once more; `09-twins` changed from 183 to 0 while every fixture stayed zero. This confirmed the font-loading boundary, not Canvas geometry, clinical symbols, line colors, or golden data.
+
+A broad `loadingdone` listener was rejected during narrowing: it fixed `09-twins` but unnecessarily repainted all late font batches and caused `01-symbols diffPixels=54`. The final fix therefore restores only the pre-shell legend warm-up contract.
+
+### Phase 4 — regression and production fix
+
+Added `refactor/verify_canvas_font.js`, which delays real WOFF2 responses, draws a Canvas glyph with fallback, releases the fonts, and requires the automatic post-warm-up repaint to pixel-match an explicit reference repaint.
+
+RED before production change:
+
+```text
+FAIL | Canvas did not repaint after webfont loading completed
+```
+
+Single production fix in `js/app.js`: explicitly call `document.fonts.load()` with the hidden legend's existing text and render once when that warm-up promise completes. The ignored `geno/js/app.js` and `refactor/app/js/app.js` copies were synchronized to preserve the three-copy invariant. No golden baseline, threshold, clinical symbol, relationship color, or Canvas font definition changed.
+
+GREEN after production change:
+
+```text
+PASS | Canvas repaints after unicode-range webfont loading
+```
+
+### Fresh final verification
+
+```powershell
+$env:NODE_PATH = Join-Path $HOME '.cache/pw-smoke/node_modules'
+node refactor/verify_ui_shell.js
+node refactor/smoke_visual.js
+node refactor/visual_golden.js
+node refactor/verify_canvas_font.js
+```
+
+Results:
+
+- `verify_ui_shell.js`: all checks passed; zero console/page errors.
+- `smoke_visual.js`: `SMOKE OK`.
+- `visual_golden.js`: 16 fixtures, 0 failed; `09-twins diffPixels=0` and every other fixture `diffPixels=0`.
+- `verify_canvas_font.js`: PASS.
+
 ## Self-review
 
 - `git diff --check`: clean before commit.

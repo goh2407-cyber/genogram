@@ -125,6 +125,12 @@ class GenogramApp {
         this.cacheElements();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
+        // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
+        const legendText = document.getElementById('legendContent')?.textContent;
+        if (document.fonts && legendText) {
+            document.fonts.load('14px "Noto Sans TC"', legendText).then(() => this.render());
+        }
         this.setupEventListeners();
 
         // 延遲載入自動儲存，確保 canvas 和 ResizeObserver 都已完成初始化
