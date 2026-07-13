@@ -20,10 +20,18 @@ async function checkIconOnlyAccessibility(page) {
     const missing = await page.locator('button:has(svg)').evaluateAll(buttons => buttons
         .filter(button => button.getClientRects().length > 0)
         .filter(button => !button.textContent.trim())
-        .filter(button => !button.getAttribute('title') || !button.getAttribute('aria-label'))
+        .filter(button => {
+            const labelledBy = button.getAttribute('aria-labelledby');
+            const labelledByText = labelledBy
+                ? labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim()
+                : '';
+            return !button.getAttribute('aria-label')?.trim()
+                && !button.getAttribute('title')?.trim()
+                && !labelledByText;
+        })
         .map(button => button.id ? `#${button.id}` : button.outerHTML.slice(0, 80)));
-    check('icon-only commands have title and aria-label', missing.length === 0,
-        `missing accessibility labels: ${missing.join(', ')}`);
+    check('icon-only commands have an accessible name', missing.length === 0,
+        `missing aria-label, title, or aria-labelledby text: ${missing.join(', ')}`);
 }
 
 (async () => {
@@ -49,7 +57,11 @@ async function checkIconOnlyAccessibility(page) {
         check(`${selector} exists`, await page.locator(selector).count() > 0, `${selector} missing`);
     }
 
-    for (const id of ['addPerson', 'selectTool', 'boxSelectTool', 'connectTool', 'householdTool', 'lifeCircleTool']) {
+    const existingCommandIds = [
+        'addPerson', 'selectTool', 'boxSelectTool', 'connectTool', 'householdTool', 'lifeCircleTool',
+        'undoBtn', 'redoBtn', 'saveBtn', 'exportBtn'
+    ];
+    for (const id of existingCommandIds) {
         check(`existing command #${id} remains available`, await page.locator(`#${id}`).count() > 0,
             `existing command #${id} missing`);
     }
@@ -59,6 +71,9 @@ async function checkIconOnlyAccessibility(page) {
         const width = await inspector.evaluate(element => element.getBoundingClientRect().width);
         check('inspector width at 1366px is 296–336px', width >= 296 && width <= 336,
             `width=${width.toFixed(1)}px`);
+    } else {
+        check('inspector width at 1366px is 296–336px', false,
+            'cannot measure: #inspectorPanel missing');
     }
     await page.setViewportSize({ width: 1024, height: 768 });
     const toggle = page.locator('#inspectorToggle');
@@ -72,6 +87,15 @@ async function checkIconOnlyAccessibility(page) {
         const widthAfter = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
         check('collapsed inspector gives canvas usable width', widthAfter > widthBefore,
             `canvas width ${widthBefore.toFixed(1)}px → ${widthAfter.toFixed(1)}px`);
+    } else {
+        const missing = [
+            await toggle.count() ? null : '#inspectorToggle',
+            await canvasContainer.count() ? null : '#canvasContainer'
+        ].filter(Boolean).join(', ');
+        check('inspector toggle applies body.inspector-collapsed', false,
+            `cannot toggle: ${missing} missing`);
+        check('collapsed inspector gives canvas usable width', false,
+            `cannot compare canvas width: ${missing} missing`);
     }
     await checkIconOnlyAccessibility(page);
 
