@@ -147,6 +147,23 @@ async function checkIconOnlyAccessibility(page) {
         await page.waitForFunction(() => !document.body.classList.contains('inspector-collapsed'));
         check('auto-collapsed inspector restores on return to wide viewport',
             await page.locator('body.inspector-collapsed').count() === 0);
+        const headerCollision = await page.evaluate(() => {
+            const documentContext = document.querySelector('.document-context');
+            const documentName = document.querySelector('.document-name');
+            const dock = document.getElementById('canvasToolDock');
+            const isVisible = element => element && element.getClientRects().length > 0
+                && getComputedStyle(element).visibility !== 'hidden';
+            if (!isVisible(documentContext) || !isVisible(documentName)) return { hidden: true };
+            const documentRect = documentContext.getBoundingClientRect();
+            const nameRect = documentName.getBoundingClientRect();
+            const dockRect = dock.getBoundingClientRect();
+            const intersects = (a, b) => Math.max(a.left, b.left) < Math.min(a.right, b.right)
+                && Math.max(a.top, b.top) < Math.min(a.bottom, b.bottom);
+            return { hidden: false, intersects: intersects(documentRect, dockRect) || intersects(nameRect, dockRect),
+                documentRect: documentRect.toJSON(), nameRect: nameRect.toJSON(), dockRect: dockRect.toJSON() };
+        });
+        check('1024px document context is hidden or does not overlap the canvas tool dock',
+            headerCollision.hidden || !headerCollision.intersects, JSON.stringify(headerCollision));
         const widthBefore = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
         await toggle.click();
         check('inspector toggle applies body.inspector-collapsed',

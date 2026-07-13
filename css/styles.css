@@ -1590,6 +1590,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
     .canvas-tool-dock .tool-btn { width: var(--control-sm); padding: 0; }
 }
 
+@media (max-width: 1170px) {
+    .document-context { display: none; }
+}
+
 /* 保持既有 1280px 臨床畫布基準尺寸；寬螢幕使用完整 inspector。 */
 @media (min-width: 1181px) and (max-width: 1280px) {
     .global-bar { height: var(--toolbar-height); box-shadow: 0 2px 12px rgba(10, 16, 28, 0.35); }
