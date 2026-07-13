@@ -64,6 +64,7 @@ class GenogramApp {
         this.scale = 1;
         this.offsetX = 0;
         this.offsetY = 0;
+        this.currentInspectorTab = 'properties';
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -166,6 +167,7 @@ class GenogramApp {
 
             // 面板
             propertyContent: document.getElementById('propertyContent'),
+            inspectorToggle: document.getElementById('inspectorToggle'),
             statusBar: document.getElementById('statusBar'),
             zoomLevel: document.getElementById('zoomLevel'),
             zoomIn: document.getElementById('zoomIn'),
@@ -205,10 +207,41 @@ class GenogramApp {
         };
     }
 
+    setInspectorTab(tabName) {
+        const allowed = new Set(['properties', 'legend', 'view']);
+        const next = allowed.has(tabName) ? tabName : 'properties';
+        this.currentInspectorTab = next;
+        document.querySelectorAll('[data-inspector-tab]').forEach(button => {
+            const active = button.dataset.inspectorTab === next;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', String(active));
+        });
+        document.querySelectorAll('[data-inspector-panel]').forEach(panel => {
+            panel.hidden = panel.dataset.inspectorPanel !== next;
+        });
+    }
+
+    setInspectorCollapsed(collapsed) {
+        document.body.classList.toggle('inspector-collapsed', Boolean(collapsed));
+        this.elements.inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
+        requestAnimationFrame(() => this.canvas.resize());
+    }
+
     /**
      * 設定事件監聽器
      */
     setupEventListeners() {
+        document.querySelectorAll('[data-inspector-tab]').forEach(button => {
+            button.addEventListener('click', () => this.setInspectorTab(button.dataset.inspectorTab));
+        });
+        this.elements.inspectorToggle.addEventListener('click', () => {
+            this.setInspectorCollapsed(!document.body.classList.contains('inspector-collapsed'));
+        });
+        this.setInspectorTab(this.currentInspectorTab);
+        if (window.matchMedia('(max-width: 980px)').matches) {
+            this.setInspectorCollapsed(true);
+        }
+
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
         this.elements.addPersonBtn.addEventListener('click', () => this.showGenderModal('parent'));
 
