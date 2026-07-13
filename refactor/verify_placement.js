@@ -321,6 +321,64 @@ function assert(name, condition, detail = '') {
                 directions:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId==='quick-base') };
             return { parent, child, cancel, modalBefore, sibling, partner, daughter, pregnancy, committedParents };
         });
+
+        const metadata = await page.evaluate(() => {
+            const app = window.app; const g = GenogramApp.GRID;
+            const parent = new Person({ id:'metadata-parent', x:g.ORIGIN_X, y:g.ORIGIN_Y });
+            app.persons=[parent]; app.relationships=[]; app._syncPersonMap(); app.history.clear();
+            app.beginPlacement({ kind:'child', basePersonId:parent.id, personId:'metadata-ghost', gender:'pregnancy',
+                lossType:'miscarriage', twinGroup:'twins-a', zygosity:'mono',
+                relationshipPreview:[{ type:'parent-child', fromPersonId:parent.id, toPersonId:'metadata-ghost',
+                    linkType:'adopted', notes:'preserve-me', date:'2026', routeMode:'straight' }] });
+            app.commitPlacement();
+            const person=app.persons[1], rel=app.relationships[0];
+            return { lossType:person.lossType, twinGroup:person.twinGroup, zygosity:person.zygosity,
+                linkType:rel.linkType, notes:rel.notes, date:rel.date, routeMode:rel.routeMode, instance:rel instanceof Relationship };
+        });
+        assert('single placement preserves Person loss/twin metadata and full Relationship metadata',
+            metadata.lossType==='miscarriage' && metadata.twinGroup==='twins-a' && metadata.zygosity==='mono' &&
+            metadata.linkType==='adopted' && metadata.notes==='preserve-me' && metadata.date==='2026' &&
+            metadata.routeMode==='straight' && metadata.instance);
+
+        const quickE2E = await page.evaluate(() => {
+            const app=window.app, g=GenogramApp.GRID;
+            const reset=(withParents=false) => {
+                const base=new Person({id:'e2e-base',gender:'male',generation:'parent',x:g.ORIGIN_X,y:g.ORIGIN_Y+g.CELL_HEIGHT});
+                app.persons=[base]; app.relationships=[]; app._syncPersonMap(); app.history.clear();
+                app.selectedPersonId=base.id; app.selectedPersonIds=[]; app.selectedRelationshipId=null; app.cancelPlacement(); app.quickAddContext=null;
+                if(withParents){
+                    ['left','right'].forEach((side,i)=>{ const p=new Person({id:'e2e-parent-'+side,x:base.x+(i?60:-60),y:g.ORIGIN_Y}); app.persons.push(p); app.personMap.set(p.id,p); app.relationships.push(new Relationship({type:'parent-child',fromPersonId:p.id,toPersonId:base.id,linkType:i?'foster':'adopted'})); });
+                }
+                return base;
+            };
+            const result={};
+            for(const type of ['son','daughter','pregnancy']){
+                const base=reset(); app.handleQuickAddClick(base,type); const choosing=app.elements.statusBar.textContent; app.commitPlacement();
+                const child=app.persons[1], edges=app.relationships.filter(r=>r.type==='parent-child');
+                result[type]={gender:child.gender,edges:edges.length,direction:edges.every(r=>r.fromPersonId===base.id&&r.toPersonId===child.id),history:app.history.getUndoCount(),selected:app.selectedPersonId===child.id,status:app.elements.statusBar.textContent,choosing};
+            }
+            let base=reset(true); app.handleQuickAddClick(base,'sibling'); app.createQuickPersonWithGender('female'); app.commitPlacement();
+            let created=app.persons[3], edges=app.relationships.filter(r=>r.toPersonId===created.id);
+            result.sibling={people:app.persons.length,edges:edges.length,direction:edges.every(r=>r.fromPersonId.startsWith('e2e-parent-')),linkTypes:edges.map(r=>r.linkType).sort(),history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent};
+            base=reset(); app.handleQuickAddClick(base,'partner'); app.createQuickPersonWithGender('female'); app.commitPlacement(); created=app.persons[1];
+            result.partner={people:app.persons.length,rels:app.relationships.length,type:app.relationships[0].type,history:app.history.getUndoCount(),selected:app.selectedPersonId===created.id,status:app.elements.statusBar.textContent};
+            base=reset(); const spouseA=new Person({id:'sp-a',x:base.x-g.CELL_WIDTH,y:base.y}),spouseB=new Person({id:'sp-b',x:base.x+3*g.CELL_WIDTH,y:base.y}); app.persons.push(spouseA,spouseB); app.personMap.set(spouseA.id,spouseA); app.personMap.set(spouseB.id,spouseB); const ra=new Relationship({id:'sp-rel-a',type:'married',fromPersonId:base.id,toPersonId:spouseA.id}),rb=new Relationship({id:'sp-rel-b',type:'married',fromPersonId:base.id,toPersonId:spouseB.id}); app.relationships.push(ra,rb); app.selectedRelationshipId=rb.id; app.handleQuickAddClick(base,'son'); app.commitPlacement(); created=app.persons[3]; edges=app.relationships.filter(r=>r.type==='parent-child');
+            result.selectedSpouse={edges:edges.length,parents:edges.map(r=>r.fromPersonId).sort(),child:edges.every(r=>r.toPersonId===created.id),history:app.history.getUndoCount()};
+            base=reset(); const blocker=new Person({id:'occupied',x:base.x+g.CELL_WIDTH,y:base.y}); app.persons.push(blocker);app.personMap.set(blocker.id,blocker);const before=app.persons.map(p=>[p.id,p.x,p.y]);app.handleQuickAddClick(base,'partner');app.createQuickPersonWithGender('female');const candidate=app.placementSession.candidate;app.commitPlacement();
+            result.occupied={fallback:candidate.x!==blocker.x,unchanged:before.every(([id,x,y])=>{const p=app.personMap.get(id);return p.x===x&&p.y===y;})};
+            base=reset(); app.handleQuickAddClick(base,'parent'); app.commitPlacement();
+            result.parent={people:app.persons.length,rels:app.relationships.length,edges:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId===base.id),history:app.history.getUndoCount(),selected:app.selectedPersonId!=='e2e-base',status:app.elements.statusBar.textContent};
+            base=reset(); for(const type of ['sibling','partner']){ app.handleQuickAddClick(base,type); const choosing=app.elements.statusBar.textContent; app.closeGenderModal(); result[type+'Cancel']={people:app.persons.length,rels:app.relationships.length,history:app.history.getUndoCount(),selected:app.selectedPersonId,choosing}; }
+            return result;
+        });
+        ['son','daughter','pregnancy'].forEach(type => assert(`quick ${type} commit creates directed child in one history with selection/status`, quickE2E[type].edges===1 && quickE2E[type].direction && quickE2E[type].history===1 && quickE2E[type].selected && /已建立/.test(quickE2E[type].status) && /位置/.test(quickE2E[type].choosing)));
+        assert('quick sibling commits both real parent edges with metadata in one history', quickE2E.sibling.people===4 && quickE2E.sibling.edges===2 && quickE2E.sibling.direction && quickE2E.sibling.linkTypes.join(',')==='adopted,foster' && quickE2E.sibling.history===1 && quickE2E.sibling.selected && /已建立/.test(quickE2E.sibling.status));
+        assert('quick partner commits relationship in one history with selection/status', quickE2E.partner.people===2 && quickE2E.partner.rels===1 && quickE2E.partner.type==='married' && quickE2E.partner.history===1 && quickE2E.partner.selected && /已建立/.test(quickE2E.partner.status));
+        assert('selected spouse child commit writes both parent-to-child edges', quickE2E.selectedSpouse.edges===2 && quickE2E.selectedSpouse.parents.join(',')==='e2e-base,sp-b' && quickE2E.selectedSpouse.child && quickE2E.selectedSpouse.history===1);
+        assert('occupied quick-add falls back without moving existing people', quickE2E.occupied.fallback && quickE2E.occupied.unchanged);
+        assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
+        assert('sibling gender-modal cancel writes nothing and retains selection', quickE2E.siblingCancel.people===1 && quickE2E.siblingCancel.rels===0 && quickE2E.siblingCancel.history===0 && quickE2E.siblingCancel.selected==='e2e-base');
+        assert('partner gender-modal cancel writes nothing and retains selection', quickE2E.partnerCancel.people===1 && quickE2E.partnerCancel.rels===0 && quickE2E.partnerCancel.history===0 && quickE2E.partnerCancel.selected==='e2e-base');
         assert('quick parent previews two people and three relationships without writes', quick.parent.active && quick.parent.count===1 && quick.parent.rels===0 && quick.parent.history===0 && quick.parent.request.people.length===2 && quick.parent.ghostCount===2 && quick.parent.request.relationshipPreview.length===3);
         assert('quick child honors selected spouse midpoint and previews both parent edges', quick.child.active && quick.child.previews.length===2 && quick.child.x===quick.child.midpoint);
         assert('quick placement cancel writes no history and restores selection', quick.cancel.history===0 && quick.cancel.count===3 && quick.cancel.selected==='quick-base' && quick.cancel.relationship==='r2');
@@ -446,6 +504,26 @@ function assert(name, condition, detail = '') {
             stateCtx.lineTo = originalLineTo;
             const staleEndpointSkipped = !lineEndpoints.some(([x, y]) => x === base.x && y === base.y);
 
+            app.selectedPersonId = base.id;
+            app.handleQuickAddClick(base, 'parent');
+            const pairSession = app.placementSession;
+            const drawnGhostIds = [];
+            const pairSegments = [];
+            const realDrawPairPerson = app.canvas.drawPerson;
+            const realMoveTo = stateCtx.moveTo;
+            const realPairLineTo = stateCtx.lineTo;
+            let movePoint = null;
+            app.canvas.drawPerson = person => { drawnGhostIds.push(person.id); };
+            stateCtx.moveTo = function(x, y) { movePoint = [x, y]; return realMoveTo.call(this, x, y); };
+            stateCtx.lineTo = function(x, y) { if (movePoint) pairSegments.push([movePoint, [x, y]]); return realPairLineTo.call(this, x, y); };
+            app.canvas.drawPlacementPreview({ ...pairSession.candidate, ghostPerson: pairSession.ghostPerson, ghostPeople: pairSession.ghostPeople });
+            app.canvas.drawPerson = realDrawPairPerson;
+            stateCtx.moveTo = realMoveTo;
+            stateCtx.lineTo = realPairLineTo;
+            const pairGhostsDrawn = pairSession.ghostPeople.every(person => drawnGhostIds.includes(person.id));
+            const relationshipPoints = [...pairSession.ghostPeople, base];
+            const pairRelationshipSegments = pairSegments.filter(([a, b]) => relationshipPoints.some(p => p.x === a[0] && p.y === a[1]) && relationshipPoints.some(p => p.x === b[0] && p.y === b[1])).length;
+
             // All raster-backed export entry points must bypass the editor overlay.
             let exportOverlayCalls = 0;
             const originalDrawPreview = app.canvas.drawPlacementPreview;
@@ -470,6 +548,7 @@ function assert(name, condition, detail = '') {
             const exportAfterCancel = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
             return { brandPixels, ghostOnlyPixels, relationshipPixels, childRelationshipPixels, unavailableMarkerPixels,
                 restored, staleEndpointSkipped, exportOverlayCalls, jpegDuring, svgResult, pdfResult,
+                pairGhostsDrawn, pairRelationshipSegments,
                 exportsNonNull: Boolean(exportBefore && exportDuring && exportAfterCancel),
                 exportEqual: exportBefore === exportDuring && exportBefore === exportAfterCancel };
         }, suppressGhostMode);
@@ -480,6 +559,7 @@ function assert(name, condition, detail = '') {
         assert('occupied placement draws unavailable-marker-only pixels', overlay.unavailableMarkerPixels > 0, `pixels=${overlay.unavailableMarkerPixels}`);
         assert('placement overlay restores complete canvas drawing state', overlay.restored);
         assert('stale relationship endpoint is not treated as the ghost', overlay.staleEndpointSkipped);
+        assert('parent-pair overlay draws both ghosts and all three preview relationships', overlay.pairGhostsDrawn && overlay.pairRelationshipSegments >= 3, `segments=${overlay.pairRelationshipSegments}`);
         assert('JPEG/SVG/PDF export paths never call placement overlay', overlay.exportOverlayCalls === 0, `calls=${overlay.exportOverlayCalls}`);
         assert('JPEG export is a valid non-null data URL', /^data:image\/jpeg/.test(overlay.jpegDuring || ''));
         assert('SVG export produces valid non-null SVG', /^<\?xml[\s\S]*<svg/.test(overlay.svgResult || ''));

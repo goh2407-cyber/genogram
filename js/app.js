@@ -4170,9 +4170,11 @@ class GenogramApp {
                 const spouse = this.pickSpouseForChildCreation(base, spouses);
                 if (spouse) preferredX = (base.x + spouse.x) / 2;
                 const parentIds = spouse ? [base.id, spouse.id] : [base.id];
-                relationshipPreview = parentIds.map(parentId => ({
-                    type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
-                }));
+                if (!request.relationshipPreview || request.relationshipPreview.length === 0) {
+                    relationshipPreview = parentIds.map(parentId => ({
+                        type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                    }));
+                }
             } else if (request.kind === 'parent') {
                 preferredY = this.getGenerationYByIndex(baseGeneration - 1);
                 relationshipPreview = [{
@@ -4187,9 +4189,17 @@ class GenogramApp {
                     toPersonId: previewPersonId
                 }];
             } else if (request.kind === 'sibling') {
-                relationshipPreview = kinship.getParentIds(base.id).map(parentId => ({
-                    type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
-                }));
+                relationshipPreview = kinship.getParentIds(base.id).map(parentId => {
+                    const source = this.relationships.find(rel => {
+                        const normalized = kinship.normalizeParentChild(rel);
+                        return normalized && normalized.parentId === parentId && normalized.childId === base.id;
+                    });
+                    return {
+                        ...(source && typeof source.toJSON === 'function' ? source.toJSON() : source),
+                        id: undefined,
+                        type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                    };
+                });
             }
         }
 
@@ -4311,19 +4321,17 @@ class GenogramApp {
         if (session.request.gender) {
             this.saveState();
             const person = new Person({
+                ...session.request,
                 x: session.candidate.x,
                 y: session.candidate.y,
-                gender: session.request.gender,
-                sexualOrientation: session.request.sexualOrientation,
-                transgender: session.request.transgender,
-                generation: session.request.generation
+                id: undefined
             });
             this.persons.push(person);
             this.personMap.set(person.id, person);
             const previewId = session.request.personId || '__placement__';
             session.candidate.relationshipPreview.forEach(preview => {
                 this.relationships.push(new Relationship({
-                    type: preview.type,
+                    ...preview,
                     fromPersonId: preview.fromPersonId === previewId ? person.id : preview.fromPersonId,
                     toPersonId: preview.toPersonId === previewId ? person.id : preview.toPersonId
                 }));
