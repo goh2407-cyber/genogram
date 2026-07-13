@@ -278,6 +278,57 @@ function assert(name, condition, detail = '') {
             interaction.altClickCommit &&
             Math.abs(interaction.altClickCommit.x - interaction.altClickCommit.expectedX) < 0.001 &&
             Math.abs(interaction.altClickCommit.y - interaction.altClickCommit.expectedY) < 0.001);
+
+        const quick = await page.evaluate(() => {
+            const app = window.app;
+            const g = GenogramApp.GRID;
+            const reset = () => {
+                const base = new Person({ id: 'quick-base', gender: 'male', generation: 'parent', x: g.ORIGIN_X, y: g.ORIGIN_Y + g.CELL_HEIGHT });
+                app.persons = [base]; app.relationships = []; app._syncPersonMap(); app.history.clear();
+                app.selectedPersonId = base.id; app.selectedRelationshipId = null; app.cancelPlacement(); app.quickAddContext = null;
+                return base;
+            };
+            const snapshot = type => {
+                const base = reset(); app.handleQuickAddClick(base, type);
+                return { active: !!app.placementSession, count: app.persons.length, rels: app.relationships.length,
+                    history: app.history.getUndoCount(), request: app.placementSession && app.placementSession.request };
+            };
+            const parent = snapshot('parent');
+            parent.ghostCount = app.placementSession.ghostPeople && app.placementSession.ghostPeople.length;
+            const base = reset();
+            const p1 = new Person({ id: 'p1', gender: 'female', x: base.x - g.CELL_WIDTH, y: base.y });
+            const p2 = new Person({ id: 'p2', gender: 'female', x: base.x + 3 * g.CELL_WIDTH, y: base.y });
+            app.persons.push(p1, p2); app.personMap.set(p1.id,p1); app.personMap.set(p2.id,p2);
+            const r1 = new Relationship({ id:'r1', type:'married', fromPersonId:base.id, toPersonId:p1.id });
+            const r2 = new Relationship({ id:'r2', type:'married', fromPersonId:base.id, toPersonId:p2.id });
+            app.relationships.push(r1,r2); app.selectedRelationshipId='r2';
+            app.handleQuickAddClick(base,'son');
+            const child = { active:!!app.placementSession, previews:app.placementSession.candidate.relationshipPreview,
+                x:app.placementSession.candidate.x, midpoint:(base.x+p2.x)/2 };
+            app.cancelPlacement();
+            const cancel = { history:app.history.getUndoCount(), count:app.persons.length, selected:app.selectedPersonId, relationship:app.selectedRelationshipId };
+            reset(); app.handleQuickAddClick(app.personMap.get('quick-base'),'sibling');
+            const modalBefore = { history:app.history.getUndoCount(), count:app.persons.length };
+            app.createQuickPersonWithGender('female', false, null);
+            const sibling = { active:!!app.placementSession, count:app.persons.length, history:app.history.getUndoCount(), previews:app.placementSession.candidate.relationshipPreview };
+            app.cancelPlacement();
+            reset(); app.handleQuickAddClick(app.personMap.get('quick-base'),'partner'); app.createQuickPersonWithGender('female',false,null);
+            const partner = { active:!!app.placementSession, type:app.placementSession.candidate.relationshipPreview[0].type };
+            reset(); app.handleQuickAddClick(app.personMap.get('quick-base'),'daughter'); const daughter=!!app.placementSession;
+            reset(); app.handleQuickAddClick(app.personMap.get('quick-base'),'pregnancy'); const pregnancy=app.placementSession.request.gender;
+            reset(); app.handleQuickAddClick(app.personMap.get('quick-base'),'parent'); app.commitPlacement();
+            const committedParents = { people:app.persons.length, rels:app.relationships.length, history:app.history.getUndoCount(),
+                directions:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId==='quick-base') };
+            return { parent, child, cancel, modalBefore, sibling, partner, daughter, pregnancy, committedParents };
+        });
+        assert('quick parent previews two people and three relationships without writes', quick.parent.active && quick.parent.count===1 && quick.parent.rels===0 && quick.parent.history===0 && quick.parent.request.people.length===2 && quick.parent.ghostCount===2 && quick.parent.request.relationshipPreview.length===3);
+        assert('quick child honors selected spouse midpoint and previews both parent edges', quick.child.active && quick.child.previews.length===2 && quick.child.x===quick.child.midpoint);
+        assert('quick placement cancel writes no history and restores selection', quick.cancel.history===0 && quick.cancel.count===3 && quick.cancel.selected==='quick-base' && quick.cancel.relationship==='r2');
+        assert('quick gender modal path has no pre-modal history write', quick.modalBefore.history===0 && quick.modalBefore.count===1);
+        assert('quick sibling gender selection begins placement without writes', quick.sibling.active && quick.sibling.count===1 && quick.sibling.history===0);
+        assert('quick partner gender selection begins married placement', quick.partner.active && quick.partner.type==='married');
+        assert('quick daughter and pregnancy enter typed placement', quick.daughter && quick.pregnancy==='pregnancy');
+        assert('quick parent commit is one atomic history entry with parent-to-child directions', quick.committedParents.people===3 && quick.committedParents.rels===3 && quick.committedParents.history===1 && quick.committedParents.directions);
     }
 
     if (overlayMode) {

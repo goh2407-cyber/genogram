@@ -1817,13 +1817,9 @@ class GenogramApp {
      * @param {string} buttonType - 按鈕類型 ('parent', 'sibling', 'partner', 'son', 'daughter', 'pregnancy')
      */
     handleQuickAddClick(basePerson, buttonType) {
-        const grid = GenogramApp.GRID;
-        this.saveState();
-
         switch (buttonType) {
             case 'parent':
-                // 一鍵建立父母（父親 + 母親 + 婚姻線 + 2條親子線）
-                this.createParentsForPerson(basePerson);
+                this.beginQuickParentPlacement(basePerson);
                 break;
 
             case 'sibling':
@@ -1841,17 +1837,53 @@ class GenogramApp {
                 break;
 
             case 'son':
-                this.createChildForPerson(basePerson, 'male');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'male');
                 break;
 
             case 'daughter':
-                this.createChildForPerson(basePerson, 'female');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'female');
                 break;
 
             case 'pregnancy':
-                this.createChildForPerson(basePerson, 'pregnancy');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'pregnancy');
                 break;
         }
+    }
+
+    beginQuickRelativePlacement(basePerson, kind, gender, extras = {}) {
+        const session = this.beginPlacement({ kind, basePersonId: basePerson.id, gender,
+            generation: kind === 'child' ? this.getGenerationBelow(basePerson.generation) : basePerson.generation,
+            ...extras });
+        this.updateStatus('請選擇新增人物的位置', 'info');
+        this.render();
+        return session;
+    }
+
+    beginQuickParentPlacement(child) {
+        const grid = GenogramApp.GRID;
+        const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
+        let centerX = child.x;
+        const freePair = x => [x - grid.CELL_WIDTH / 2, x + grid.CELL_WIDTH / 2].every(px =>
+            !this.persons.some(p => Math.abs(p.x - px) < grid.CELL_WIDTH * 0.35 && Math.abs(p.y - parentY) < grid.CELL_HEIGHT * 0.35));
+        for (let d = 0; !freePair(centerX) && d <= this.persons.length + 4; d++) {
+            const step = Math.ceil((d + 1) / 2) * grid.CELL_WIDTH;
+            centerX = child.x + (d % 2 === 0 ? -step : step);
+        }
+        const fatherId = '__placement_father__';
+        const motherId = '__placement_mother__';
+        const session = this.beginPlacement({ kind: 'parent-pair', basePersonId: child.id,
+            people: [
+                { personId: fatherId, gender: 'male', generation: this.getGenerationAbove(child.generation), x: centerX - grid.CELL_WIDTH / 2, y: parentY },
+                { personId: motherId, gender: 'female', generation: this.getGenerationAbove(child.generation), x: centerX + grid.CELL_WIDTH / 2, y: parentY }
+            ],
+            relationshipPreview: [
+                { type: 'married', fromPersonId: fatherId, toPersonId: motherId },
+                { type: 'parent-child', fromPersonId: fatherId, toPersonId: child.id },
+                { type: 'parent-child', fromPersonId: motherId, toPersonId: child.id }
+            ]
+        });
+        this.render();
+        return session;
     }
 
     /**
@@ -2066,75 +2098,10 @@ class GenogramApp {
             return;
         }
 
-        const grid = GenogramApp.GRID;
-        this.saveState();
-
-        if (type === 'sibling') {
-            // 建立手足
-            let siblingX = basePerson.x + grid.CELL_WIDTH;
-            const sameLevelPersons = this.persons.filter(p =>
-                Math.abs(p.y - basePerson.y) < grid.CELL_HEIGHT * 0.5
-            );
-            if (sameLevelPersons.length > 0) {
-                const rightmost = Math.max(...sameLevelPersons.map(p => p.x));
-                siblingX = rightmost + grid.CELL_WIDTH;
-            }
-
-            const sibling = new Person({
-                x: siblingX,
-                y: basePerson.y,
-                gender: gender,
-                sexualOrientation: sexualOrientation,
-                transgender: transgender,
-                generation: basePerson.generation
-            });
-            this.persons.push(sibling);
-            this.personMap.set(sibling.id, sibling);
-
-            // 找出基準角色的父母，為手足建立親子關係
-            const parentRels = this.relationships.filter(r =>
-                r.type === 'parent-child' && r.toPersonId === basePerson.id
-            );
-            parentRels.forEach(rel => {
-                const siblingParentRel = new Relationship({
-                    fromPersonId: rel.fromPersonId,
-                    toPersonId: sibling.id,
-                    type: 'parent-child'
-                });
-                this.relationships.push(siblingParentRel);
-            });
-
-            this.updateStatus('已建立手足', 'success');
-        } else if (type === 'partner') {
-            // 建立伴侶
-            const partnerX = basePerson.x + grid.CELL_WIDTH;
-
-            const partner = new Person({
-                x: partnerX,
-                y: basePerson.y,
-                gender: gender,
-                sexualOrientation: sexualOrientation,
-                transgender: transgender,
-                generation: basePerson.generation
-            });
-            this.persons.push(partner);
-            this.personMap.set(partner.id, partner);
-
-            // 建立關係 (預設為 cohabiting，或可改為 marriage)
-            const cohabitRel = new Relationship({
-                fromPersonId: basePerson.id,
-                toPersonId: partner.id,
-                type: 'married' // [Bug Fix] 使用 'married' 以符合 MARRIAGE_TYPES 定義，確保 findSpouse 能正確找到配偶
-
-            });
-            this.relationships.push(cohabitRel);
-
-            this.updateStatus('已建立伴侶關係', 'success');
-        }
-
-        this.closeGenderModal();
-        this.autoSave();
-        this.render();
+        this.elements.genderModal.classList.remove('active');
+        this.quickAddContext = null;
+        this.beginQuickRelativePlacement(basePerson, type, gender, { sexualOrientation, transgender,
+            relationshipType: type === 'partner' ? 'married' : undefined });
     }
 
     /**
@@ -3876,7 +3843,8 @@ class GenogramApp {
         this.canvas.lifeCirclesToDraw = this.lifeCircles || [];
         this.canvas.selectedLifeCircleId = this.selectedLifeCircleId || null;
         this.canvas.placementPreview = this.placementSession
-            ? { ...this.placementSession.candidate, ghostPerson: this.placementSession.ghostPerson }
+            ? { ...this.placementSession.candidate, ghostPerson: this.placementSession.ghostPerson,
+                ghostPeople: this.placementSession.ghostPeople }
             : null;
         this.canvas.render(
             this.persons,
@@ -4178,7 +4146,11 @@ class GenogramApp {
         let preferredY;
         let relationshipPreview = request.relationshipPreview || [];
 
-        if (request.kind === 'person' && !request.basePersonId) {
+        if (request.kind === 'parent-pair') {
+            const first = request.people[0];
+            preferredX = first.x;
+            preferredY = first.y;
+        } else if (request.kind === 'person' && !request.basePersonId) {
             preferredX = grid.ORIGIN_X + Math.round(((request.x || 0) - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH;
             preferredY = grid.ORIGIN_Y + Math.round(((request.y || 0) - grid.ORIGIN_Y) / grid.CELL_HEIGHT) * grid.CELL_HEIGHT;
         } else {
@@ -4221,7 +4193,24 @@ class GenogramApp {
             }
         }
 
-        const open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
+        let open;
+        if (request.kind === 'parent-pair') {
+            const gap = request.people[1].x - request.people[0].x;
+            const excludedIds = request.excludedIds || new Set();
+            const pairFree = x => [x, x + gap].every(px => !this.persons.some(person =>
+                !excludedIds.has(person.id) && Math.abs(person.x - px) < grid.CELL_WIDTH * 0.35 &&
+                Math.abs(person.y - preferredY) < grid.CELL_HEIGHT * 0.35));
+            const initiallyOccupied = !pairFree(preferredX);
+            let x = preferredX;
+            for (let distance = 0; distance <= this.persons.length + 4; distance++) {
+                const offsets = distance === 0 ? [0] : [-distance, distance];
+                const found = offsets.map(offset => preferredX + offset * grid.CELL_WIDTH).find(pairFree);
+                if (found !== undefined) { x = found; break; }
+            }
+            open = { x, y: preferredY, occupied: initiallyOccupied };
+        } else {
+            open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
+        }
         return {
             ...open,
             guides: {
@@ -4235,17 +4224,37 @@ class GenogramApp {
 
     beginPlacement(request) {
         const candidate = this.getPlacementCandidate(request);
+        const selectionBefore = {
+            selectedPersonId: this.selectedPersonId,
+            selectedPersonIds: [...this.selectedPersonIds],
+            selectedRelationshipId: this.selectedRelationshipId
+        };
         this.placementSession = {
             request: { ...request },
             candidate,
-            ghostPerson: { ...request, id: request.personId || '__placement__', x: candidate.x, y: candidate.y }
+            ghostPerson: { ...request, id: request.personId || (request.people && request.people[0].personId) || '__placement__', x: candidate.x, y: candidate.y },
+            selectionBefore
         };
+        if (request.people) {
+            this.placementSession.ghostPeople = request.people.map(person => ({
+                ...person, id: person.personId, x: person.x, y: person.y
+            }));
+        }
+        this.updateStatus('請選擇新增人物的位置', 'info');
         return this.placementSession;
     }
 
     updatePlacement(x, y, bypassSnap = false) {
         if (!this.placementSession) return null;
-        const request = { ...this.placementSession.request, kind: 'person', basePersonId: null, x, y };
+        let request = { ...this.placementSession.request, kind: 'person', basePersonId: null, x, y };
+        if (this.placementSession.request.people) {
+            const first = this.placementSession.request.people[0];
+            request = { ...this.placementSession.request,
+                people: this.placementSession.request.people.map(person => ({
+                    ...person, x: x + person.x - first.x, y: y + person.y - first.y
+                }))
+            };
+        }
         const candidate = bypassSnap
             ? { x, y, occupied: false, guides: null, relationshipPreview: this.placementSession.candidate.relationshipPreview }
             : this.getPlacementCandidate(request);
@@ -4253,16 +4262,52 @@ class GenogramApp {
         this.placementSession.candidate = candidate;
         this.placementSession.ghostPerson.x = candidate.x;
         this.placementSession.ghostPerson.y = candidate.y;
+        if (this.placementSession.ghostPeople) {
+            const first = this.placementSession.request.people[0];
+            const dx = candidate.x - first.x;
+            const dy = candidate.y - first.y;
+            this.placementSession.ghostPeople = this.placementSession.request.people.map(person => ({
+                ...person, id: person.personId, x: person.x + dx, y: person.y + dy
+            }));
+        }
         return candidate;
     }
 
     cancelPlacement() {
+        if (this.placementSession && this.placementSession.selectionBefore) {
+            const before = this.placementSession.selectionBefore;
+            this.selectedPersonId = before.selectedPersonId;
+            this.selectedPersonIds = [...before.selectedPersonIds];
+            this.selectedRelationshipId = before.selectedRelationshipId;
+        }
         this.placementSession = null;
     }
 
     commitPlacement() {
         const session = this.placementSession;
         if (!session) return null;
+        if (session.request.people) {
+            this.saveState();
+            const idMap = new Map();
+            session.request.people.forEach((spec, index) => {
+                const dx = session.candidate.x - session.request.people[0].x;
+                const dy = session.candidate.y - session.request.people[0].y;
+                const person = new Person({ ...spec, x: spec.x + dx, y: spec.y + dy });
+                this.persons.push(person); this.personMap.set(person.id, person);
+                idMap.set(spec.personId, person.id);
+                if (index === 0) this.selectedPersonId = person.id;
+            });
+            session.request.relationshipPreview.forEach(preview => this.relationships.push(new Relationship({
+                ...preview,
+                fromPersonId: idMap.get(preview.fromPersonId) || preview.fromPersonId,
+                toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
+            })));
+            this.placementSession = null;
+            this.selectedPersonIds = [];
+            this.setTool('select'); this.autoSave(); this.render();
+            this.updateStatus('已建立父母（父親 + 母親 + 婚姻線 + 親子線）', 'success');
+            return session;
+        }
         if (session.request.gender) {
             this.saveState();
             const person = new Person({

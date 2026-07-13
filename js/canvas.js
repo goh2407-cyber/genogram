@@ -410,16 +410,18 @@ class GenogramCanvas {
         try {
             const suppliedGhost = preview.ghostPerson || {};
             const ghost = { gender: 'unknown', name: '', ...suppliedGhost, x: preview.x, y: preview.y };
+            const ghosts = (preview.ghostPeople && preview.ghostPeople.length > 0)
+                ? preview.ghostPeople
+                : [ghost];
+            const ghostMap = new Map(ghosts.map(person => [person.id, person]));
 
             // Relationship previews deliberately use a neutral selection dash rather than
             // any clinical relationship style.
             (preview.relationshipPreview || []).forEach(rel => {
-                const resolveEndpoint = id => id === ghost.id
-                    ? ghost
-                    : (this.personMap && this.personMap.get(id));
+                const resolveEndpoint = id => ghostMap.get(id) || (this.personMap && this.personMap.get(id));
                 const fromPoint = resolveEndpoint(rel.fromPersonId);
                 const toPoint = resolveEndpoint(rel.toPersonId);
-                if (!fromPoint || !toPoint || (fromPoint === ghost && toPoint === ghost)) return;
+                if (!fromPoint || !toPoint || fromPoint === toPoint) return;
                 this.ctx.save();
                 this.ctx.globalAlpha = 0.55;
                 this.ctx.strokeStyle = '#6b7280';
@@ -435,7 +437,7 @@ class GenogramCanvas {
 
             this.drawPlacementCell(preview);
             this.ctx.globalAlpha = 0.38;
-            this.drawPerson(ghost, false, false, false);
+            ghosts.forEach(person => this.drawPerson(person, false, false, false));
         } finally {
             this.ctx.restore();
         }
