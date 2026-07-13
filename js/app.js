@@ -529,6 +529,12 @@ class GenogramApp {
      */
     cancelInteraction() {
         this.cancelPlacement();
+
+        // 新建關係視窗依賴 connectingFrom/connectingTo。失焦時既然要清除端點，
+        // 也必須同步關閉該視窗，避免回到頁面後只剩一個無法送出的 modal。
+        // 編輯既有關係不依賴暫存端點，因此允許視窗保持開啟。
+        this.cancelRelationshipWorkflow({ preserveEditor: true });
+
         // 清理拖曳狀態
         if (this.canvas) {
             this.canvas.isDragging = false;
@@ -1556,6 +1562,11 @@ class GenogramApp {
                     this.updateStatus('新增人物已取消', 'info');
                 } else if (this.isDrawingLifeCircle) {
                     this.cancelLifeCircle();
+                } else if (this.elements.relationshipModal?.classList.contains('active')) {
+                    // 新建關係視窗仍保留 connectingFrom/connectingTo；必須先關閉視窗，
+                    // 否則第一次 Esc 只會清掉第一端點，留下無法送出的 modal。
+                    this.closeRelationshipModal();
+                    this.updateStatus('關係設定已取消', 'info');
                 } else if (this.connectingFrom) {
                     this.connectingFrom = null;
                     this.updateStatus('連接已取消', 'info');
@@ -3022,6 +3033,21 @@ class GenogramApp {
     }
 
     /**
+     * 取消暫存中的連線流程，避免 Undo/Redo、刪除、載入或清空資料後，
+     * connectingFrom/connectingTo 仍指向已不存在的人物。
+     * @param {{preserveEditor?: boolean}} options
+     */
+    cancelRelationshipWorkflow({ preserveEditor = false } = {}) {
+        const modalActive = this.elements.relationshipModal?.classList.contains('active');
+        if (modalActive && (!preserveEditor || !this.editingRelationshipId)) {
+            this.closeRelationshipModal();
+            return;
+        }
+        this.connectingFrom = null;
+        this.connectingTo = null;
+    }
+
+    /**
      * 顯示關係類型編輯對話框（修改現有關係）
      */
     showRelationshipEditModal() {
@@ -3137,6 +3163,39 @@ class GenogramApp {
                 this.closeRelationshipModal();
                 return;
             }
+        }
+
+        // 新建與編輯必須遵守相同的唯一性規則：伴侶類與親子類在同一對人物間
+        // 各只能有一條；情感類可多條並存，但不能有同方向、同類型的完全重複線。
+        const conflictingRelationship = this.relationships.find(other => {
+            if (other.id === relationship.id) return false;
+
+            const sameDirection =
+                other.fromPersonId === relationship.fromPersonId &&
+                other.toPersonId === relationship.toPersonId;
+            const sameUndirectedPair = sameDirection || (
+                other.fromPersonId === relationship.toPersonId &&
+                other.toPersonId === relationship.fromPersonId
+            );
+            const otherCategory = typeof other.getCategory === 'function'
+                ? other.getCategory()
+                : Relationship.getCategory(other.type);
+
+            if (category === 'marriage' || category === 'family') {
+                return sameUndirectedPair && otherCategory === category;
+            }
+            return sameDirection && other.type === type;
+        });
+
+        if (conflictingRelationship) {
+            const message = category === 'marriage'
+                ? '兩人之間已有伴侶類關係，請直接編輯既有關係'
+                : category === 'family'
+                    ? '兩人之間已有親子關係，請直接編輯既有關係'
+                    : '此方向的相同關係已存在';
+            this.updateStatus(message, 'warning');
+            this.closeRelationshipModal();
+            return;
         }
 
         // 儲存狀態供復原使用
@@ -3748,6 +3807,8 @@ class GenogramApp {
      * 刪除選取的項目
      */
     deleteSelected() {
+        this.cancelRelationshipWorkflow();
+
         // [UX Fix] 如果正在預覽自動排列，刪除時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4611,6 +4672,7 @@ class GenogramApp {
      */
     undo() {
         this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，撤銷時僅取消預覽，不執行歷史回溯
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4644,6 +4706,7 @@ class GenogramApp {
      */
     redo() {
         this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，重做時僅取消預覽 (視為退出預覽模式)
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4781,6 +4844,7 @@ class GenogramApp {
      */
     loadData(data) {
         this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         this.saveState();
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
         this._syncPersonMap();
@@ -5046,6 +5110,7 @@ class GenogramApp {
      */
     clearAll() {
         this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，清空時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
