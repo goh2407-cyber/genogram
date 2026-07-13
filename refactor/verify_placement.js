@@ -419,16 +419,15 @@ function assert(name, condition, detail = '') {
             base=reset(); app.handleQuickAddClick(base,'parent'); app.commitPlacement();
             result.parent={people:app.persons.length,rels:app.relationships.length,edges:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId===base.id),history:app.history.getUndoCount(),selected:app.selectedPersonId!=='e2e-base',status:app.elements.statusBar.textContent};
             base=reset();
-            const occupiedLeft=new Person({id:'pair-left',x:base.x-g.CELL_WIDTH/2,y:g.ORIGIN_Y});
-            const occupiedRight=new Person({id:'pair-right',x:base.x+g.CELL_WIDTH/2,y:g.ORIGIN_Y});
-            app.persons.push(occupiedLeft,occupiedRight); app.personMap.set(occupiedLeft.id,occupiedLeft); app.personMap.set(occupiedRight.id,occupiedRight);
+            const pairBlocker=new Person({id:'pair-center-blocker',x:base.x,y:g.ORIGIN_Y-g.CELL_HEIGHT/2});
+            app.persons.push(pairBlocker); app.personMap.set(pairBlocker.id,pairBlocker);
             const pairBefore=app.persons.map(p=>[p.id,p.x,p.y]);
             app.handleQuickAddClick(base,'parent');
             const pairGhosts=app.placementSession.ghostPeople.map(p=>({id:p.id,x:p.x,y:p.y}));
-            const pairFallback=pairGhosts.every(p=>p.x!==occupiedLeft.x&&p.x!==occupiedRight.x);
+            const pairFallback=pairGhosts.every(p=>p.x!==pairBlocker.x);
             const pairSpacing=Math.abs(pairGhosts[1].x-pairGhosts[0].x);
             app.commitPlacement();
-            const pairNewIds=new Set(app.persons.slice(3).map(p=>p.id));
+            const pairNewIds=new Set(app.persons.slice(2).map(p=>p.id));
             const pairMarriage=app.relationships.find(r=>r.type==='married');
             const pairChildEdges=app.relationships.filter(r=>r.type==='parent-child');
             result.parentOccupied={fallback:pairFallback,spacing:pairSpacing,history:app.history.getUndoCount(),
@@ -493,7 +492,7 @@ function assert(name, condition, detail = '') {
         assert('selected spouse child commit writes both parent-to-child edges', quickE2E.selectedSpouse.edges===2 && quickE2E.selectedSpouse.parents.join(',')==='e2e-base,sp-b' && quickE2E.selectedSpouse.child && quickE2E.selectedSpouse.history===1);
         assert('occupied quick-add falls back without moving existing people', quickE2E.occupied.fallback && quickE2E.occupied.unchanged);
         assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
-        assert('occupied parent pair falls back as fixed-gap unit and commits correct atomic endpoints without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===5 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
+        assert('blocked 120px parent pair expands to a rigid 180px unit without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH*1.5 && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===4 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
         assert('quick-add pointermove retains child/partner/sibling/parent request semantics and previews',
             Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base &&
                 item.count===item.before.count && item.count>0 && item.x!==item.before.x && item.y===item.expectedY && item.committed),

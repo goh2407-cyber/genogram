@@ -173,6 +173,37 @@ check('mixed twins keep one clinical V origin and finite child endpoints', () =>
     assertFinitePath(plan.relationshipPaths['mom->t2']);
 });
 
+check('vertically staggered children receive separate safe branches before any person moves', () => {
+    const input = baseInput();
+    input.parents = [
+        { id: 'dad', x: 400, y: 180 },
+        { id: 'mom', x: 560, y: 180 }
+    ];
+    input.children = [
+        { id: 'near', x: 400, y: 300 },
+        { id: 'far', x: 400, y: 420 }
+    ];
+    input.source = { x: 425, y: 180 };
+    input.sourceRange = { minX: 425, maxX: 535 };
+    input.obstacles = [
+        { ownerId: 'near', kind: 'symbol', left: 365, right: 435, top: 265, bottom: 335 },
+        { ownerId: 'far', kind: 'symbol', left: 365, right: 435, top: 385, bottom: 455 }
+    ];
+    const plan = FamilyRoutePlanner.planFamily(input);
+    assert.equal(plan.mode, 'staggered');
+    assert.equal(plan.safe, true);
+    assertFinitePath(plan.relationshipPaths['dad->near']);
+    assertFinitePath(plan.relationshipPaths['dad->far']);
+    assert.equal(
+        FamilyRoutePlanner.pathIntersectsObstacles(
+            plan.relationshipPaths['dad->far'],
+            input.obstacles,
+            new Set(['far'])
+        ),
+        false
+    );
+});
+
 check('degenerate and fully blocked input returns a finite bounded fallback', () => {
     const input = baseInput();
     input.children = [{ id: 'kid', x: 500, y: 326 }];

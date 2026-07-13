@@ -1357,6 +1357,23 @@ class GenogramApp {
                         // this.enforceLocalRules(p);
                     }
                 });
+
+                // [Safe routing] 僅單一人物拖曳、且使用者未按 Alt 時，才允許半格內的水平微調。
+                // 校正仍在同一個 dragStartSnapshot 交易內，不新增 history，也不改 Y／generation。
+                if (this.canvas.draggedPerson && movingPersonIds.length === 1 && !e.altKey &&
+                    typeof this.canvas.findSafeFamilyRouteAdjustment === 'function') {
+                    const dragged = this.personMap.get(movingPersonIds[0]);
+                    if (dragged) {
+                        const halfCell = GenogramApp.GRID.CELL_WIDTH / 2;
+                        const correction = this.canvas.findSafeFamilyRouteAdjustment(
+                            dragged.id,
+                            [-halfCell, halfCell],
+                            this.persons,
+                            this.relationships
+                        );
+                        if (correction && correction.dx) dragged.x += correction.dx;
+                    }
+                }
                 this.render(); // Snap 後重繪
                 } // end else（個別人物拖曳的逐人吸附路徑）
             }
@@ -1888,20 +1905,16 @@ class GenogramApp {
             return session;
         }
         const grid = GenogramApp.GRID;
-        const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
-        let centerX = child.x;
-        const freePair = x => [x - grid.CELL_WIDTH / 2, x + grid.CELL_WIDTH / 2].every(px =>
-            !this.persons.some(p => Math.abs(p.x - px) < grid.CELL_WIDTH * 0.35 && Math.abs(p.y - parentY) < grid.CELL_HEIGHT * 0.35));
-        for (let d = 0; !freePair(centerX) && d <= this.persons.length + 4; d++) {
-            const step = Math.ceil((d + 1) / 2) * grid.CELL_WIDTH;
-            centerX = child.x + (d % 2 === 0 ? -step : step);
-        }
+        const placement = this.findQuickParentPairPlacement(child);
+        const centerX = placement.centerX;
+        const parentY = placement.parentY;
+        const halfGap = placement.gap / 2;
         const fatherId = '__placement_father__';
         const motherId = '__placement_mother__';
         const session = this.beginPlacement({ kind: 'parent-pair', basePersonId: child.id,
             people: [
-                { personId: fatherId, gender: 'male', generation: this.getGenerationAbove(child.generation), x: centerX - grid.CELL_WIDTH / 2, y: parentY },
-                { personId: motherId, gender: 'female', generation: this.getGenerationAbove(child.generation), x: centerX + grid.CELL_WIDTH / 2, y: parentY }
+                { personId: fatherId, gender: 'male', generation: this.getGenerationAbove(child.generation), x: centerX - halfGap, y: parentY },
+                { personId: motherId, gender: 'female', generation: this.getGenerationAbove(child.generation), x: centerX + halfGap, y: parentY }
             ],
             relationshipPreview: [
                 { type: 'married', fromPersonId: fatherId, toPersonId: motherId },
@@ -1911,6 +1924,67 @@ class GenogramApp {
         });
         this.render();
         return session;
+    }
+
+    isQuickParentPairSafe(centerX, parentY, gap, child) {
+        if (!Number.isFinite(centerX) || !Number.isFinite(parentY) || !Number.isFinite(gap) || !child) return false;
+        const personSize = this.canvas?.personSize || 50;
+        const half = personSize / 2;
+        const safety = 10;
+        const candidateHalf = half + safety;
+        const parentXs = [centerX - gap / 2, centerX + gap / 2];
+        const obstacles = typeof this.canvas?.getPersonRouteObstacles === 'function'
+            ? this.canvas.getPersonRouteObstacles(this.persons)
+            : [];
+        const overlaps = (a, b) =>
+            a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        const hasCollision = parentXs.some(x => {
+            const candidate = {
+                left: x - candidateHalf,
+                right: x + candidateHalf,
+                top: parentY - candidateHalf,
+                bottom: parentY + candidateHalf
+            };
+            return obstacles.some(obstacle => overlaps(candidate, obstacle));
+        });
+        if (hasCollision) return false;
+
+        if (typeof FamilyRoutePlanner === 'undefined') return true;
+        const sourceRange = {
+            minX: parentXs[0] + half,
+            maxX: parentXs[1] - half
+        };
+        const routePlan = FamilyRoutePlanner.planFamily({
+            parents: [
+                { id: '__quick_parent_left__', x: parentXs[0], y: parentY },
+                { id: '__quick_parent_right__', x: parentXs[1], y: parentY }
+            ],
+            children: [child],
+            source: { x: centerX, y: parentY },
+            sourceRange,
+            obstacles,
+            personSize,
+            margin: safety
+        });
+        return routePlan.safe;
+    }
+
+    findQuickParentPairPlacement(child) {
+        const grid = GenogramApp.GRID;
+        const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
+        const offsets = [0];
+        for (let distance = 1; distance <= this.persons.length + 4; distance++) {
+            offsets.push(-distance * grid.CELL_WIDTH, distance * grid.CELL_WIDTH);
+        }
+        for (const offset of offsets) {
+            const centerX = child.x + offset;
+            for (const gap of [grid.CELL_WIDTH, grid.CELL_WIDTH * 1.5]) {
+                if (this.isQuickParentPairSafe(centerX, parentY, gap, child)) {
+                    return { centerX, parentY, gap };
+                }
+            }
+        }
+        return { centerX: child.x, parentY, gap: grid.CELL_WIDTH };
     }
 
     /**

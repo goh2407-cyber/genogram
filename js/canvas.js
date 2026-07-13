@@ -3700,6 +3700,55 @@ class GenogramCanvas {
         return plans;
     }
 
+    findSafeFamilyRouteAdjustment(personId, offsets, persons, relationships) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = Array.isArray(relationships) ? relationships : [];
+        const person = this.personMap instanceof Map ? this.personMap.get(personId) : null;
+        if (!person || typeof FamilyRoutePlanner === 'undefined') {
+            return { dx: 0, beforeUnsafe: 0, afterUnsafe: 0 };
+        }
+
+        const familyRels = [];
+        const otherRels = [];
+        allRelationships.forEach(rel => {
+            const category = typeof rel.getCategory === 'function'
+                ? rel.getCategory()
+                : Relationship.getCategory(rel.type);
+            (category === 'family' ? familyRels : otherRels).push(rel);
+        });
+        const engine = new KinshipEngine(allPersons, allRelationships);
+        const unsafeCount = () => this.getFamilyRoutePlans(familyRels, allPersons, otherRels, engine)
+            .filter(plan =>
+                (plan.family.parentIds.includes(personId) || plan.family.childIds.includes(personId)) && !plan.safe
+            ).length;
+
+        const originalX = person.x;
+        const beforeUnsafe = unsafeCount();
+        let best = { dx: 0, beforeUnsafe, afterUnsafe: beforeUnsafe };
+        if (beforeUnsafe > 0) {
+            for (const dx of Array.isArray(offsets) ? offsets : []) {
+                if (!Number.isFinite(dx) || dx === 0) continue;
+                const candidateX = originalX + dx;
+                const occupied = allPersons.some(other =>
+                    other.id !== personId &&
+                    Math.abs(other.x - candidateX) < this.personSize + 10 &&
+                    Math.abs(other.y - person.y) < this.personSize + 10
+                );
+                if (occupied) continue;
+                person.x = candidateX;
+                const candidateUnsafe = unsafeCount();
+                if (candidateUnsafe < best.afterUnsafe) {
+                    best = { dx, beforeUnsafe, afterUnsafe: candidateUnsafe };
+                    if (candidateUnsafe === 0) break;
+                }
+            }
+        }
+
+        person.x = originalX;
+        unsafeCount(); // 還原目前座標對應的繪製／命中快取
+        return best;
+    }
+
     _getPlannedFamilyRelationshipPath(relationship, allRelationships) {
         if (typeof FamilyRoutePlanner === 'undefined') return null;
         const persons = Array.isArray(this.lastPersons) ? this.lastPersons : [];

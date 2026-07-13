@@ -300,6 +300,76 @@ const shot = (n) => path.join(__dirname, n);
             `拖曳前=(${before.x},${before.y}) 放開後=(${r.after.pos.x},${r.after.pos.y}) undo後=(${after.x},${after.y})（截圖 drag_07_undo_after.png）`);
     }
 
+    // ---------- 8. 不安全走廊只微調拖曳者半格；Alt 保留精確落點 ----------
+    {
+        const correction = await page.evaluate(() => {
+            const app = window.app;
+            const dad = new Person({ id: 'safe-dad', x: 350, y: 180, gender: 'male' });
+            const mom = new Person({ id: 'safe-mom', x: 470, y: 180, gender: 'female' });
+            const kid = new Person({ id: 'safe-kid', x: 530, y: 300, gender: 'male' });
+            const blocker = new Person({ id: 'safe-blocker', x: 410, y: 250, gender: 'same' });
+            app.persons = [dad, mom, kid, blocker];
+            app._syncPersonMap();
+            app.relationships = [
+                new Relationship({ id: 'safe-mar', type: 'married', fromPersonId: dad.id, toPersonId: mom.id }),
+                new Relationship({ id: 'safe-dad-edge', type: 'parent-child', fromPersonId: dad.id, toPersonId: kid.id }),
+                new Relationship({ id: 'safe-mom-edge', type: 'parent-child', fromPersonId: mom.id, toPersonId: kid.id })
+            ];
+            app.selectedPersonId = kid.id;
+            app.selectedPersonIds = [];
+            app.history.clear();
+            app.render();
+
+            const methodPresent = typeof app.canvas.findSafeFamilyRouteAdjustment === 'function';
+            const prepareRelease = () => {
+                kid.x = 530;
+                kid.y = 300;
+                app.render();
+                app.dragStartSnapshot = app.getState();
+                kid.x = 410;
+                app.canvas.isDragging = true;
+                app.canvas.draggedPerson = kid;
+                app.canvas.draggedHousehold = null;
+                app.canvas.draggedLifeCircle = null;
+                app.dragVirtual = {
+                    anchorId: kid.id,
+                    x: 410,
+                    y: 300,
+                    startX: 530,
+                    startY: 300,
+                    offsets: [{ id: kid.id, dx: 0, dy: 0 }]
+                };
+                app.dragGuides = null;
+                app.canvas.dragGuides = null;
+            };
+
+            kid.x = 410;
+            app.render();
+            const probe = methodPresent
+                ? app.canvas.findSafeFamilyRouteAdjustment(kid.id, [-60, 60], app.persons, app.relationships)
+                : null;
+            prepareRelease();
+            app.handlePointerUp({ altKey: false });
+            const adjusted = { x: kid.x, y: kid.y, history: app.history.getUndoCount() };
+
+            app.history.clear();
+            prepareRelease();
+            app.handlePointerUp({ altKey: true });
+            const alt = { x: kid.x, y: kid.y, history: app.history.getUndoCount() };
+            return { methodPresent, probe, adjusted, alt };
+        });
+        record('8. 規劃器找到左移 60px 的安全校正候選',
+            correction.methodPresent && correction.probe && correction.probe.dx === -60 &&
+                correction.probe.afterUnsafe < correction.probe.beforeUnsafe,
+            JSON.stringify(correction.probe));
+        record('8. 放開只水平微調 60px、Y 不變且仍是一筆 history',
+            correction.adjusted.x === 350 && correction.adjusted.y === 300 && correction.adjusted.history === 1,
+            JSON.stringify(correction.adjusted));
+        record('8. Alt 放開保留精確落點並維持單筆 history',
+            correction.alt.x === 410 && correction.alt.y === 300 && correction.alt.history === 1,
+            JSON.stringify(correction.alt));
+    }
+
     // ---------- 總結 ----------
     if (errors.length) console.log('\n[console/page errors 全程累計]\n' + errors.join('\n'));
     const failed = results.filter(r => !r.pass);

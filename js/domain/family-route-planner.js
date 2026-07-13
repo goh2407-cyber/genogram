@@ -104,6 +104,11 @@ class FamilyRoutePlanner {
             return candidates[0];
         }
 
+        if (!input._skipStaggered && children.length > 1 && children.every(child => !child.twinGroup)) {
+            const staggered = this._planStaggeredNormal(input);
+            if (staggered) return staggered;
+        }
+
         const fallbackBarY = Number.isFinite(minChildTop)
             ? preferredSource.y + Math.max(8, (minChildTop - preferredSource.y) / 2)
             : preferredSource.y + 20;
@@ -122,6 +127,36 @@ class FamilyRoutePlanner {
         fallback.collisions = this._collectPlanCollisions(fallback, obstacles, parents);
         fallback.suggestedDx = null;
         return fallback;
+    }
+
+    static _planStaggeredNormal(input) {
+        const relationshipPaths = {};
+        const childPaths = {};
+        for (const child of input.children) {
+            const childPlan = this._planNormal({ ...input, children: [child], _skipStaggered: true });
+            if (!childPlan.safe) return null;
+            const representative = childPlan.relationshipPaths[`${input.parents[0].id}->${child.id}`];
+            if (!representative) return null;
+            childPaths[child.id] = representative.map(point => ({ ...point }));
+            input.parents.forEach(parent => {
+                const path = childPlan.relationshipPaths[`${parent.id}->${child.id}`];
+                if (path) relationshipPaths[`${parent.id}->${child.id}`] = path.map(point => ({ ...point }));
+            });
+        }
+        return {
+            mode: 'staggered',
+            safe: true,
+            trunkX: null,
+            barY: null,
+            source: null,
+            sourcePath: [],
+            barPath: [],
+            childPaths,
+            twinGroups: [],
+            relationshipPaths,
+            collisions: [],
+            suggestedDx: null
+        };
     }
 
     static _buildNormalCandidate({ parents, children, obstacles, personSize, source, sourcePrefix = [], trunkX, barY, forceSideLane = false }) {

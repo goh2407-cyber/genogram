@@ -209,7 +209,7 @@ git commit -m "feat: share obstacle-aware family geometry"
 - Consumes: `GenogramCanvas.findSafeFamilyRouteAdjustment(personId, [-60, 60], persons, relationships)`.
 - Produces: horizontal-only release correction and `findQuickParentPairPlacement(child)` returning `{ centerX, parentY, gap }` where `gap` is exactly 120 or 180.
 
-- [ ] **Step 1: Add failing drag and parent-placement assertions**
+- [x] **Step 1: Add failing drag and parent-placement assertions**
 
 ```js
 assert('unsafe single drag corrects by at most half a cell and keeps Y',
@@ -220,7 +220,7 @@ assert('parent pair remains rigid and leaves existing people unchanged', crowded
 assert('one undo restores the complete drag or parent transaction', undoCount === 1);
 ```
 
-- [ ] **Step 2: Run both regressions and verify RED**
+- [x] **Step 2: Run both regressions and verify RED**
 
 Run:
 
@@ -232,11 +232,11 @@ node refactor/verify_placement.js
 
 Expected: the new route-correction and 180px assertions fail while existing assertions remain green.
 
-- [ ] **Step 3: Apply release correction inside the existing drag transaction**
+- [x] **Step 3: Apply release correction inside the existing drag transaction**
 
 After grid/Y snapping and before clearing `draggedPerson`, only for one individually dragged person and when `!e.altKey`, ask Canvas for `[-GRID.CELL_WIDTH / 2, GRID.CELL_WIDTH / 2]`. Reject occupied candidates, never alter Y/generation, and leave the current X unchanged if neither route is safer. The existing `dragStartSnapshot` remains the only history entry.
 
-- [ ] **Step 4: Choose quick-parent gap deterministically**
+- [x] **Step 4: Choose quick-parent gap deterministically**
 
 ```js
 findQuickParentPairPlacement(child) {
@@ -256,7 +256,7 @@ findQuickParentPairPlacement(child) {
 
 Use the result in `beginQuickParentPlacement()`; preserve `parent-pair`, three preview relationships, rigid `ghostPeople`, and the current atomic `commitPlacement()`.
 
-- [ ] **Step 5: Run drag and placement regressions and verify GREEN**
+- [x] **Step 5: Run drag and placement regressions and verify GREEN**
 
 Run:
 
@@ -269,7 +269,7 @@ node refactor/verify_placement.js
 
 Expected: all old and new assertions pass.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```powershell
 git add js/app.js js/canvas.js refactor/verify_drag.js refactor/verify_placement.js
