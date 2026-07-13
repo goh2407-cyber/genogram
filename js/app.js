@@ -85,6 +85,7 @@ class GenogramApp {
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
+        this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -4162,6 +4163,130 @@ class GenogramApp {
         // 計算最近格子位置
         const gridIndex = Math.round((value - origin) / cellSize);
         return origin + gridIndex * cellSize;
+    }
+
+    /**
+     * 尋找同列最近的空格。搜尋順序固定為 0, -1, +1, -2, +2 ...。
+     */
+    findNearestOpenCell(x, y, excludedIds = new Set()) {
+        const grid = GenogramApp.GRID;
+        const occupiedAt = (candidateX) => this.persons.some(person =>
+            !excludedIds.has(person.id) &&
+            Math.abs(person.x - candidateX) < grid.CELL_WIDTH * 0.35 &&
+            Math.abs(person.y - y) < grid.CELL_HEIGHT * 0.35
+        );
+        const initiallyOccupied = occupiedAt(x);
+        const limit = this.persons.length + 4;
+
+        for (let distance = 0; distance <= limit; distance++) {
+            const offsets = distance === 0 ? [0] : [-distance, distance];
+            for (const offset of offsets) {
+                const candidateX = x + offset * grid.CELL_WIDTH;
+                if (!occupiedAt(candidateX)) {
+                    return { x: candidateX, y, occupied: initiallyOccupied };
+                }
+            }
+        }
+
+        // limit 大於現有人數，理論上必有空格；保留確定性 fallback。
+        return { x: x - (limit + 1) * grid.CELL_WIDTH, y, occupied: initiallyOccupied };
+    }
+
+    /**
+     * 計算新增人物候選格與尚未提交的關係預覽；不改動任何既有資料。
+     */
+    getPlacementCandidate(request = {}) {
+        const grid = GenogramApp.GRID;
+        const previewPersonId = request.personId || '__placement__';
+        let preferredX;
+        let preferredY;
+        let relationshipPreview = [];
+
+        if (request.kind === 'person' && !request.basePersonId) {
+            preferredX = grid.ORIGIN_X + Math.round(((request.x || 0) - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH;
+            preferredY = grid.ORIGIN_Y + Math.round(((request.y || 0) - grid.ORIGIN_Y) / grid.CELL_HEIGHT) * grid.CELL_HEIGHT;
+        } else {
+            const base = this.personMap.get(request.basePersonId);
+            if (!base) throw new Error(`Placement base person not found: ${request.basePersonId}`);
+
+            const baseGeneration = this.getGenerationIndexByY(base.y);
+            const kinship = this.getKinshipEngine();
+            preferredX = base.x;
+            preferredY = base.y;
+
+            if (request.kind === 'partner' || request.kind === 'sibling') {
+                preferredX += grid.CELL_WIDTH;
+            } else if (request.kind === 'child') {
+                preferredY = this.getGenerationYByIndex(baseGeneration + 1);
+                const spouse = this.getSpouses(base.id)[0] || null;
+                if (spouse) preferredX = (base.x + spouse.x) / 2;
+                const parentIds = spouse ? [base.id, spouse.id] : [base.id];
+                relationshipPreview = parentIds.map(parentId => ({
+                    type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                }));
+            } else if (request.kind === 'parent') {
+                preferredY = this.getGenerationYByIndex(baseGeneration - 1);
+                relationshipPreview = [{
+                    type: 'parent-child', fromPersonId: previewPersonId, toPersonId: base.id
+                }];
+            }
+
+            if (request.kind === 'partner') {
+                relationshipPreview = [{
+                    type: request.relationshipType || 'married',
+                    fromPersonId: base.id,
+                    toPersonId: previewPersonId
+                }];
+            } else if (request.kind === 'sibling') {
+                relationshipPreview = kinship.getParentIds(base.id).map(parentId => ({
+                    type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                }));
+            }
+        }
+
+        const open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
+        return {
+            ...open,
+            guides: {
+                x: { pos: open.x, kind: 'placement' },
+                y: { pos: open.y, kind: 'row' },
+                spacing: null
+            },
+            relationshipPreview
+        };
+    }
+
+    beginPlacement(request) {
+        const candidate = this.getPlacementCandidate(request);
+        this.placementSession = {
+            request: { ...request },
+            candidate,
+            ghostPerson: { id: request.personId || '__placement__', x: candidate.x, y: candidate.y }
+        };
+        return this.placementSession;
+    }
+
+    updatePlacement(x, y, bypassSnap = false) {
+        if (!this.placementSession) return null;
+        const request = { ...this.placementSession.request, kind: 'person', basePersonId: null, x, y };
+        const candidate = bypassSnap
+            ? { x, y, occupied: false, guides: null, relationshipPreview: this.placementSession.candidate.relationshipPreview }
+            : this.getPlacementCandidate(request);
+        candidate.relationshipPreview = this.placementSession.candidate.relationshipPreview;
+        this.placementSession.candidate = candidate;
+        this.placementSession.ghostPerson.x = candidate.x;
+        this.placementSession.ghostPerson.y = candidate.y;
+        return candidate;
+    }
+
+    cancelPlacement() {
+        this.placementSession = null;
+    }
+
+    commitPlacement() {
+        const session = this.placementSession;
+        this.placementSession = null;
+        return session;
     }
 
     /**
