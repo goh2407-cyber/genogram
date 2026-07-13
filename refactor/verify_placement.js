@@ -13,6 +13,7 @@ function assert(name, condition, detail = '') {
 
 (async () => {
     const overlayMode = process.argv.includes('--overlay');
+    const suppressGhostMode = process.argv.includes('--suppress-ghost');
     const browser = await chromium.launch();
     const page = await browser.newPage();
     const errors = [];
@@ -142,7 +143,7 @@ function assert(name, condition, detail = '') {
         data.committed.ghostPerson.id === 'commit-ghost' && data.afterCommit === null);
 
     if (overlayMode) {
-        const overlay = await page.evaluate(async () => {
+        const overlay = await page.evaluate(async suppressGhost => {
             const app = window.app;
             const grid = GenogramApp.GRID;
             const base = new Person({ id: 'overlay-base', gender: 'male', name: 'Base',
@@ -166,18 +167,28 @@ function assert(name, condition, detail = '') {
             const session = app.beginPlacement({
                 kind: 'partner', basePersonId: base.id, personId: 'overlay-ghost'
             });
+            const realDrawPerson = app.canvas.drawPerson;
+            if (suppressGhost) {
+                app.canvas.drawPerson = function(person, ...args) {
+                    if (person.id !== session.ghostPerson.id) return realDrawPerson.call(this, person, ...args);
+                };
+            }
             app.render();
             const after = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            app.canvas.drawPerson = realDrawPerson;
             const exportDuring = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
 
-            // Isolate the cell layer so ghost pixels are proven independently.
+            // Isolate exactly cell + relationship by suppressing only drawPerson in the overlay call.
             app.cancelPlacement();
             app.render();
-            app.canvas.drawPlacementCell(session.candidate);
-            const cellOnly = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const overlayDrawPerson = app.canvas.drawPerson;
+            app.canvas.drawPerson = () => {};
+            app.canvas.drawPlacementPreview({ ...session.candidate, ghostPerson: session.ghostPerson });
+            app.canvas.drawPerson = overlayDrawPerson;
+            const noGhost = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             let ghostOnlyPixels = 0;
             for (let i = 0; i < after.length; i += 4) {
-                if (after[i] !== cellOnly[i] || after[i + 1] !== cellOnly[i + 1] || after[i + 2] !== cellOnly[i + 2]) ghostOnlyPixels++;
+                if (after[i] !== noGhost[i] || after[i + 1] !== noGhost[i + 1] || after[i + 2] !== noGhost[i + 2]) ghostOnlyPixels++;
             }
 
             // The partner preview must create neutral dashed pixels around the endpoint midpoint.
@@ -188,7 +199,7 @@ function assert(name, condition, detail = '') {
             let relationshipPixels = 0;
             for (let y = midY - 5; y <= midY + 5; y++) for (let x = midX - 8; x <= midX + 8; x++) {
                 const i = (y * canvas.width + x) * 4;
-                if (after[i] !== cellOnly[i] || after[i + 1] !== cellOnly[i + 1] || after[i + 2] !== cellOnly[i + 2]) relationshipPixels++;
+                if (after[i] !== before[i] || after[i + 1] !== before[i + 1] || after[i + 2] !== before[i + 2]) relationshipPixels++;
             }
 
             // Occupied marker has pixels beyond the ordinary cell/cross layer.
@@ -272,7 +283,7 @@ function assert(name, condition, detail = '') {
                 restored, staleEndpointSkipped, exportOverlayCalls, jpegDuring, svgResult, pdfResult,
                 exportsNonNull: Boolean(exportBefore && exportDuring && exportAfterCancel),
                 exportEqual: exportBefore === exportDuring && exportBefore === exportAfterCancel };
-        });
+        }, suppressGhostMode);
         assert('placement render adds brand candidate-cell pixels', overlay.brandPixels > 0, `pixels=${overlay.brandPixels}`);
         assert('placement render adds translucent ghost pixels beyond cell-only layer', overlay.ghostOnlyPixels > 0, `pixels=${overlay.ghostOnlyPixels}`);
         assert('partner placement draws relationship preview pixels at midpoint', overlay.relationshipPixels > 0, `pixels=${overlay.relationshipPixels}`);
@@ -283,7 +294,7 @@ function assert(name, condition, detail = '') {
         assert('JPEG/SVG/PDF export paths never call placement overlay', overlay.exportOverlayCalls === 0, `calls=${overlay.exportOverlayCalls}`);
         assert('JPEG export is a valid non-null data URL', /^data:image\/jpeg/.test(overlay.jpegDuring || ''));
         assert('SVG export produces valid non-null SVG', /^<\?xml[\s\S]*<svg/.test(overlay.svgResult || ''));
-        assert('PDF export receives a valid non-null PNG data URL', /^data:image\/png/.test(overlay.pdfResult || ''));
+        assert('PDF storage handoff receives a valid non-null PNG input', /^data:image\/png/.test(overlay.pdfResult || ''));
         assert('PNG exports before/during/after placement are non-null', overlay.exportsNonNull);
         assert('placement is pixel-identical in export during placement and after cancel', overlay.exportEqual);
     }
