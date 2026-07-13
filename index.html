@@ -236,12 +236,12 @@
                     </button>
                 </div>
                 <div class="inspector-tabs" role="tablist" aria-label="檢視面板">
-                    <button type="button" role="tab" class="inspector-tab active" data-inspector-tab="properties" aria-selected="true">屬性</button>
-                    <button type="button" role="tab" class="inspector-tab" data-inspector-tab="legend" aria-selected="false">圖例</button>
-                    <button type="button" role="tab" class="inspector-tab" data-inspector-tab="view" aria-selected="false">檢視</button>
+                    <button type="button" role="tab" class="inspector-tab active" id="propertiesTab" data-inspector-tab="properties" aria-controls="propertyPanel" aria-selected="true" tabindex="0">屬性</button>
+                    <button type="button" role="tab" class="inspector-tab" id="legendTab" data-inspector-tab="legend" aria-controls="legendPanel" aria-selected="false" tabindex="-1">圖例</button>
+                    <button type="button" role="tab" class="inspector-tab" id="viewTab" data-inspector-tab="view" aria-controls="viewContent" aria-selected="false" tabindex="-1">檢視</button>
                 </div>
                 <!-- 屬性編輯面板 -->
-                <section class="panel-section inspector-tab-panel" id="propertyPanel" data-inspector-panel="properties">
+                <section class="panel-section inspector-tab-panel" id="propertyPanel" data-inspector-panel="properties" role="tabpanel" aria-labelledby="propertiesTab">
                     <h3 class="panel-title">屬性編輯</h3>
                     <div class="panel-content" id="propertyContent">
                         <p class="empty-hint">點選成員以編輯屬性</p>
@@ -249,7 +249,7 @@
                 </section>
 
                 <!-- 關係圖例 -->
-                <section class="panel-section inspector-tab-panel" id="legendPanel" data-inspector-panel="legend" hidden>
+                <section class="panel-section inspector-tab-panel" id="legendPanel" data-inspector-panel="legend" role="tabpanel" aria-labelledby="legendTab" hidden>
                     <h3 class="panel-title">
                         關係類型圖例
                         <span class="toggle-icon">▼</span>
@@ -313,7 +313,7 @@
                         </div>
                     </div>
                 </section>
-                <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view" hidden>
+                <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view" role="tabpanel" aria-labelledby="viewTab" hidden>
                     <h3 class="panel-title">畫布檢視</h3>
                     <div class="panel-content"><p class="empty-hint">使用畫布右下角控制項調整縮放。</p></div>
                 </section>

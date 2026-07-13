@@ -18,6 +18,21 @@ async function canvasPng(page) {
 
 (async () => {
     const browser = await chromium.launch();
+    const rejectionPage = await browser.newPage();
+    const rejectionErrors = [];
+    rejectionPage.on('pageerror', error => rejectionErrors.push(error.message));
+    await rejectionPage.addInitScript(() => {
+        Object.defineProperty(document.fonts, 'load', {
+            configurable: true,
+            value: () => Promise.reject(new Error('simulated font load failure'))
+        });
+    });
+    await rejectionPage.goto(URL);
+    await rejectionPage.waitForFunction(() => window.app && window.app.canvasFontReady);
+    await rejectionPage.evaluate(() => window.app.canvasFontReady);
+    if (rejectionErrors.length) throw new Error(`font load rejection was unhandled: ${rejectionErrors.join('; ')}`);
+    await rejectionPage.close();
+
     const page = await browser.newPage({ viewport: { width: 1280, height: 780 }, deviceScaleFactor: 1 });
     let releaseFonts;
     const fontsReleased = new Promise(resolve => { releaseFonts = resolve; });
@@ -35,8 +50,7 @@ async function canvasPng(page) {
     });
     const fallback = await canvasPng(page);
     releaseFonts();
-    await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(50);
+    await page.evaluate(() => window.app.canvasFontReady);
     const automatic = await canvasPng(page);
     await page.evaluate(() => window.app.render());
     const expected = await canvasPng(page);

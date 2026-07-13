@@ -84,6 +84,40 @@ async function checkIconOnlyAccessibility(page) {
         check(`${selector} exists`, await page.locator(selector).count() > 0, `${selector} missing`);
     }
 
+    const tabContract = await page.locator('[data-inspector-tab]').evaluateAll(tabs => tabs.map(tab => {
+        const panel = document.getElementById(tab.getAttribute('aria-controls'));
+        return {
+            hasId: Boolean(tab.id),
+            controlsPanel: Boolean(panel && panel.getAttribute('aria-labelledby') === tab.id),
+            tabIndex: tab.tabIndex
+        };
+    }));
+    check('inspector tabs and panels have complete ARIA relationships',
+        tabContract.every(item => item.hasId && item.controlsPanel), JSON.stringify(tabContract));
+    check('inspector tabs use roving tabindex',
+        tabContract.filter(item => item.tabIndex === 0).length === 1
+            && tabContract.filter(item => item.tabIndex === -1).length === 2,
+        JSON.stringify(tabContract));
+
+    const propertiesTab = page.locator('[data-inspector-tab="properties"]');
+    await propertiesTab.focus();
+    await propertiesTab.press('ArrowRight');
+    check('ArrowRight activates and focuses the next inspector tab',
+        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'legend'
+            && window.app.currentInspectorTab === 'legend'));
+    await page.keyboard.press('End');
+    check('End activates and focuses the last inspector tab',
+        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'view'
+            && window.app.currentInspectorTab === 'view'));
+    await page.keyboard.press('Home');
+    check('Home activates and focuses the first inspector tab',
+        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'properties'
+            && window.app.currentInspectorTab === 'properties'));
+    await page.keyboard.press('ArrowLeft');
+    check('ArrowLeft wraps to and focuses the previous inspector tab',
+        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'view'
+            && window.app.currentInspectorTab === 'view'));
+
     const existingCommandIds = [
         'addPerson', 'selectTool', 'boxSelectTool', 'connectTool', 'householdTool', 'lifeCircleTool',
         'undoBtn', 'redoBtn', 'saveBtn', 'exportBtn'
@@ -102,18 +136,38 @@ async function checkIconOnlyAccessibility(page) {
         check('inspector width at 1366px is 296–336px', false,
             'cannot measure: #inspectorPanel missing');
     }
-    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setViewportSize({ width: 900, height: 768 });
     const toggle = page.locator('#inspectorToggle');
     const canvasContainer = page.locator('#canvasContainer');
     if (await toggle.count() && await canvasContainer.count()) {
+        await page.waitForFunction(() => document.body.classList.contains('inspector-collapsed'));
+        check('inspector auto-collapses after crossing into narrow viewport',
+            await page.locator('body.inspector-collapsed').count() === 1);
+        await page.setViewportSize({ width: 1024, height: 768 });
+        await page.waitForFunction(() => !document.body.classList.contains('inspector-collapsed'));
+        check('auto-collapsed inspector restores on return to wide viewport',
+            await page.locator('body.inspector-collapsed').count() === 0);
         const widthBefore = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
         await toggle.click();
         check('inspector toggle applies body.inspector-collapsed',
             await page.locator('body.inspector-collapsed').count() === 1,
             'body.inspector-collapsed missing after toggle');
+        await page.waitForFunction(width => document.getElementById('canvasContainer').getBoundingClientRect().width > width,
+            widthBefore);
         const widthAfter = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
         check('collapsed inspector gives canvas usable width', widthAfter > widthBefore,
             `canvas width ${widthBefore.toFixed(1)}px → ${widthAfter.toFixed(1)}px`);
+        check('collapsed toggle exposes expand action text',
+            await toggle.getAttribute('title') === '展開檢視面板'
+                && await toggle.getAttribute('aria-label') === '展開檢視面板');
+        await page.setViewportSize({ width: 900, height: 768 });
+        await page.setViewportSize({ width: 1024, height: 768 });
+        check('responsive changes preserve a manual inspector choice',
+            await page.locator('body.inspector-collapsed').count() === 1);
+        await toggle.click();
+        check('expanded toggle exposes collapse action text',
+            await toggle.getAttribute('title') === '收合檢視面板'
+                && await toggle.getAttribute('aria-label') === '收合檢視面板');
     } else {
         const missing = [
             await toggle.count() ? null : '#inspectorToggle',

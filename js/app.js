@@ -65,6 +65,8 @@ class GenogramApp {
         this.offsetX = 0;
         this.offsetY = 0;
         this.currentInspectorTab = 'properties';
+        this.inspectorUserOverride = false;
+        this.inspectorAutoCollapsed = false;
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -128,9 +130,11 @@ class GenogramApp {
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
         const legendText = document.getElementById('legendContent')?.textContent;
-        if (document.fonts && legendText) {
-            document.fonts.load('14px "Noto Sans TC"', legendText).then(() => this.render());
-        }
+        this.canvasFontReady = document.fonts && legendText
+            ? document.fonts.load('14px "Noto Sans TC"', legendText)
+                .then(() => this.render())
+                .catch(() => undefined)
+            : Promise.resolve();
         this.setupEventListeners();
 
         // 延遲載入自動儲存，確保 canvas 和 ResizeObserver 都已完成初始化
@@ -221,6 +225,7 @@ class GenogramApp {
             const active = button.dataset.inspectorTab === next;
             button.classList.toggle('active', active);
             button.setAttribute('aria-selected', String(active));
+            button.tabIndex = active ? 0 : -1;
         });
         document.querySelectorAll('[data-inspector-panel]').forEach(panel => {
             panel.hidden = panel.dataset.inspectorPanel !== next;
@@ -230,6 +235,9 @@ class GenogramApp {
     setInspectorCollapsed(collapsed) {
         document.body.classList.toggle('inspector-collapsed', Boolean(collapsed));
         this.elements.inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
+        const action = collapsed ? '展開檢視面板' : '收合檢視面板';
+        this.elements.inspectorToggle.setAttribute('title', action);
+        this.elements.inspectorToggle.setAttribute('aria-label', action);
         requestAnimationFrame(() => this.canvas.resize());
     }
 
@@ -237,16 +245,41 @@ class GenogramApp {
      * 設定事件監聽器
      */
     setupEventListeners() {
-        document.querySelectorAll('[data-inspector-tab]').forEach(button => {
+        const inspectorTabs = [...document.querySelectorAll('[data-inspector-tab]')];
+        inspectorTabs.forEach((button, index) => {
             button.addEventListener('click', () => this.setInspectorTab(button.dataset.inspectorTab));
+            button.addEventListener('keydown', event => {
+                let nextIndex;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % inspectorTabs.length;
+                else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + inspectorTabs.length) % inspectorTabs.length;
+                else if (event.key === 'Home') nextIndex = 0;
+                else if (event.key === 'End') nextIndex = inspectorTabs.length - 1;
+                else return;
+                event.preventDefault();
+                const nextTab = inspectorTabs[nextIndex];
+                this.setInspectorTab(nextTab.dataset.inspectorTab);
+                nextTab.focus();
+            });
         });
         this.elements.inspectorToggle.addEventListener('click', () => {
+            this.inspectorUserOverride = true;
+            this.inspectorAutoCollapsed = false;
             this.setInspectorCollapsed(!document.body.classList.contains('inspector-collapsed'));
         });
         this.setInspectorTab(this.currentInspectorTab);
-        if (window.matchMedia('(max-width: 980px)').matches) {
-            this.setInspectorCollapsed(true);
-        }
+        this.inspectorMediaQuery = window.matchMedia('(max-width: 980px)');
+        const applyResponsiveInspector = event => {
+            if (this.inspectorUserOverride) return;
+            if (event.matches) {
+                this.inspectorAutoCollapsed = true;
+                this.setInspectorCollapsed(true);
+            } else if (this.inspectorAutoCollapsed) {
+                this.inspectorAutoCollapsed = false;
+                this.setInspectorCollapsed(false);
+            }
+        };
+        this.inspectorMediaQuery.addEventListener('change', applyResponsiveInspector);
+        applyResponsiveInspector(this.inspectorMediaQuery);
 
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
         this.elements.addPersonBtn.addEventListener('click', () => this.showGenderModal('parent'));
