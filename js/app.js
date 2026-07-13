@@ -659,6 +659,11 @@ class GenogramApp {
 
         const point = this.canvas.getMousePos(e);
 
+        if (this.placementSession) {
+            this.commitPlacement();
+            return;
+        }
+
         // [NEW] 快速按鈕點擊偵測（角色選取後才顯示鈕，故用 selectedPersonId）
         if (this.selectedPersonId && this.currentTool === 'select') {
             const selPerson = this.personMap.get(this.selectedPersonId);
@@ -972,6 +977,12 @@ class GenogramApp {
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
+
+        if (this.placementSession) {
+            this.updatePlacement(point.x, point.y, e.altKey);
+            this.render();
+            return;
+        }
 
         // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
         if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
@@ -1538,7 +1549,10 @@ class GenogramApp {
                 break;
             case 'Escape':
                 // [UX Fix] 改進 Esc 處理，顯示明確的狀態訊息
-                if (this.isDrawingLifeCircle) {
+                if (this.placementSession) {
+                    this.cancelPlacement();
+                    this.updateStatus('新增人物已取消', 'info');
+                } else if (this.isDrawingLifeCircle) {
                     this.cancelLifeCircle();
                 } else if (this.connectingFrom) {
                     this.connectingFrom = null;
@@ -2315,59 +2329,17 @@ class GenogramApp {
         // [Bug Fix] 將數字 generation 轉換為字串格式，與系統其他部分保持一致
         const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
         const generationStr = genNames[genIndex] || 'parent';
-        const person = new Person({
-            x,
-            y,
-            gender,
-            sexualOrientation: sexualOrientation,
-            transgender: transgender,
-            generation: generationStr
-        });
-        this.persons.push(person);
-        this.personMap.set(person.id, person);
-
-        // 自動建立關係
-        let relCount = 0;
-        if (selectedPersons.length > 0) {
-            this.saveState();
-            selectedPersons.forEach(selected => {
-                let fromId, toId;
-                if (['child', 'grandchild'].includes(this.pendingGeneration)) {
-                    fromId = selected.id;
-                    toId = person.id;
-                } else {
-                    fromId = person.id;
-                    toId = selected.id;
-                }
-
-                const relationship = new Relationship({
-                    fromPersonId: fromId,
-                    toPersonId: toId,
-                    type: 'parent-child'
-                });
-                this.relationships.push(relationship);
-                relCount++;
-            });
-        }
-
+        const previewId = '__placement__';
+        const relationshipPreview = selectedPersons.map(selected => ({
+            type: 'parent-child',
+            fromPersonId: ['child', 'grandchild'].includes(this.pendingGeneration) ? selected.id : previewId,
+            toPersonId: ['child', 'grandchild'].includes(this.pendingGeneration) ? previewId : selected.id
+        }));
+        this.beginPlacement({ kind: 'person', x, y, personId: previewId, gender,
+            sexualOrientation, transgender, generation: generationStr, relationshipPreview });
         this.closeGenderModal();
-
-        // 維持選取以便連加
-        if (relCount === 0) {
-            this.selectedPersonId = null;
-            this.selectedPersonIds = [];
-        }
-
-        this.autoSave();
-        this.setTool('select');
-        this.updatePropertyPanel();
         this.render();
-
-        let msg = `已建立人物`;
-        if (relCount > 0) {
-            msg += `，並自動建立 ${relCount} 條親子連線。您可以繼續點擊右側選單新增更多成員。`;
-        }
-        this.updateStatus(msg, (relCount > 0 ? 'success' : 'info'));
+        this.updateStatus('移動游標選擇位置，點擊畫布完成；按 Esc 取消', 'info');
     }
 
     /**
@@ -4203,7 +4175,7 @@ class GenogramApp {
         const previewPersonId = request.personId || '__placement__';
         let preferredX;
         let preferredY;
-        let relationshipPreview = [];
+        let relationshipPreview = request.relationshipPreview || [];
 
         if (request.kind === 'person' && !request.basePersonId) {
             preferredX = grid.ORIGIN_X + Math.round(((request.x || 0) - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH;
@@ -4265,7 +4237,7 @@ class GenogramApp {
         this.placementSession = {
             request: { ...request },
             candidate,
-            ghostPerson: { id: request.personId || '__placement__', x: candidate.x, y: candidate.y }
+            ghostPerson: { ...request, id: request.personId || '__placement__', x: candidate.x, y: candidate.y }
         };
         return this.placementSession;
     }
@@ -4289,6 +4261,36 @@ class GenogramApp {
 
     commitPlacement() {
         const session = this.placementSession;
+        if (!session) return null;
+        if (session.request.gender) {
+            this.saveState();
+            const person = new Person({
+                x: session.candidate.x,
+                y: session.candidate.y,
+                gender: session.request.gender,
+                sexualOrientation: session.request.sexualOrientation,
+                transgender: session.request.transgender,
+                generation: session.request.generation
+            });
+            this.persons.push(person);
+            this.personMap.set(person.id, person);
+            const previewId = session.request.personId || '__placement__';
+            session.candidate.relationshipPreview.forEach(preview => {
+                this.relationships.push(new Relationship({
+                    type: preview.type,
+                    fromPersonId: preview.fromPersonId === previewId ? person.id : preview.fromPersonId,
+                    toPersonId: preview.toPersonId === previewId ? person.id : preview.toPersonId
+                }));
+            });
+            this.placementSession = null;
+            this.selectedPersonIds = [];
+            this.selectPerson(person.id);
+            this.setTool('select');
+            this.autoSave();
+            this.render();
+            this.updateStatus('已建立人物', 'success');
+            return session;
+        }
         this.placementSession = null;
         return session;
     }

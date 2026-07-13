@@ -1,6 +1,6 @@
 /**
  * Smart-placement pure logic verification.
- * Usage: node refactor/verify_placement.js --logic|--overlay
+ * Usage: node refactor/verify_placement.js --logic|--overlay|--interaction
  */
 const { chromium } = require('playwright');
 const path = require('path');
@@ -141,6 +141,102 @@ function assert(name, condition, detail = '') {
     assert('cancelPlacement clears session', data.afterCancel === null);
     assert('commitPlacement returns session and clears state', data.committed &&
         data.committed.ghostPerson.id === 'commit-ghost' && data.afterCommit === null);
+
+    if (process.argv.includes('--interaction')) {
+        const interaction = await page.evaluate(() => {
+            const app = window.app;
+            const grid = GenogramApp.GRID;
+            const canvas = app.canvas.canvas;
+            app.persons = [];
+            app.relationships = [];
+            app._syncPersonMap();
+            app.history.clear();
+            app.cancelPlacement();
+            app.selectedPersonId = null;
+            app.selectedPersonIds = [];
+
+            document.getElementById('addPerson').click();
+            document.querySelector('.gender-btn[data-gender="male"]:not([data-transgender]):not([data-orientation])').click();
+            const begun = {
+                count: app.persons.length,
+                history: app.history.getUndoCount(),
+                active: Boolean(app.placementSession),
+                gender: app.placementSession && app.placementSession.request.gender
+            };
+
+            const exactX = grid.ORIGIN_X + grid.CELL_WIDTH * 2.37;
+            const exactY = grid.ORIGIN_Y + grid.CELL_HEIGHT * 1.61;
+            const rect = canvas.getBoundingClientRect();
+            const toClient = (x, y) => ({
+                clientX: rect.left + app.canvas.offsetX + x * app.canvas.scale,
+                clientY: rect.top + app.canvas.offsetY + y * app.canvas.scale
+            });
+            app.handlePointerMove({ ...toClient(exactX, exactY), altKey: true });
+            const bypassed = app.placementSession && {
+                x: app.placementSession.candidate.x,
+                y: app.placementSession.candidate.y
+            };
+            app.handleKeyDown({ key: 'Escape', target: document.body, preventDefault() {} });
+            const cancelled = {
+                count: app.persons.length,
+                history: app.history.getUndoCount(),
+                active: Boolean(app.placementSession)
+            };
+
+            const base = new Person({ id: 'interaction-base', gender: 'male',
+                x: grid.ORIGIN_X, y: grid.ORIGIN_Y + grid.CELL_HEIGHT });
+            app.persons.push(base);
+            app.personMap.set(base.id, base);
+            app.selectedPersonId = base.id;
+            document.getElementById('addPerson').click();
+            document.querySelector('.gender-btn[data-gender="female"]:not([data-transgender]):not([data-orientation])').click();
+            const pointerX = grid.ORIGIN_X + grid.CELL_WIDTH * 3.4;
+            const pointerY = grid.ORIGIN_Y + grid.CELL_HEIGHT * 2.4;
+            app.handlePointerMove({ ...toClient(pointerX, pointerY), altKey: false });
+            const preview = app.placementSession ? { ...app.placementSession.candidate } : {};
+            const realSetPointerCapture = canvas.setPointerCapture;
+            canvas.setPointerCapture = () => {};
+            app.handlePointerDown({
+                button: 0, pointerId: 91, target: canvas,
+                ...toClient(pointerX, pointerY)
+            });
+            canvas.setPointerCapture = realSetPointerCapture;
+            const person = app.persons[1];
+            return {
+                begun, bypassed, cancelled, preview,
+                committed: {
+                    count: app.persons.length,
+                    relationships: app.relationships.length,
+                    relationshipDirection: app.relationships[0] &&
+                        app.relationships[0].fromPersonId === person.id &&
+                        app.relationships[0].toPersonId === base.id,
+                    history: app.history.getUndoCount(),
+                    active: Boolean(app.placementSession),
+                    currentTool: app.currentTool,
+                    gender: person && person.gender,
+                    x: person && person.x,
+                    y: person && person.y,
+                    mapIdentity: Boolean(person && app.personMap.get(person.id) === person)
+                }
+            };
+        });
+        assert('general-add gender choice begins placement without data/history writes',
+            interaction.begun.active && interaction.begun.gender === 'male' &&
+            interaction.begun.count === 0 && interaction.begun.history === 0);
+        assert('placement pointer move with Alt bypasses snap in world coordinates',
+            interaction.bypassed &&
+            Math.abs(interaction.bypassed.x - (data.grid.ORIGIN_X + data.grid.CELL_WIDTH * 2.37)) < 0.001 &&
+            Math.abs(interaction.bypassed.y - (data.grid.ORIGIN_Y + data.grid.CELL_HEIGHT * 1.61)) < 0.001);
+        assert('Escape cancels placement before other Escape behavior with no data/history writes',
+            !interaction.cancelled.active && interaction.cancelled.count === 0 && interaction.cancelled.history === 0);
+        assert('canvas click commits preview position and returns to select',
+            interaction.committed.count === 2 && !interaction.committed.active &&
+            interaction.committed.currentTool === 'select' && interaction.committed.gender === 'female' &&
+            interaction.committed.x === interaction.preview.x && interaction.committed.y === interaction.preview.y &&
+            interaction.committed.relationships === 1 && interaction.committed.relationshipDirection);
+        assert('placement commit is one atomic history entry with immediate personMap identity',
+            interaction.committed.history === 1 && interaction.committed.mapIdentity);
+    }
 
     if (overlayMode) {
         const overlay = await page.evaluate(async suppressGhost => {
