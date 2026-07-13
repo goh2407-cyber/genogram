@@ -62,7 +62,11 @@ class FamilyRoutePlanner {
         const childrenCenterX = children.reduce((sum, child) => sum + child.x, 0) / children.length;
         const minChildTop = Math.min(...children.map(child => child.y - half));
         const minSegment = Math.max(8, Math.min(20, margin + 6));
-        const minBarY = preferredSource.y + minSegment;
+        const parentIds = new Set(parents.map(parent => parent.id));
+        const parentSafetyBottom = obstacles
+            .filter(obstacle => obstacle.kind === 'symbol' && parentIds.has(obstacle.ownerId))
+            .reduce((bottom, obstacle) => Math.max(bottom, obstacle.bottom), preferredSource.y);
+        const minBarY = Math.max(preferredSource.y + minSegment, parentSafetyBottom);
         const maxBarY = minChildTop - minSegment;
 
         const clampX = value => Math.max(range.minX, Math.min(range.maxX, value));

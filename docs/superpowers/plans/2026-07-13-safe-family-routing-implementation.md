@@ -15,7 +15,7 @@
 - Do not modify `Relationship.getLineStyle()`, `DASH_PATTERNS`, clinical line colors, or clinical symbol geometry.
 - Extra drag correction is horizontal only, at most `GRID.CELL_WIDTH / 2` (60px), and `Alt` bypasses it.
 - Quick-created parents remain one rigid pair and one history transaction; existing people never move.
-- Root, `geno/`, and `refactor/app/` JavaScript/HTML copies must be MD5-identical at completion.
+- Root, `geno/`, and `refactor/app/` JavaScript copies must be MD5-identical at completion. Each HTML entry point must load the planner in the same order while preserving deployment-local font/vendor URLs.
 - No merge to `main` before explicit user confirmation.
 
 ---
@@ -280,18 +280,19 @@ git commit -m "feat: add gentle route-safe placement correction"
 
 **Files:**
 - Copy: `js/domain/family-route-planner.js` to `geno/js/domain/` and `refactor/app/js/domain/`
-- Copy: `js/app.js`, `js/canvas.js`, `index.html` to corresponding `geno/` and `refactor/app/` paths
+- Copy: `js/app.js`, `js/canvas.js` to corresponding `geno/` and `refactor/app/` paths
+- Modify: `geno/index.html`, `refactor/app/index.html` to add the planner script while preserving deployment-local resources
 - Modify: `refactor/TEST_GATES.md` with the new verification commands
 
 **Interfaces:**
 - Consumes: completed Tasks 1-3.
-- Produces: MD5-identical runtime copies and fresh release evidence.
+- Produces: MD5-identical JavaScript runtime copies, correctly ordered entry points, and fresh release evidence.
 
-- [ ] **Step 1: Synchronize the three runtime copies**
+- [x] **Step 1: Synchronize the three runtime copies**
 
-Use `Copy-Item -LiteralPath` for each exact source/destination pair, then compute `Get-FileHash -Algorithm MD5` for every triple. Expected: one unique hash per logical file.
+Use `Copy-Item -LiteralPath` for each exact JavaScript source/destination pair, then compute `Get-FileHash -Algorithm MD5` for every triple. Verify each HTML entry point loads `family-route-planner.js` after `kinship-engine.js` and before `canvas.js`; do not replace `geno`'s local font/vendor URLs. Expected: one unique hash per logical JavaScript file and a fully offline `geno` entry point.
 
-- [ ] **Step 2: Run syntax and focused route gates**
+- [x] **Step 2: Run syntax and focused route gates**
 
 Run:
 
@@ -306,24 +307,26 @@ node refactor/verify_drag.js
 node refactor/verify_placement.js
 ```
 
-Expected: zero syntax errors and every assertion passes.
+Expected: zero syntax errors and every assertion passes, including unchanged-render cache reuse and affected-family-only replanning.
 
-- [ ] **Step 3: Run the complete project regression gates**
+- [x] **Step 3: Run the complete project regression gates**
 
-Run every `refactor/verify_*.js`, `refactor/smoke_visual.js`, and `refactor/visual_golden.js` with the configured Playwright `NODE_PATH`. Expected: zero failed assertions, zero console/page errors, and unchanged clinical color samples. Any expected route-only golden change is reviewed individually; no blanket baseline overwrite.
+Run every `refactor/verify_*.js`, `refactor/smoke_visual.js`, and `refactor/visual_golden.js` with the configured Playwright `NODE_PATH`. Expected: functional gates have zero failed assertions and zero console/page errors; clinical color samples remain unchanged. Expected route-only golden changes are reviewed individually; no blanket baseline overwrite.
 
-- [ ] **Step 4: Run deployment and performance checks**
+- [x] **Step 4: Run deployment and performance checks**
 
-Run `node refactor/verify_geno_deploy.js` and `PYTHONIOENCODING=utf-8 python refactor/benchmarks/fps_bench.py`. Expected: offline runtime dependencies pass, three-copy checks pass, and the 240-person render remains below the documented 50ms target.
+Run `node refactor/verify_geno_deploy.js` and `PYTHONIOENCODING=utf-8 python refactor/benchmarks/fps_bench.py`. Expected: offline runtime dependencies pass, three-copy checks pass, the 200-person warm render remains below 50ms, and pan/zoom remain near 60 FPS. Record first-plan latency separately.
 
-- [ ] **Step 5: Commit synchronized copies and gates**
+- [x] **Step 5: Commit synchronized copies and gates**
 
 ```powershell
 git add refactor/TEST_GATES.md
-git add -f geno/js/domain/family-route-planner.js refactor/app/js/domain/family-route-planner.js
+git add js/canvas.js js/domain/family-route-planner.js refactor/verify_family_route_planner.js refactor/verify_family_routing.js
 git commit -m "test: verify safe family routing release gates"
 ```
 
-- [ ] **Step 6: Stop before integration**
+`geno/` and `refactor/app/` remain intentionally gitignored local deployment copies; verify their MD5 against root instead of force-adding them.
+
+- [x] **Step 6: Stop before integration**
 
 Report branch, commits, exact test counts, visual artifacts, and any expected golden differences. Do not merge or push to `main`; wait for the user's visual confirmation.

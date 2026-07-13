@@ -33,9 +33,20 @@
 - JSON 匯入後內容一致（人物、關係、同住、生活圈）。
 - Chrome / Edge 最新版可正常使用。
 
+## G. 安全走線與微調
+- `node refactor/verify_family_route_planner.js`：純規劃器所有 fixture 通過，無 `NaN`／`Infinity`。
+- `node refactor/verify_family_routing.js`：畫面、命中、鉛筆與匯出共用相同家庭路徑；未變更的 render 不重算，遠方人物不進入局部障礙集合，移動一個家庭只重算受影響家庭。
+- `node refactor/verify_drag.js`：無安全路徑時水平校正不超過 60px；`Alt` 保留精確落點；一次 Undo 完整復原。
+- `node refactor/verify_placement.js`：快速父母使用 120／180px 剛性間距，既有人物座標不變。
+- `Relationship.getLineStyle()`、`DASH_PATTERNS` 與臨床符號顏色／幾何不得因走線功能修改。
+- 根目錄、`geno/`、`refactor/app/` 的所有 `js/` 檔案 MD5 必須一致。
+- 三份 `index.html` 都必須在 `kinship-engine.js` 後、`canvas.js` 前載入 `family-route-planner.js`；`geno/index.html` 保留本地字型與 vendor 路徑，並通過完全離線驗證。
+- 效能基準的 200 人 warm render 必須低於 50ms，平移／縮放維持接近 60 FPS；首次建立全圖路徑另行記錄，不與互動重繪混算。
+- Golden 差異只可出現在家庭／親子走線 fixture，必須逐張人工檢視，禁止整批覆寫 baseline。
+
 ## 驗收記錄
-- 測試日期：
-- 測試版本：
-- 測試人員：
-- 結果：`PASS / FAIL`
-- 備註：
+- 測試日期：2026-07-13
+- 測試版本：`codex/genogram-ux-drawing-optimization`
+- 測試人員：Codex
+- 結果：`PASS`
+- 備註：15 支 `verify_*.js` 全數通過；200 人 warm render 1.43ms、pan/zoom 60.5 FPS。Golden 16 張中 9 張 0 差異，7 張僅家庭／親子走線變更且已逐張檢視，baseline 未覆寫。

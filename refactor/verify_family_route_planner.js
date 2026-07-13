@@ -55,6 +55,21 @@ check('normal path is vertically monotonic and ends at the child top port', () =
     assert.deepEqual(path.at(-1), { x: 500, y: 475 });
 });
 
+check('sibling bar stays below the parents symbol safety boundary', () => {
+    const input = baseInput();
+    input.children = [
+        { id: 'left', x: 400, y: 500 },
+        { id: 'right', x: 600, y: 500 }
+    ];
+    input.obstacles = [
+        { ownerId: 'dad', kind: 'symbol', left: 405, right: 475, top: 265, bottom: 335 },
+        { ownerId: 'mom', kind: 'symbol', left: 525, right: 595, top: 265, bottom: 335 }
+    ];
+    const plan = FamilyRoutePlanner.planFamily(input);
+    assert.equal(plan.safe, true);
+    assert.ok(plan.barY >= 335, `barY ${plan.barY} enters the parent safety band`);
+});
+
 check('a central obstacle selects a safe offset inside the marriage segment', () => {
     const input = baseInput();
     input.obstacles.push({

@@ -71,6 +71,7 @@ class GenogramCanvas {
         this._familyRoutePlans = [];
         this._familyRelationshipPaths = new Map();
         this._familyRouteSignature = null;
+        this._familyPlanCache = new Map();
 
         // 初始化
         this.resize();
@@ -3452,7 +3453,7 @@ class GenogramCanvas {
                 rel.linkType || '', rel.routeMode || ''
             ])
             .sort((a, b) => a[0].localeCompare(b[0]));
-        return JSON.stringify([this.personSize, this.fontSize, personData, relationshipData]);
+        return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
     }
 
     getPersonRouteObstacles(persons) {
@@ -3647,10 +3648,74 @@ class GenogramCanvas {
         };
     }
 
+    _getRelevantFamilyRouteObstacles(obstacles, parentObjs, childObjs, sourceInfo) {
+        const parentY = parentObjs.reduce((sum, person) => sum + person.y, 0) / parentObjs.length;
+        const childY = childObjs.reduce((sum, person) => sum + person.y, 0) / childObjs.length;
+        if (childY < parentY || Math.abs(childY - parentY) < this.personSize) return obstacles;
+
+        const xs = childObjs.map(child => child.x);
+        const ys = childObjs.map(child => child.y - this.personSize / 2);
+        if (sourceInfo.source) {
+            xs.push(sourceInfo.source.x);
+            ys.push(sourceInfo.source.y);
+        }
+        if (sourceInfo.sourceRange) {
+            xs.push(sourceInfo.sourceRange.minX, sourceInfo.sourceRange.maxX);
+        }
+        (sourceInfo.sourcePrefix || []).forEach(point => {
+            xs.push(point.x);
+            ys.push(point.y);
+        });
+        if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) return obstacles;
+
+        const left = Math.min(...xs);
+        const right = Math.max(...xs);
+        const top = Math.min(...ys);
+        const bottom = Math.max(...ys);
+        return obstacles.filter(obstacle =>
+            obstacle.right > left && obstacle.left < right &&
+            obstacle.bottom > top && obstacle.top < bottom
+        );
+    }
+
+    _getRouteObstacleSignature(obstacles) {
+        return JSON.stringify(obstacles
+            .map(obstacle => [
+                String(obstacle.ownerId || ''), obstacle.kind || '',
+                obstacle.left, obstacle.right, obstacle.top, obstacle.bottom
+            ])
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+    }
+
+    _getFamilyPlanCacheSignature(group, parentObjs, childObjs, sourceInfo, obstacles) {
+        const people = [...parentObjs, ...childObjs]
+            .map(person => [
+                String(person.id), person.x, person.y,
+                person.twinGroup || '', person.zygosity || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        return JSON.stringify([
+            this.personSize,
+            group.key,
+            group.childIds,
+            group.relIds,
+            people,
+            sourceInfo.source || null,
+            sourceInfo.sourceRange || null,
+            sourceInfo.sourcePrefix || [],
+            Boolean(sourceInfo.virtualPair),
+            this._getRouteObstacleSignature(obstacles)
+        ]);
+    }
+
     getFamilyRoutePlans(familyRels, persons, otherRels, kinship = null) {
         const allPersons = Array.isArray(persons) ? persons : [];
         const allRelationships = [...(familyRels || []), ...(otherRels || [])];
         if (typeof FamilyRoutePlanner === 'undefined') return [];
+        const signature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        if (signature === this._familyRouteSignature && Array.isArray(this._familyRoutePlans)) {
+            return this._familyRoutePlans;
+        }
         if (!(this.personMap instanceof Map) || allPersons.some(person => !this.personMap.has(person.id))) {
             this.personMap = new Map(allPersons.map(person => [person.id, person]));
         }
@@ -3658,22 +3723,52 @@ class GenogramCanvas {
         const obstacles = this.getPersonRouteObstacles(allPersons);
         const groups = this._buildFamilyGroups(familyRels || [], engine);
         const relationshipPaths = new Map();
+        const nextFamilyPlanCache = new Map();
+        const allObstacleSignature = this._getRouteObstacleSignature(obstacles);
 
         const plans = groups.map(group => {
             const parentObjs = group.parentIds.map(id => this.personMap.get(id)).filter(Boolean);
             const childObjs = group.childIds.map(id => this.personMap.get(id)).filter(Boolean);
             if (parentObjs.length === 0 || childObjs.length === 0) return null;
             const sourceInfo = this._getFamilySource(parentObjs, childObjs, otherRels || [], obstacles);
-            const plan = FamilyRoutePlanner.planFamily({
+            const relevantObstacles = this._getRelevantFamilyRouteObstacles(
+                obstacles, parentObjs, childObjs, sourceInfo
+            );
+            const localSignature = this._getFamilyPlanCacheSignature(
+                group, parentObjs, childObjs, sourceInfo, relevantObstacles
+            );
+            const planInput = {
                 parents: parentObjs,
                 children: childObjs,
                 source: sourceInfo.source,
                 sourceRange: sourceInfo.sourceRange,
                 sourcePrefix: sourceInfo.sourcePrefix,
-                obstacles,
+                obstacles: relevantObstacles,
                 personSize: this.personSize,
                 margin: 10
-            });
+            };
+            const cached = this._familyPlanCache.get(group.key);
+            let plan = null;
+            let cacheSignature = localSignature;
+            if (cached && cached.plan) {
+                const expectedSignature = cached.plan.safe
+                    ? localSignature
+                    : `${localSignature}|${allObstacleSignature}`;
+                if (cached.signature === expectedSignature) {
+                    plan = cached.plan;
+                    cacheSignature = expectedSignature;
+                }
+            }
+            if (!plan) {
+                plan = FamilyRoutePlanner.planFamily(planInput);
+                if (!plan.safe && relevantObstacles.length !== obstacles.length) {
+                    plan = FamilyRoutePlanner.planFamily({ ...planInput, obstacles });
+                }
+                if (!plan.safe) {
+                    cacheSignature = `${localSignature}|${allObstacleSignature}`;
+                }
+            }
+            nextFamilyPlanCache.set(group.key, { signature: cacheSignature, plan });
             plan.family = {
                 key: group.key,
                 parentIds: [...group.parentIds],
@@ -3694,9 +3789,10 @@ class GenogramCanvas {
             return plan;
         }).filter(Boolean);
 
+        this._familyPlanCache = nextFamilyPlanCache;
         this._familyRoutePlans = plans;
         this._familyRelationshipPaths = relationshipPaths;
-        this._familyRouteSignature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        this._familyRouteSignature = signature;
         return plans;
     }
 
