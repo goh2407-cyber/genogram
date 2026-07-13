@@ -467,15 +467,18 @@ class GenogramCanvas {
             this.ctx.lineTo(candidate.x, candidate.y + halfCell);
             this.ctx.stroke();
 
-            if (candidate.occupied) {
+            const blocked = candidate.occupied
+                ? { x: candidate.x, y: candidate.y }
+                : candidate.blockedAt;
+            if (blocked) {
                 this.ctx.globalAlpha = 0.95;
                 this.ctx.lineWidth = 3;
                 const markerHalf = 10;
                 this.ctx.beginPath();
-                this.ctx.moveTo(candidate.x - markerHalf, candidate.y - markerHalf);
-                this.ctx.lineTo(candidate.x + markerHalf, candidate.y + markerHalf);
-                this.ctx.moveTo(candidate.x + markerHalf, candidate.y - markerHalf);
-                this.ctx.lineTo(candidate.x - markerHalf, candidate.y + markerHalf);
+                this.ctx.moveTo(blocked.x - markerHalf, blocked.y - markerHalf);
+                this.ctx.lineTo(blocked.x + markerHalf, blocked.y + markerHalf);
+                this.ctx.moveTo(blocked.x + markerHalf, blocked.y - markerHalf);
+                this.ctx.lineTo(blocked.x - markerHalf, blocked.y + markerHalf);
                 this.ctx.stroke();
             }
         } finally {

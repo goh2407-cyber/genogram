@@ -1,6 +1,6 @@
 /**
  * Smart-placement pure logic verification.
- * Usage: node refactor/verify_placement.js --logic|--overlay|--interaction
+ * Usage: node refactor/verify_placement.js [--logic|--overlay|--interaction|--quick-add]
  */
 const { chromium } = require('playwright');
 const path = require('path');
@@ -12,7 +12,10 @@ function assert(name, condition, detail = '') {
 }
 
 (async () => {
-    const overlayMode = process.argv.includes('--overlay');
+    const requestedModes = process.argv.slice(2).filter(arg => arg.startsWith('--'));
+    const allMode = requestedModes.length === 0;
+    const overlayMode = allMode || process.argv.includes('--overlay');
+    const interactionMode = allMode || process.argv.includes('--interaction') || process.argv.includes('--quick-add');
     const suppressGhostMode = process.argv.includes('--suppress-ghost');
     const browser = await chromium.launch();
     const page = await browser.newPage();
@@ -97,7 +100,9 @@ function assert(name, condition, detail = '') {
     assert('partner shares base row', data.partner.y === base.y);
     assert('occupied partner choice falls back to nearest free same-row cell', data.partner.x === base.x + grid.CELL_WIDTH * 3,
         `x=${data.partner.x}`);
-    assert('occupied first choice is reported', data.partner.occupied === true);
+    assert('fallback candidate itself is free and preferred collision is reported separately',
+        data.partner.occupied === false && data.partner.preferredOccupied === true &&
+        data.partner.blockedAt && data.partner.blockedAt.x === base.x + grid.CELL_WIDTH);
     assert('child uses next generation row', data.child.y === grid.ORIGIN_Y + 2 * grid.CELL_HEIGHT);
     assert('child uses selected marriage spouse midpoint', data.child.x === (base.x + data.selectedSpouse.x) / 2,
         `x=${data.child.x}`);
@@ -135,14 +140,15 @@ function assert(name, condition, detail = '') {
         data.updatedSnapshot.updated.y === data.updatedSnapshot.session.candidate.y &&
         data.updatedSnapshot.session.ghostPerson.x === data.updatedSnapshot.updated.x &&
         data.updatedSnapshot.session.ghostPerson.y === data.updatedSnapshot.updated.y);
-    assert('updatePlacement bypassSnap preserves exact coordinates', data.bypassedSnapshot.bypassed.x === 123.25 &&
-        data.bypassedSnapshot.bypassed.y === 456.75 && data.bypassedSnapshot.bypassed.guides === null &&
-        data.bypassedSnapshot.session.ghostPerson.x === 123.25 && data.bypassedSnapshot.session.ghostPerson.y === 456.75);
+    assert('quick-relative update preserves semantic rules even when bypass is requested',
+        data.bypassedSnapshot.session.request.kind === 'partner' &&
+        data.bypassedSnapshot.bypassed.y === base.y &&
+        data.bypassedSnapshot.bypassed.relationshipPreview.length === 1);
     assert('cancelPlacement clears session', data.afterCancel === null);
     assert('commitPlacement returns session and clears state', data.committed &&
         data.committed.ghostPerson.id === 'commit-ghost' && data.afterCommit === null);
 
-    if (process.argv.includes('--interaction')) {
+    if (interactionMode) {
         const interaction = await page.evaluate(() => {
             const app = window.app;
             const grid = GenogramApp.GRID;
@@ -250,8 +256,32 @@ function assert(name, condition, detail = '') {
                 x: app.persons[0].x, y: app.persons[0].y,
                 expectedX: altClickX, expectedY: altClickY
             };
+
+            // Placement is an ephemeral transaction: state/tool mutations must abort it.
+            app.persons = []; app.relationships = []; app._syncPersonMap(); app.history.clear(); app.saveState();
+            app.persons = [base]; app._syncPersonMap();
+            const doomedId = 'doomed-ghost';
+            app.beginPlacement({ kind: 'child', basePersonId: base.id, personId: doomedId, gender: 'female' });
+            app.undo();
+            const afterUndo = { active: !!app.placementSession, history: app.history.getUndoCount() };
+            canvas.setPointerCapture = () => {};
+            app.handlePointerDown({ button: 0, pointerId: 94, target: canvas, ...toClient(pointerX, pointerY) });
+            canvas.setPointerCapture = realSetPointerCapture;
+            const undoClick = { people: app.persons.length, dangling: app.relationships.some(r => r.fromPersonId === doomedId || r.toPersonId === doomedId) };
+
+            app.persons = [base]; app.relationships = []; app._syncPersonMap(); app.history.clear();
+            app.beginPlacement({ kind: 'partner', basePersonId: base.id, personId: 'tool-ghost', gender: 'female' });
+            app.setTool('connect');
+            const afterToolSwitch = { active: !!app.placementSession, history: app.history.getUndoCount(), tool: app.currentTool };
+
+            app.beginPlacement({ kind: 'child', basePersonId: base.id, personId: 'stale-ghost', gender: 'female' });
+            app.persons = []; app._syncPersonMap();
+            const invalidCommit = app.commitPlacement();
+            const afterInvalid = { result: invalidCommit, active: !!app.placementSession, people: app.persons.length,
+                rels: app.relationships.length, history: app.history.getUndoCount(), status: app.elements.statusBar.textContent };
             return {
-                begun, bypassed, cancelled, preview, clickOnlyCommit, altClickCommit, committed
+                begun, bypassed, cancelled, preview, clickOnlyCommit, altClickCommit, committed,
+                afterUndo, undoClick, afterToolSwitch, afterInvalid
             };
         });
         assert('general-add gender choice begins placement without data/history writes',
@@ -278,6 +308,15 @@ function assert(name, condition, detail = '') {
             interaction.altClickCommit &&
             Math.abs(interaction.altClickCommit.x - interaction.altClickCommit.expectedX) < 0.001 &&
             Math.abs(interaction.altClickCommit.y - interaction.altClickCommit.expectedY) < 0.001);
+        assert('Undo aborts placement without adding history and next click cannot commit stale data',
+            !interaction.afterUndo.active && interaction.afterUndo.history === 0 &&
+            interaction.undoClick.people === 0 && !interaction.undoClick.dangling);
+        assert('tool switch aborts placement without history',
+            !interaction.afterToolSwitch.active && interaction.afterToolSwitch.history === 0 && interaction.afterToolSwitch.tool === 'connect');
+        assert('invalid placement endpoints cancel clearly without writes',
+            interaction.afterInvalid.result === null && !interaction.afterInvalid.active &&
+            interaction.afterInvalid.people === 0 && interaction.afterInvalid.rels === 0 &&
+            interaction.afterInvalid.history === 0 && /取消|不存在|失效/.test(interaction.afterInvalid.status));
 
         const quick = await page.evaluate(() => {
             const app = window.app;
@@ -386,6 +425,37 @@ function assert(name, condition, detail = '') {
                 people:app.persons.length,rels:app.relationships.length,
                 marriageEndpoints:pairMarriage&&pairNewIds.has(pairMarriage.fromPersonId)&&pairNewIds.has(pairMarriage.toPersonId),
                 childDirections:pairChildEdges.length===2&&pairChildEdges.every(r=>pairNewIds.has(r.fromPersonId)&&r.toPersonId===base.id)};
+            // Real quick-add pointermove must retain its semantic request and preview.
+            result.pointerKinds={};
+            for(const type of ['son','partner','sibling','parent']){
+                base=reset();
+                if(type==='sibling'){
+                    const p=new Person({id:'pointer-parent',x:base.x,y:g.ORIGIN_Y});
+                    app.persons.push(p); app.personMap.set(p.id,p);
+                    app.relationships.push(new Relationship({type:'parent-child',fromPersonId:p.id,toPersonId:base.id}));
+                }
+                if(type==='partner'||type==='sibling'){ app.handleQuickAddClick(base,type); app.createQuickPersonWithGender('female'); }
+                else app.handleQuickAddClick(base,type);
+                const before={kind:app.placementSession.request.kind,base:app.placementSession.request.basePersonId,
+                    count:app.placementSession.candidate.relationshipPreview.length};
+                app.updatePlacement(base.x+g.CELL_WIDTH*4,base.y+g.CELL_HEIGHT*3);
+                result.pointerKinds[type]={before,kind:app.placementSession.request.kind,base:app.placementSession.request.basePersonId,
+                    count:app.placementSession.candidate.relationshipPreview.length};
+                app.cancelPlacement();
+            }
+            base=reset();
+            const existingParent=new Person({id:'existing-parent',gender:'female',x:base.x,y:g.ORIGIN_Y});
+            app.persons.push(existingParent); app.personMap.set(existingParent.id,existingParent);
+            app.relationships.push(new Relationship({type:'parent-child',fromPersonId:existingParent.id,toPersonId:base.id}));
+            app.handleQuickAddClick(base,'parent'); const oneParentPreview={people:app.placementSession?.request.people?.length,
+                kind:app.placementSession?.request.kind, rels:app.placementSession?.candidate.relationshipPreview.length};
+            app.commitPlacement();
+            result.oneExistingParent={preview:oneParentPreview,people:app.persons.length,rels:app.relationships.length,
+                parentEdges:app.getKinshipEngine().getParentIds(base.id).length,marriages:app.relationships.filter(r=>r.type==='married').length};
+            base=reset();
+            for(let i=0;i<2;i++){ const p=new Person({id:'full-parent-'+i,x:base.x+(i?60:-60),y:g.ORIGIN_Y}); app.persons.push(p);app.personMap.set(p.id,p);app.relationships.push(new Relationship({type:'parent-child',fromPersonId:p.id,toPersonId:base.id})); }
+            app.handleQuickAddClick(base,'parent');
+            result.twoExistingParents={active:!!app.placementSession,people:app.persons.length,rels:app.relationships.length,status:app.elements.statusBar.textContent};
             base=reset(); for(const type of ['sibling','partner']){ app.handleQuickAddClick(base,type); const choosing=app.elements.statusBar.textContent; app.closeGenderModal(); result[type+'Cancel']={people:app.persons.length,rels:app.relationships.length,history:app.history.getUndoCount(),selected:app.selectedPersonId,choosing}; }
             return result;
         });
@@ -398,6 +468,16 @@ function assert(name, condition, detail = '') {
         assert('occupied quick-add falls back without moving existing people', quickE2E.occupied.fallback && quickE2E.occupied.unchanged);
         assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
         assert('occupied parent pair falls back as fixed-gap unit and commits correct atomic endpoints without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===5 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
+        assert('quick-add pointermove retains child/partner/sibling/parent request semantics and previews',
+            Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base && item.count===item.before.count && item.count>0),
+            JSON.stringify(quickE2E.pointerKinds));
+        assert('parent quick-add with one existing parent creates exactly one missing parent without marriage',
+            quickE2E.oneExistingParent.preview.people===undefined && quickE2E.oneExistingParent.preview.kind==='parent' &&
+            quickE2E.oneExistingParent.preview.rels===1 && quickE2E.oneExistingParent.people===3 &&
+            quickE2E.oneExistingParent.rels===2 && quickE2E.oneExistingParent.parentEdges===2 && quickE2E.oneExistingParent.marriages===0);
+        assert('parent quick-add refuses when two parents already exist',
+            !quickE2E.twoExistingParents.active && quickE2E.twoExistingParents.people===3 &&
+            quickE2E.twoExistingParents.rels===2 && /2|父母|上限/.test(quickE2E.twoExistingParents.status));
         assert('sibling gender-modal cancel writes nothing and retains selection', quickE2E.siblingCancel.people===1 && quickE2E.siblingCancel.rels===0 && quickE2E.siblingCancel.history===0 && quickE2E.siblingCancel.selected==='e2e-base');
         assert('partner gender-modal cancel writes nothing and retains selection', quickE2E.partnerCancel.people===1 && quickE2E.partnerCancel.rels===0 && quickE2E.partnerCancel.history===0 && quickE2E.partnerCancel.selected==='e2e-base');
         assert('quick parent previews two people and three relationships without writes', quick.parent.active && quick.parent.count===1 && quick.parent.rels===0 && quick.parent.history===0 && quick.parent.request.people.length===2 && quick.parent.ghostCount===2 && quick.parent.request.relationshipPreview.length===3);
@@ -553,6 +633,7 @@ function assert(name, condition, detail = '') {
             const pairRelationshipSegments = pairSegments.filter(([a, b]) => relationshipPoints.some(p => p.x === a[0] && p.y === a[1]) && relationshipPoints.some(p => p.x === b[0] && p.y === b[1])).length;
 
             // All raster-backed export entry points must bypass the editor overlay.
+            await app.waitForCurrentCanvasFonts();
             let exportOverlayCalls = 0;
             const originalDrawPreview = app.canvas.drawPlacementPreview;
             app.canvas.drawPlacementPreview = () => { exportOverlayCalls++; };

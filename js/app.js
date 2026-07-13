@@ -130,12 +130,9 @@ class GenogramApp {
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
-        const legendText = document.getElementById('legendContent')?.textContent;
-        this.canvasFontReady = document.fonts && legendText
-            ? document.fonts.load('14px "Noto Sans TC"', legendText)
-                .then(() => this.render())
-                .catch(() => undefined)
-            : Promise.resolve();
+        this._canvasFontSignature = null;
+        this.canvasFontReady = Promise.resolve();
+        this.waitForCurrentCanvasFonts(true);
         this.setupEventListeners();
 
         // 延遲載入自動儲存，確保 canvas 和 ResizeObserver 都已完成初始化
@@ -465,6 +462,9 @@ class GenogramApp {
      * 設定當前工具
      */
     setTool(tool) {
+        // Placement is an ephemeral transaction. Any explicit tool change aborts it
+        // without touching history. commitPlacement clears it before selecting a tool.
+        this.cancelPlacement();
         // [UX Fix] 如果正在預覽自動排列，切換工具時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -528,6 +528,7 @@ class GenogramApp {
      * 用於視窗失焦、tab 切換、觸控中斷等情況
      */
     cancelInteraction() {
+        this.cancelPlacement();
         // 清理拖曳狀態
         if (this.canvas) {
             this.canvas.isDragging = false;
@@ -1860,6 +1861,21 @@ class GenogramApp {
     }
 
     beginQuickParentPlacement(child) {
+        const parentIds = this.getKinshipEngine().getParentIds(child.id);
+        if (parentIds.length >= 2) {
+            this.cancelPlacement();
+            this.updateStatus('此人物已有 2 位父母，無法再新增父母', 'error');
+            this.render();
+            return null;
+        }
+        if (parentIds.length === 1) {
+            const existingParent = this.personMap.get(parentIds[0]);
+            const gender = existingParent?.gender === 'female' ? 'male' : 'female';
+            const session = this.beginPlacement({ kind: 'parent', basePersonId: child.id, gender,
+                generation: this.getGenerationAbove(child.generation) });
+            this.render();
+            return session;
+        }
         const grid = GenogramApp.GRID;
         const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
         let centerX = child.x;
@@ -3830,6 +3846,7 @@ class GenogramApp {
      * 繪製
      */
     render() {
+        this.waitForCurrentCanvasFonts(true);
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
@@ -4109,6 +4126,28 @@ class GenogramApp {
         return origin + gridIndex * cellSize;
     }
 
+    getCurrentCanvasFontText() {
+        const legend = document.getElementById('legendContent')?.textContent || '';
+        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes, person.medical]).filter(Boolean);
+        const relationshipText = this.relationships.flatMap(rel => [rel.notes, rel.date]).filter(Boolean);
+        return [legend, ...personText, ...relationshipText].join('\n');
+    }
+
+    waitForCurrentCanvasFonts(repaint = false) {
+        if (!document.fonts || typeof document.fonts.load !== 'function') return Promise.resolve();
+        const text = this.getCurrentCanvasFontText();
+        if (text === this._canvasFontSignature) return this.canvasFontReady;
+        this._canvasFontSignature = text;
+        const signature = text;
+        this.canvasFontReady = Promise.all([
+            document.fonts.load('14px "Noto Sans TC"', text),
+            document.fonts.load('bold 14px "Noto Sans TC"', text)
+        ]).then(() => {
+            if (repaint && signature === this._canvasFontSignature) this.render();
+        }).catch(() => undefined);
+        return this.canvasFontReady;
+    }
+
     /**
      * 尋找同列最近的空格。搜尋順序固定為 0, -1, +1, -2, +2 ...。
      */
@@ -4127,13 +4166,17 @@ class GenogramApp {
             for (const offset of offsets) {
                 const candidateX = x + offset * grid.CELL_WIDTH;
                 if (!occupiedAt(candidateX)) {
-                    return { x: candidateX, y, occupied: initiallyOccupied };
+                    return { x: candidateX, y, occupied: false,
+                        preferredOccupied: initiallyOccupied,
+                        blockedAt: initiallyOccupied ? { x, y } : null };
                 }
             }
         }
 
         // limit 大於現有人數，理論上必有空格；保留確定性 fallback。
-        return { x: x - (limit + 1) * grid.CELL_WIDTH, y, occupied: initiallyOccupied };
+        return { x: x - (limit + 1) * grid.CELL_WIDTH, y, occupied: false,
+            preferredOccupied: initiallyOccupied,
+            blockedAt: initiallyOccupied ? { x, y } : null };
     }
 
     /**
@@ -4217,7 +4260,9 @@ class GenogramApp {
                 const found = offsets.map(offset => preferredX + offset * grid.CELL_WIDTH).find(pairFree);
                 if (found !== undefined) { x = found; break; }
             }
-            open = { x, y: preferredY, occupied: initiallyOccupied };
+            open = { x, y: preferredY, occupied: false,
+                preferredOccupied: initiallyOccupied,
+                blockedAt: initiallyOccupied ? { x: preferredX, y: preferredY } : null };
         } else {
             open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
         }
@@ -4256,7 +4301,10 @@ class GenogramApp {
 
     updatePlacement(x, y, bypassSnap = false) {
         if (!this.placementSession) return null;
-        let request = { ...this.placementSession.request, kind: 'person', basePersonId: null, x, y };
+        const originalRequest = this.placementSession.request;
+        let request = originalRequest.kind === 'person' && !originalRequest.basePersonId
+            ? { ...originalRequest, x, y }
+            : { ...originalRequest };
         if (this.placementSession.request.people) {
             const first = this.placementSession.request.people[0];
             request = { ...this.placementSession.request,
@@ -4265,7 +4313,7 @@ class GenogramApp {
                 }))
             };
         }
-        const candidate = bypassSnap
+        const candidate = bypassSnap && originalRequest.kind === 'person' && !originalRequest.basePersonId
             ? { x, y, occupied: false, guides: null, relationshipPreview: this.placementSession.candidate.relationshipPreview }
             : this.getPlacementCandidate(request);
         candidate.relationshipPreview = this.placementSession.candidate.relationshipPreview;
@@ -4296,6 +4344,18 @@ class GenogramApp {
     commitPlacement() {
         const session = this.placementSession;
         if (!session) return null;
+        const previews = session.candidate.relationshipPreview || session.request.relationshipPreview || [];
+        const existingIds = new Set(this.persons.map(person => person.id));
+        const ghostIds = new Set(session.request.people
+            ? session.request.people.map(person => person.personId)
+            : [session.request.personId || '__placement__']);
+        const validEndpoint = id => existingIds.has(id) || ghostIds.has(id);
+        if (previews.some(preview => !validEndpoint(preview.fromPersonId) || !validEndpoint(preview.toPersonId))) {
+            this.cancelPlacement();
+            this.updateStatus('新增已取消：關係端點不存在或已失效', 'error');
+            this.render();
+            return null;
+        }
         if (session.request.people) {
             this.saveState();
             const idMap = new Map();
@@ -4307,7 +4367,7 @@ class GenogramApp {
                 idMap.set(spec.personId, person.id);
                 if (index === 0) this.selectedPersonId = person.id;
             });
-            session.request.relationshipPreview.forEach(preview => this.relationships.push(new Relationship({
+            previews.forEach(preview => this.relationships.push(new Relationship({
                 ...preview,
                 fromPersonId: idMap.get(preview.fromPersonId) || preview.fromPersonId,
                 toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
@@ -4329,7 +4389,7 @@ class GenogramApp {
             this.persons.push(person);
             this.personMap.set(person.id, person);
             const previewId = session.request.personId || '__placement__';
-            session.candidate.relationshipPreview.forEach(preview => {
+            previews.forEach(preview => {
                 this.relationships.push(new Relationship({
                     ...preview,
                     fromPersonId: preview.fromPersonId === previewId ? person.id : preview.fromPersonId,
@@ -4549,6 +4609,7 @@ class GenogramApp {
      * 撤銷
      */
     undo() {
+        this.cancelPlacement();
         // [UX Fix] 如果正在預覽自動排列，撤銷時僅取消預覽，不執行歷史回溯
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4581,6 +4642,7 @@ class GenogramApp {
      * 重做
      */
     redo() {
+        this.cancelPlacement();
         // [UX Fix] 如果正在預覽自動排列，重做時僅取消預覽 (視為退出預覽模式)
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4717,6 +4779,7 @@ class GenogramApp {
      * 載入數據到應用程式
      */
     loadData(data) {
+        this.cancelPlacement();
         this.saveState();
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
         this._syncPersonMap();
@@ -4794,7 +4857,8 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    exportPNG(showNotes = true, showLegend = true, scale = 3) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -4841,7 +4905,7 @@ class GenogramApp {
      * 處理不同格式的匯出
      * @param {string} format - 匯出格式 (png, jpeg, svg, pdf, json)
      */
-    handleExportFormat(format) {
+    async handleExportFormat(format) {
         if (this.persons.length === 0) {
             this.updateStatus('沒有內容可匯出', 'error');
             return;
@@ -4869,22 +4933,22 @@ class GenogramApp {
 
         switch (format) {
             case 'png':
-                this.exportPNG(showNotes, showLegend, scale);
+                await this.exportPNG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PNG 圖片', 'success');
                 break;
 
             case 'jpeg':
-                this.exportJPEG(showNotes, showLegend, scale);
+                await this.exportJPEG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 JPEG 圖片', 'success');
                 break;
 
             case 'svg':
-                this.exportSVG(showNotes, showLegend, scale);
+                await this.exportSVG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 SVG 向量圖', 'success');
                 break;
 
             case 'pdf':
-                this.exportPDF(showNotes, showLegend, scale);
+                await this.exportPDF(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PDF 文件', 'success');
                 break;
 
@@ -4901,7 +4965,8 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -4914,7 +4979,8 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    exportSVG(showNotes = true, showLegend = true, scale = 3) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
@@ -4944,7 +5010,8 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    exportPDF(showNotes = true, showLegend = true, scale = 3) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
@@ -4977,6 +5044,7 @@ class GenogramApp {
      * 清空畫布 (清除所有人物、關係、圈選)
      */
     clearAll() {
+        this.cancelPlacement();
         // [UX Fix] 如果正在預覽自動排列，清空時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -5019,6 +5087,8 @@ class GenogramApp {
             this.updateStatus('沒有內容可複製', 'error');
             return;
         }
+
+        await this.waitForCurrentCanvasFonts();
 
         try {
             // 讀取是否顯示備註的設定 (預設顯示)
@@ -5101,6 +5171,7 @@ class GenogramApp {
      * 載入自動儲存
      */
     loadAutoSave() {
+        this.cancelPlacement();
         this.isLoading = true; // 暫停 autosave
         const saved = this.storage.loadAutoSave();
         if (saved) {
