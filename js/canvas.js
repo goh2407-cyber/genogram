@@ -347,6 +347,11 @@ class GenogramCanvas {
             this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted);
         });
 
+        // 5.5 智慧格位預覽只屬於編輯器畫面；匯出路徑不呼叫此方法。
+        if (this.placementPreview) {
+            this.drawPlacementPreview(this.placementPreview);
+        }
+
         // 6. 繪製多選邊框 (視覺提示可移動區域)
         if (selectedPersonIds && selectedPersonIds.length > 1) {
             this.drawMultiSelectionBounds(selectedPersonIds, persons);
@@ -396,6 +401,81 @@ class GenogramCanvas {
         }
 
         this.ctx.restore();
+    }
+
+    /** Draw the editor-only smart-placement overlay without retaining canvas state. */
+    drawPlacementPreview(preview) {
+        if (!preview || !Number.isFinite(preview.x) || !Number.isFinite(preview.y)) return;
+        this.ctx.save();
+        try {
+            const ghost = { id: '__placement__', x: preview.x, y: preview.y, gender: 'unknown', name: '' };
+
+            // Relationship previews deliberately use a neutral selection dash rather than
+            // any clinical relationship style.
+            (preview.relationshipPreview || []).forEach(rel => {
+                const from = this.personMap && this.personMap.get(rel.fromPersonId);
+                const to = this.personMap && this.personMap.get(rel.toPersonId);
+                const fromPoint = from || ghost;
+                const toPoint = to || ghost;
+                if ((!from && !to) || (fromPoint === ghost && toPoint === ghost)) return;
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.55;
+                this.ctx.strokeStyle = '#6b7280';
+                this.ctx.lineWidth = 2;
+                this.ctx.lineCap = 'round';
+                this.ctx.setLineDash(DASH_PATTERNS.selection);
+                this.ctx.beginPath();
+                this.ctx.moveTo(fromPoint.x, fromPoint.y);
+                this.ctx.lineTo(toPoint.x, toPoint.y);
+                this.ctx.stroke();
+                this.ctx.restore();
+            });
+
+            this.drawPlacementCell(preview);
+            this.ctx.globalAlpha = 0.38;
+            this.drawPerson(ghost, false, false, false);
+        } finally {
+            this.ctx.restore();
+        }
+    }
+
+    /** Draw the candidate cell, placement alignment guides, and unavailable marker. */
+    drawPlacementCell(candidate) {
+        if (!candidate || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) return;
+        this.ctx.save();
+        try {
+            const halfCell = 54;
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.strokeStyle = '#ed1261';
+            this.ctx.fillStyle = '#ed1261';
+            this.ctx.lineWidth = 2;
+            this.ctx.lineCap = 'round';
+            this.ctx.setLineDash(DASH_PATTERNS.selection);
+            this.ctx.strokeRect(candidate.x - halfCell, candidate.y - halfCell, halfCell * 2, halfCell * 2);
+
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
+            this.ctx.globalAlpha = 0.45;
+            this.ctx.beginPath();
+            this.ctx.moveTo(candidate.x - halfCell, candidate.y);
+            this.ctx.lineTo(candidate.x + halfCell, candidate.y);
+            this.ctx.moveTo(candidate.x, candidate.y - halfCell);
+            this.ctx.lineTo(candidate.x, candidate.y + halfCell);
+            this.ctx.stroke();
+
+            if (candidate.occupied) {
+                this.ctx.globalAlpha = 0.95;
+                this.ctx.lineWidth = 3;
+                const markerHalf = 10;
+                this.ctx.beginPath();
+                this.ctx.moveTo(candidate.x - markerHalf, candidate.y - markerHalf);
+                this.ctx.lineTo(candidate.x + markerHalf, candidate.y + markerHalf);
+                this.ctx.moveTo(candidate.x + markerHalf, candidate.y - markerHalf);
+                this.ctx.lineTo(candidate.x - markerHalf, candidate.y + markerHalf);
+                this.ctx.stroke();
+            }
+        } finally {
+            this.ctx.restore();
+        }
     }
 
     /**

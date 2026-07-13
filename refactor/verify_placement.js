@@ -1,6 +1,6 @@
 /**
  * Smart-placement pure logic verification.
- * Usage: node refactor/verify_placement.js --logic
+ * Usage: node refactor/verify_placement.js --logic|--overlay
  */
 const { chromium } = require('playwright');
 const path = require('path');
@@ -12,6 +12,7 @@ function assert(name, condition, detail = '') {
 }
 
 (async () => {
+    const overlayMode = process.argv.includes('--overlay');
     const browser = await chromium.launch();
     const page = await browser.newPage();
     const errors = [];
@@ -139,6 +140,66 @@ function assert(name, condition, detail = '') {
     assert('cancelPlacement clears session', data.afterCancel === null);
     assert('commitPlacement returns session and clears state', data.committed &&
         data.committed.ghostPerson.id === 'commit-ghost' && data.afterCommit === null);
+
+    if (overlayMode) {
+        const overlay = await page.evaluate(() => {
+            const app = window.app;
+            app.persons = [];
+            app.relationships = [];
+            app.households = [];
+            app.lifeCircles = [];
+            app.selectedPersonId = null;
+            app.selectedRelationshipId = null;
+            app.selectedPersonIds = [];
+            app._syncPersonMap();
+            app.cancelPlacement();
+            app.render();
+
+            const canvas = app.canvas.canvas;
+            const ctx = canvas.getContext('2d');
+            const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const exportBefore = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
+
+            const grid = GenogramApp.GRID;
+            const session = app.beginPlacement({
+                kind: 'person', personId: 'overlay-ghost',
+                x: grid.ORIGIN_X + grid.CELL_WIDTH * 2,
+                y: grid.ORIGIN_Y + grid.CELL_HEIGHT * 2
+            });
+            app.render();
+            const after = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const exportDuring = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
+
+            let brandPixels = 0;
+            let changedPixels = 0;
+            for (let i = 0; i < after.length; i += 4) {
+                if (after[i] === 237 && after[i + 1] === 18 && after[i + 2] === 97 && after[i + 3] > 0) brandPixels++;
+                if (after[i] !== before[i] || after[i + 1] !== before[i + 1] || after[i + 2] !== before[i + 2] || after[i + 3] !== before[i + 3]) changedPixels++;
+            }
+
+            const stateCtx = app.canvas.ctx;
+            stateCtx.globalAlpha = 0.73;
+            stateCtx.lineCap = 'square';
+            stateCtx.lineWidth = 7;
+            stateCtx.strokeStyle = '#123456';
+            stateCtx.fillStyle = '#654321';
+            stateCtx.setLineDash([9, 4]);
+            app.canvas.drawPlacementPreview({ ...session.candidate, ghostPerson: session.ghostPerson });
+            const restored = stateCtx.globalAlpha === 0.73 && stateCtx.lineCap === 'square' &&
+                stateCtx.lineWidth === 7 && stateCtx.strokeStyle === '#123456' &&
+                stateCtx.fillStyle === '#654321' && JSON.stringify(stateCtx.getLineDash()) === JSON.stringify([9, 4]);
+
+            app.cancelPlacement();
+            app.render();
+            const exportAfterCancel = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
+            return { brandPixels, changedPixels, restored,
+                exportEqual: exportBefore === exportDuring && exportBefore === exportAfterCancel };
+        });
+        assert('placement render adds brand candidate-cell pixels', overlay.brandPixels > 0, `pixels=${overlay.brandPixels}`);
+        assert('placement render adds translucent ghost pixels', overlay.changedPixels > overlay.brandPixels, `changed=${overlay.changedPixels}`);
+        assert('placement overlay restores complete canvas drawing state', overlay.restored);
+        assert('placement is pixel-identical in export during placement and after cancel', overlay.exportEqual);
+    }
     assert('no page errors', errors.length === 0, errors.join('; '));
 
     await browser.close();
