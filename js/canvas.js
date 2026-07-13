@@ -408,16 +408,18 @@ class GenogramCanvas {
         if (!preview || !Number.isFinite(preview.x) || !Number.isFinite(preview.y)) return;
         this.ctx.save();
         try {
-            const ghost = { id: '__placement__', x: preview.x, y: preview.y, gender: 'unknown', name: '' };
+            const suppliedGhost = preview.ghostPerson || {};
+            const ghost = { gender: 'unknown', name: '', ...suppliedGhost, x: preview.x, y: preview.y };
 
             // Relationship previews deliberately use a neutral selection dash rather than
             // any clinical relationship style.
             (preview.relationshipPreview || []).forEach(rel => {
-                const from = this.personMap && this.personMap.get(rel.fromPersonId);
-                const to = this.personMap && this.personMap.get(rel.toPersonId);
-                const fromPoint = from || ghost;
-                const toPoint = to || ghost;
-                if ((!from && !to) || (fromPoint === ghost && toPoint === ghost)) return;
+                const resolveEndpoint = id => id === ghost.id
+                    ? ghost
+                    : (this.personMap && this.personMap.get(id));
+                const fromPoint = resolveEndpoint(rel.fromPersonId);
+                const toPoint = resolveEndpoint(rel.toPersonId);
+                if (!fromPoint || !toPoint || (fromPoint === ghost && toPoint === ghost)) return;
                 this.ctx.save();
                 this.ctx.globalAlpha = 0.55;
                 this.ctx.strokeStyle = '#6b7280';

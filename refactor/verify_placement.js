@@ -142,9 +142,12 @@ function assert(name, condition, detail = '') {
         data.committed.ghostPerson.id === 'commit-ghost' && data.afterCommit === null);
 
     if (overlayMode) {
-        const overlay = await page.evaluate(() => {
+        const overlay = await page.evaluate(async () => {
             const app = window.app;
-            app.persons = [];
+            const grid = GenogramApp.GRID;
+            const base = new Person({ id: 'overlay-base', gender: 'male', name: 'Base',
+                x: grid.ORIGIN_X + grid.CELL_WIDTH * 2, y: grid.ORIGIN_Y + grid.CELL_HEIGHT * 2 });
+            app.persons = [base];
             app.relationships = [];
             app.households = [];
             app.lifeCircles = [];
@@ -160,21 +163,66 @@ function assert(name, condition, detail = '') {
             const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             const exportBefore = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
 
-            const grid = GenogramApp.GRID;
             const session = app.beginPlacement({
-                kind: 'person', personId: 'overlay-ghost',
-                x: grid.ORIGIN_X + grid.CELL_WIDTH * 2,
-                y: grid.ORIGIN_Y + grid.CELL_HEIGHT * 2
+                kind: 'partner', basePersonId: base.id, personId: 'overlay-ghost'
             });
             app.render();
             const after = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             const exportDuring = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
 
-            let brandPixels = 0;
-            let changedPixels = 0;
+            // Isolate the cell layer so ghost pixels are proven independently.
+            app.cancelPlacement();
+            app.render();
+            app.canvas.drawPlacementCell(session.candidate);
+            const cellOnly = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let ghostOnlyPixels = 0;
             for (let i = 0; i < after.length; i += 4) {
-                if (after[i] === 237 && after[i + 1] === 18 && after[i + 2] === 97 && after[i + 3] > 0) brandPixels++;
-                if (after[i] !== before[i] || after[i + 1] !== before[i + 1] || after[i + 2] !== before[i + 2] || after[i + 3] !== before[i + 3]) changedPixels++;
+                if (after[i] !== cellOnly[i] || after[i + 1] !== cellOnly[i + 1] || after[i + 2] !== cellOnly[i + 2]) ghostOnlyPixels++;
+            }
+
+            // The partner preview must create neutral dashed pixels around the endpoint midpoint.
+            const sx = p => Math.round(p.x * app.canvas.scale + app.canvas.offsetX);
+            const sy = p => Math.round(p.y * app.canvas.scale + app.canvas.offsetY);
+            const midX = sx({ x: (base.x + session.candidate.x) / 2 });
+            const midY = sy({ y: (base.y + session.candidate.y) / 2 });
+            let relationshipPixels = 0;
+            for (let y = midY - 5; y <= midY + 5; y++) for (let x = midX - 8; x <= midX + 8; x++) {
+                const i = (y * canvas.width + x) * 4;
+                if (after[i] !== cellOnly[i] || after[i + 1] !== cellOnly[i + 1] || after[i + 2] !== cellOnly[i + 2]) relationshipPixels++;
+            }
+
+            // Occupied marker has pixels beyond the ordinary cell/cross layer.
+            app.cancelPlacement();
+            app.render();
+            app.canvas.drawPlacementCell({ ...session.candidate, occupied: false });
+            const availableCell = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            app.render();
+            app.canvas.drawPlacementCell({ ...session.candidate, occupied: true });
+            const occupiedCell = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let unavailableMarkerPixels = 0;
+            for (let i = 0; i < occupiedCell.length; i += 4) {
+                if (occupiedCell[i] !== availableCell[i] || occupiedCell[i + 1] !== availableCell[i + 1] || occupiedCell[i + 2] !== availableCell[i + 2]) unavailableMarkerPixels++;
+            }
+
+            const childCandidate = app.getPlacementCandidate({ kind: 'child', basePersonId: base.id, personId: 'child-ghost' });
+            const childGhost = { id: 'child-ghost', x: childCandidate.x, y: childCandidate.y };
+            app.render();
+            app.canvas.drawPlacementCell(childCandidate);
+            const childCellOnly = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            app.render();
+            app.canvas.drawPlacementPreview({ ...childCandidate, ghostPerson: childGhost });
+            const childFull = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const childMidX = sx({ x: (base.x + childCandidate.x) / 2 });
+            const childMidY = sy({ y: (base.y + childCandidate.y) / 2 });
+            let childRelationshipPixels = 0;
+            for (let y = childMidY - 8; y <= childMidY + 8; y++) for (let x = childMidX - 8; x <= childMidX + 8; x++) {
+                const i = (y * canvas.width + x) * 4;
+                if (childFull[i] !== childCellOnly[i] || childFull[i + 1] !== childCellOnly[i + 1] || childFull[i + 2] !== childCellOnly[i + 2]) childRelationshipPixels++;
+            }
+
+            let brandPixels = 0;
+            for (let i = 0; i < after.length; i += 4) {
+                if (after[i] > 200 && after[i + 1] < 90 && after[i + 2] > 60 && after[i + 2] < 150 && after[i + 3] > 0) brandPixels++;
             }
 
             const stateCtx = app.canvas.ctx;
@@ -189,15 +237,54 @@ function assert(name, condition, detail = '') {
                 stateCtx.lineWidth === 7 && stateCtx.strokeStyle === '#123456' &&
                 stateCtx.fillStyle === '#654321' && JSON.stringify(stateCtx.getLineDash()) === JSON.stringify([9, 4]);
 
+            // Only the explicitly supplied ghost id may stand in for a missing endpoint.
+            const lineEndpoints = [];
+            const originalLineTo = stateCtx.lineTo;
+            stateCtx.lineTo = function(x, y) { lineEndpoints.push([x, y]); return originalLineTo.call(this, x, y); };
+            app.canvas.drawPlacementPreview({ ...session.candidate, ghostPerson: session.ghostPerson,
+                relationshipPreview: [{ type: 'parent-child', fromPersonId: 'stale-id', toPersonId: base.id }] });
+            stateCtx.lineTo = originalLineTo;
+            const staleEndpointSkipped = !lineEndpoints.some(([x, y]) => x === base.x && y === base.y);
+
+            // All raster-backed export entry points must bypass the editor overlay.
+            let exportOverlayCalls = 0;
+            const originalDrawPreview = app.canvas.drawPlacementPreview;
+            app.canvas.drawPlacementPreview = () => { exportOverlayCalls++; };
+            app.beginPlacement({ kind: 'partner', basePersonId: base.id, personId: 'export-ghost' });
+            const jpegDuring = app.canvas.exportToJPEG(app.persons, app.relationships, [], [], 0.92, false, false, 1);
+            let svgResult = null;
+            let pdfResult = null;
+            const originalExportSVG = app.storage.exportSVG;
+            const originalExportPDF = app.storage.exportPDF;
+            app.storage.exportSVG = content => { svgResult = content; };
+            app.storage.exportPDF = dataUrl => { pdfResult = dataUrl; };
+            app.exportSVG(false, false, 1);
+            app.exportPDF(false, false, 1);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            app.storage.exportSVG = originalExportSVG;
+            app.storage.exportPDF = originalExportPDF;
+            app.canvas.drawPlacementPreview = originalDrawPreview;
+
             app.cancelPlacement();
             app.render();
             const exportAfterCancel = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
-            return { brandPixels, changedPixels, restored,
+            return { brandPixels, ghostOnlyPixels, relationshipPixels, childRelationshipPixels, unavailableMarkerPixels,
+                restored, staleEndpointSkipped, exportOverlayCalls, jpegDuring, svgResult, pdfResult,
+                exportsNonNull: Boolean(exportBefore && exportDuring && exportAfterCancel),
                 exportEqual: exportBefore === exportDuring && exportBefore === exportAfterCancel };
         });
         assert('placement render adds brand candidate-cell pixels', overlay.brandPixels > 0, `pixels=${overlay.brandPixels}`);
-        assert('placement render adds translucent ghost pixels', overlay.changedPixels > overlay.brandPixels, `changed=${overlay.changedPixels}`);
+        assert('placement render adds translucent ghost pixels beyond cell-only layer', overlay.ghostOnlyPixels > 0, `pixels=${overlay.ghostOnlyPixels}`);
+        assert('partner placement draws relationship preview pixels at midpoint', overlay.relationshipPixels > 0, `pixels=${overlay.relationshipPixels}`);
+        assert('child placement draws relationship preview pixels at endpoint path', overlay.childRelationshipPixels > 0, `pixels=${overlay.childRelationshipPixels}`);
+        assert('occupied placement draws unavailable-marker-only pixels', overlay.unavailableMarkerPixels > 0, `pixels=${overlay.unavailableMarkerPixels}`);
         assert('placement overlay restores complete canvas drawing state', overlay.restored);
+        assert('stale relationship endpoint is not treated as the ghost', overlay.staleEndpointSkipped);
+        assert('JPEG/SVG/PDF export paths never call placement overlay', overlay.exportOverlayCalls === 0, `calls=${overlay.exportOverlayCalls}`);
+        assert('JPEG export is a valid non-null data URL', /^data:image\/jpeg/.test(overlay.jpegDuring || ''));
+        assert('SVG export produces valid non-null SVG', /^<\?xml[\s\S]*<svg/.test(overlay.svgResult || ''));
+        assert('PDF export receives a valid non-null PNG data URL', /^data:image\/png/.test(overlay.pdfResult || ''));
+        assert('PNG exports before/during/after placement are non-null', overlay.exportsNonNull);
         assert('placement is pixel-identical in export during placement and after cancel', overlay.exportEqual);
     }
     assert('no page errors', errors.length === 0, errors.join('; '));

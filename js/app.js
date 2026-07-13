@@ -3902,7 +3902,9 @@ class GenogramApp {
         // 不再以 overlay 蓋在人物符號上罩染臨床底色）
         this.canvas.lifeCirclesToDraw = this.lifeCircles || [];
         this.canvas.selectedLifeCircleId = this.selectedLifeCircleId || null;
-        this.canvas.placementPreview = this.placementSession ? this.placementSession.candidate : null;
+        this.canvas.placementPreview = this.placementSession
+            ? { ...this.placementSession.candidate, ghostPerson: this.placementSession.ghostPerson }
+            : null;
         this.canvas.render(
             this.persons,
             this.relationships,
