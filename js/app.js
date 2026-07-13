@@ -660,6 +660,7 @@ class GenogramApp {
         const point = this.canvas.getMousePos(e);
 
         if (this.placementSession) {
+            this.updatePlacement(point.x, point.y, Boolean(e.altKey));
             this.commitPlacement();
             return;
         }

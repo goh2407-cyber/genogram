@@ -202,22 +202,56 @@ function assert(name, condition, detail = '') {
             });
             canvas.setPointerCapture = realSetPointerCapture;
             const person = app.persons[1];
+            const committed = {
+                count: app.persons.length,
+                relationships: app.relationships.length,
+                relationshipDirection: app.relationships[0] &&
+                    app.relationships[0].fromPersonId === person.id &&
+                    app.relationships[0].toPersonId === base.id,
+                history: app.history.getUndoCount(),
+                active: Boolean(app.placementSession),
+                currentTool: app.currentTool,
+                gender: person && person.gender,
+                x: person && person.x,
+                y: person && person.y,
+                mapIdentity: Boolean(person && app.personMap.get(person.id) === person)
+            };
+
+            app.persons = [];
+            app.relationships = [];
+            app._syncPersonMap();
+            app.history.clear();
+            const clickX = grid.ORIGIN_X + grid.CELL_WIDTH * 5.4;
+            const clickY = grid.ORIGIN_Y + grid.CELL_HEIGHT * 4.4;
+            const clickCandidate = app.getPlacementCandidate({ kind: 'person', x: clickX, y: clickY });
+            app.beginPlacement({ kind: 'person', x: grid.ORIGIN_X, y: grid.ORIGIN_Y, gender: 'male' });
+            canvas.setPointerCapture = () => {};
+            app.handlePointerDown({ button: 0, pointerId: 92, target: canvas,
+                ...toClient(clickX, clickY) });
+            canvas.setPointerCapture = realSetPointerCapture;
+            const clickOnlyCommit = app.persons[0] && {
+                x: app.persons[0].x, y: app.persons[0].y,
+                expectedX: clickCandidate.x, expectedY: clickCandidate.y
+            };
+
+            app.persons = [];
+            app.relationships = [];
+            app._syncPersonMap();
+            app.history.clear();
+            app.beginPlacement({ kind: 'person', x: grid.ORIGIN_X, y: grid.ORIGIN_Y, gender: 'female' });
+            app.handlePointerMove({ ...toClient(pointerX, pointerY), altKey: false });
+            const altClickX = grid.ORIGIN_X + grid.CELL_WIDTH * 6.23;
+            const altClickY = grid.ORIGIN_Y + grid.CELL_HEIGHT * 3.67;
+            canvas.setPointerCapture = () => {};
+            app.handlePointerDown({ button: 0, pointerId: 93, target: canvas, altKey: true,
+                ...toClient(altClickX, altClickY) });
+            canvas.setPointerCapture = realSetPointerCapture;
+            const altClickCommit = app.persons[0] && {
+                x: app.persons[0].x, y: app.persons[0].y,
+                expectedX: altClickX, expectedY: altClickY
+            };
             return {
-                begun, bypassed, cancelled, preview,
-                committed: {
-                    count: app.persons.length,
-                    relationships: app.relationships.length,
-                    relationshipDirection: app.relationships[0] &&
-                        app.relationships[0].fromPersonId === person.id &&
-                        app.relationships[0].toPersonId === base.id,
-                    history: app.history.getUndoCount(),
-                    active: Boolean(app.placementSession),
-                    currentTool: app.currentTool,
-                    gender: person && person.gender,
-                    x: person && person.x,
-                    y: person && person.y,
-                    mapIdentity: Boolean(person && app.personMap.get(person.id) === person)
-                }
+                begun, bypassed, cancelled, preview, clickOnlyCommit, altClickCommit, committed
             };
         });
         assert('general-add gender choice begins placement without data/history writes',
@@ -236,6 +270,14 @@ function assert(name, condition, detail = '') {
             interaction.committed.relationships === 1 && interaction.committed.relationshipDirection);
         assert('placement commit is one atomic history entry with immediate personMap identity',
             interaction.committed.history === 1 && interaction.committed.mapIdentity);
+        assert('pointerdown without prior pointermove commits the clicked snapped candidate',
+            interaction.clickOnlyCommit &&
+            interaction.clickOnlyCommit.x === interaction.clickOnlyCommit.expectedX &&
+            interaction.clickOnlyCommit.y === interaction.clickOnlyCommit.expectedY);
+        assert('Alt pointerdown overrides stale snapped preview and commits exact click coordinates',
+            interaction.altClickCommit &&
+            Math.abs(interaction.altClickCommit.x - interaction.altClickCommit.expectedX) < 0.001 &&
+            Math.abs(interaction.altClickCommit.y - interaction.altClickCommit.expectedY) < 0.001);
     }
 
     if (overlayMode) {
