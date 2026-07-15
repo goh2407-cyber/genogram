@@ -189,6 +189,7 @@ class GenogramApp {
             zoomLevel: document.getElementById('zoomLevel'),
             zoomIn: document.getElementById('zoomIn'),
             zoomOut: document.getElementById('zoomOut'),
+            fitView: document.getElementById('fitView'),
             zoomReset: document.getElementById('zoomReset'),
             canvasContainer: document.getElementById('canvasContainer'),
 
@@ -385,6 +386,7 @@ class GenogramApp {
         // 縮放控制
         this.elements.zoomIn.addEventListener('click', () => this.zoom(1.1));
         this.elements.zoomOut.addEventListener('click', () => this.zoom(0.9));
+        this.elements.fitView.addEventListener('click', () => this.fitToView());
         this.elements.zoomReset.addEventListener('click', () => this.resetZoom());
 
         // 性別選擇對話框
@@ -4124,6 +4126,37 @@ class GenogramApp {
         this.render();
     }
 
+    fitToView({ onlyIfNeeded = false } = {}) {
+        const bounds = this.canvas.getContentBounds(this.persons, this.relationships,
+            this.households || [], this.lifeCircles || [], this.viewOptions);
+        if (!bounds) {
+            this.canvas.scale = 1;
+            this.canvas.offsetX = 0;
+            this.canvas.offsetY = 0;
+            this.updateZoomDisplay();
+            this.render();
+            return { fitted: false, limited: false, scale: 1 };
+        }
+        const availableWidth = Math.max(1, this.canvas.width - 48);
+        const availableHeight = Math.max(1, this.canvas.height - 48);
+        const requested = Math.min(1, availableWidth / bounds.width, availableHeight / bounds.height);
+        const limited = requested < this.canvas.minScale;
+        const scale = Math.max(this.canvas.minScale, requested);
+        if (onlyIfNeeded && requested >= 1) this.canvas.scale = 1;
+        else this.canvas.scale = scale;
+        const centerX = (bounds.minX + bounds.maxX) / 2;
+        const centerY = (bounds.minY + bounds.maxY) / 2;
+        this.canvas.offsetX = this.canvas.width / 2 - centerX * this.canvas.scale;
+        this.canvas.offsetY = this.canvas.height / 2 - centerY * this.canvas.scale;
+        this.updateZoomDisplay();
+        this.render();
+        if (limited) {
+            this.updateStatus('內容範圍很大，已縮至最低 25%；可拖曳畫布查看其餘內容',
+                'info', { autoHideMs: 3500 });
+        }
+        return { fitted: requested < 1, limited, scale: this.canvas.scale };
+    }
+
     /**
      * 更新縮放顯示
      */
@@ -4993,8 +5026,7 @@ class GenogramApp {
         this.selectedPersonId = null;
         this.updatePropertyPanel();
         this.autoSave();
-        this.render();
-        this.resetZoom();
+        requestAnimationFrame(() => this.fitToView({ onlyIfNeeded: true }));
 
         if ((norm.normalized + norm.deduped + norm.dropped) > 0) {
             this.updateStatus(

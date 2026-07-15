@@ -2832,6 +2832,14 @@ class GenogramCanvas {
         };
     }
 
+    getContentBounds(persons, relationships, households = [], lifeCircles = [], viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        return this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            visible.viewOptions, relationships);
+    }
+
     /**
      * 計算內容邊界 (包含所有人物、關係、同住框、生活圈)
      */
