@@ -803,17 +803,10 @@ Expected: JS/CSS raw MD5 三方一致，root 與 `refactor/app` index 一致，g
 
 ```powershell
 git add refactor/TEST_GATES.md
-git add -f `
-  refactor/app/index.html refactor/app/css/styles.css `
-  refactor/app/js/app.js refactor/app/js/canvas.js refactor/app/js/relationship.js `
-  refactor/app/js/domain/family-route-planner.js `
-  geno/index.html geno/css/styles.css `
-  geno/js/app.js geno/js/canvas.js geno/js/relationship.js `
-  geno/js/domain/family-route-planner.js
 git commit -m "chore: sync responsive legend release gates"
 ```
 
-只 stage 本次同步檔案；不得把 `golden/current`、diff 或 screenshot 暫存檔一起提交。
+`geno/` 與 `refactor/app/` 是專案規定的 gitignored 本機副本：完成同步與測試即可，**不得**使用 `git add -f` 將它們納入版本控制。只 stage `TEST_GATES.md`；不得把 `golden/current`、diff 或 screenshot 暫存檔一起提交。
 
 ---
 
