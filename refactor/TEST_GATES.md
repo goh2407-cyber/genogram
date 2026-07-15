@@ -34,8 +34,8 @@
 - Chrome / Edge 最新版可正常使用。
 
 ## G. 安全走線與微調
-- `node refactor/verify_family_route_planner.js`：純規劃器所有 fixture 通過，無 `NaN`／`Infinity`。
-- `node refactor/verify_family_routing.js`：畫面、命中、鉛筆與匯出共用相同家庭路徑；未變更的 render 不重算，遠方人物不進入局部障礙集合，移動一個家庭只重算受影響家庭。
+- `node refactor/verify_family_route_planner.js`：純規劃器所有 fixture 通過，無 `NaN`／`Infinity`；路徑會移除連續重複點與順向共線中繼點，但保留折返點。
+- `node refactor/verify_family_routing.js`：畫面、命中、鉛筆與匯出共用相同且已清理的家庭路徑；未變更的 render 不重算，遠方人物不進入局部障礙集合，移動一個家庭只重算受影響家庭。
 - `node refactor/verify_drag.js`：無安全路徑時水平校正不超過 60px；`Alt` 保留精確落點；一次 Undo 完整復原。
 - `node refactor/verify_placement.js`：快速父母固定使用 120px 系統格距；近距離伴侶的既有父母擋住第二組置中位置時，只將目前子女向外移動最小安全距離（最多 120px），預覽不寫資料、取消零變更、提交與移動共用一次 Undo；其他受阻情境維持父母剛性平移。
 - `Relationship.getLineStyle()`、`DASH_PATTERNS` 與臨床符號顏色／幾何不得因走線功能修改。
@@ -46,14 +46,17 @@
 
 ## H. 檢視、Fit 與發行守門
 - `node refactor/verify_view_controls.js`、`verify_view_rendering.js`、`verify_view_export.js`、`verify_fit_view.js`、`verify_status_ux.js` 全數通過。
+- `node refactor/verify_legend_consistency.js`：側欄與匯出共用 `Relationship.LEGEND_SECTIONS`；36 種關係順序、名稱與既有線型一致，`getLineStyle()`、虛線表及 CSS 圖例線型雜湊不變。
 - `node refactor/verify_mirror_sync.js`：三副本 JS/CSS raw MD5 一致；root 與 `refactor/app` index 一致；`geno` 保留本地依賴。
+- 1920、1366、1180、1024px 寬度下工具列維持單列且不碰撞；1180px 以下使用 52px 收合軌道與 296px 浮層，開合浮層不得改變 Canvas 寬度。
+- 1024px 是支援下限；更窄視窗保留 1024px 版面並允許水平捲動，不宣稱手機版支援。
 - View 顯示層不寫入 JSON/history；JSON 匯出完整，視覺匯出遵循目前檢視。
 - 大型 JSON 載入後自動符合全圖；自動儲存恢復保留原縮放與位移。
 - `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
 ## 驗收記錄
 - 測試日期：2026-07-15
-- 測試版本：`codex/view-controls-release-hardening`
+- 測試版本：`codex/desktop-rwd-line-legend-polish`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：21 支 `verify_*.js` 全數通過；Golden 16/16、三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過。200 人／384 關係 warm 平均 1.85ms、P95 2.58ms、pan/zoom 60.5 FPS，cold first-render 最大 321.7ms。
+- 備註：22 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。

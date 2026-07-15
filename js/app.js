@@ -71,7 +71,9 @@ class GenogramApp {
         this.offsetY = 0;
         this.currentInspectorTab = 'properties';
         this.inspectorUserOverride = false;
-        this.inspectorAutoCollapsed = false;
+        this.inspectorDesktopCollapsed = false;
+        this.inspectorCompact = false;
+        this.inspectorOverlayOpen = false;
         this.pendingFitFrame = null;
         this.viewOptions = {
             showNames: true,
@@ -144,6 +146,7 @@ class GenogramApp {
         this.cacheElements();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        this.renderRelationshipLegend();
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
         this._canvasFontSignature = null;
@@ -249,6 +252,61 @@ class GenogramApp {
         });
     }
 
+    renderRelationshipLegend() {
+        const container = document.getElementById('legendContent');
+        if (!container || typeof Relationship.getLegendSections !== 'function') return;
+        const knownTypes = new Set(Object.values(Relationship.TYPES));
+        const sections = Relationship.getLegendSections();
+        const sectionCounts = sections.reduce((counts, section) => {
+            counts.set(section.groupId, (counts.get(section.groupId) || 0) + 1);
+            return counts;
+        }, new Map());
+        const groups = new Map();
+        container.replaceChildren();
+
+        sections.forEach(section => {
+            let group = groups.get(section.groupId);
+            if (!group) {
+                group = document.createElement('section');
+                group.className = 'legend-group';
+                group.dataset.legendGroup = section.groupId;
+                const heading = document.createElement('h4');
+                heading.className = 'legend-group-title';
+                heading.textContent = section.groupTitle;
+                group.appendChild(heading);
+                groups.set(section.groupId, group);
+                container.appendChild(group);
+            }
+
+            const sectionElement = document.createElement('div');
+            sectionElement.className = 'legend-subcategory';
+            sectionElement.dataset.legendSection = section.id;
+            if ((sectionCounts.get(section.groupId) || 0) > 1) {
+                const subheading = document.createElement('h5');
+                subheading.className = 'legend-subcategory-title';
+                subheading.textContent = section.title;
+                sectionElement.appendChild(subheading);
+            }
+
+            section.entries.forEach(entry => {
+                if (!knownTypes.has(entry.type)) return;
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.dataset.legendType = entry.type;
+                if (entry.linkType) item.dataset.legendLinkType = entry.linkType;
+                const sample = document.createElement('span');
+                sample.classList.add('legend-line', entry.legendClass);
+                sample.setAttribute('aria-hidden', 'true');
+                const label = document.createElement('span');
+                label.className = 'legend-label';
+                label.textContent = entry.label;
+                item.append(sample, label);
+                sectionElement.appendChild(item);
+            });
+            group.appendChild(sectionElement);
+        });
+    }
+
     setViewOption(key, value, { render = true } = {}) {
         if (!Object.prototype.hasOwnProperty.call(this.viewOptions, key)) return false;
         const next = value === true;
@@ -274,12 +332,50 @@ class GenogramApp {
         return true;
     }
 
-    setInspectorCollapsed(collapsed) {
-        document.body.classList.toggle('inspector-collapsed', Boolean(collapsed));
-        this.elements.inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
-        const action = collapsed ? '展開檢視面板' : '收合檢視面板';
+    isCompactInspector() {
+        return this.inspectorCompact === true;
+    }
+
+    updateInspectorToggle() {
+        const expanded = this.isCompactInspector()
+            ? this.inspectorOverlayOpen
+            : !this.inspectorDesktopCollapsed;
+        const action = expanded ? '收合檢視面板' : '展開檢視面板';
+        this.elements.inspectorToggle.setAttribute('aria-expanded', String(expanded));
         this.elements.inspectorToggle.setAttribute('title', action);
         this.elements.inspectorToggle.setAttribute('aria-label', action);
+    }
+
+    setInspectorCollapsed(collapsed) {
+        this.inspectorDesktopCollapsed = Boolean(collapsed);
+        document.body.classList.toggle('inspector-collapsed',
+            !this.isCompactInspector() && this.inspectorDesktopCollapsed);
+        this.updateInspectorToggle();
+        if (!this.isCompactInspector()) requestAnimationFrame(() => this.canvas.resize());
+    }
+
+    setCompactInspectorOpen(open) {
+        if (!this.isCompactInspector()) return false;
+        this.inspectorOverlayOpen = Boolean(open);
+        document.body.classList.toggle('inspector-overlay-open', this.inspectorOverlayOpen);
+        this.updateInspectorToggle();
+        return true;
+    }
+
+    closeCompactInspectorOverlay() {
+        if (!this.isCompactInspector() || !this.inspectorOverlayOpen) return false;
+        this.setCompactInspectorOpen(false);
+        return true;
+    }
+
+    applyResponsiveInspector(matches) {
+        this.inspectorCompact = matches === true;
+        document.body.classList.toggle('inspector-compact', this.inspectorCompact);
+        document.body.classList.remove('inspector-overlay-open');
+        this.inspectorOverlayOpen = false;
+        document.body.classList.toggle('inspector-collapsed',
+            !this.inspectorCompact && this.inspectorDesktopCollapsed);
+        this.updateInspectorToggle();
         requestAnimationFrame(() => this.canvas.resize());
     }
 
@@ -309,24 +405,28 @@ class GenogramApp {
             });
         });
         this.elements.inspectorToggle.addEventListener('click', () => {
+            if (this.isCompactInspector()) {
+                this.setCompactInspectorOpen(!this.inspectorOverlayOpen);
+                return;
+            }
             this.inspectorUserOverride = true;
-            this.inspectorAutoCollapsed = false;
-            this.setInspectorCollapsed(!document.body.classList.contains('inspector-collapsed'));
+            this.setInspectorCollapsed(!this.inspectorDesktopCollapsed);
         });
         this.setInspectorTab(this.currentInspectorTab);
-        this.inspectorMediaQuery = window.matchMedia('(max-width: 980px)');
-        const applyResponsiveInspector = event => {
-            if (this.inspectorUserOverride) return;
-            if (event.matches) {
-                this.inspectorAutoCollapsed = true;
-                this.setInspectorCollapsed(true);
-            } else if (this.inspectorAutoCollapsed) {
-                this.inspectorAutoCollapsed = false;
-                this.setInspectorCollapsed(false);
+        this.inspectorMediaQuery = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(max-width: 1180px)')
+            : null;
+        if (this.inspectorMediaQuery) {
+            const applyResponsiveInspector = event => this.applyResponsiveInspector(Boolean(event.matches));
+            if (typeof this.inspectorMediaQuery.addEventListener === 'function') {
+                this.inspectorMediaQuery.addEventListener('change', applyResponsiveInspector);
+            } else if (typeof this.inspectorMediaQuery.addListener === 'function') {
+                this.inspectorMediaQuery.addListener(applyResponsiveInspector);
             }
-        };
-        this.inspectorMediaQuery.addEventListener('change', applyResponsiveInspector);
-        applyResponsiveInspector(this.inspectorMediaQuery);
+            applyResponsiveInspector(this.inspectorMediaQuery);
+        } else {
+            this.applyResponsiveInspector(false);
+        }
 
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
         this.elements.addPersonBtn.addEventListener('click', () =>
@@ -383,7 +483,10 @@ class GenogramApp {
 
         // 畫布事件 (使用 Pointer Events 統一滑鼠與觸控)
         const canvas = this.canvas.canvas;
-        canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+        canvas.addEventListener('pointerdown', (e) => {
+            this.closeCompactInspectorOverlay();
+            this.handlePointerDown(e);
+        });
         window.addEventListener('pointermove', (e) => this.handlePointerMove(e));
         window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
         window.addEventListener('pointercancel', (e) => this.handlePointerUp(e)); // 觸控中斷時也要清理狀態
@@ -1652,6 +1755,8 @@ class GenogramApp {
                 } else if (this.connectingFrom) {
                     this.connectingFrom = null;
                     this.updateStatus('連接已取消', 'info');
+                } else if (this.closeCompactInspectorOverlay()) {
+                    this.updateStatus('檢視面板已收合', 'info');
                 } else {
                     this.closeGenderModal();
                     this.closeRelationshipModal();

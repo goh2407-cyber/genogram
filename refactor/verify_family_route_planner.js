@@ -38,8 +38,77 @@ function assertFinitePath(path) {
     });
 }
 
+function assertCleanPath(path) {
+    assertFinitePath(path);
+    const degenerateFallback = path.length === 2
+        && path[0].x === path[1].x && path[0].y === path[1].y;
+    for (let index = 1; index < path.length; index++) {
+        const previous = path[index - 1];
+        const point = path[index];
+        if (!degenerateFallback) {
+            assert.ok(previous.x !== point.x || previous.y !== point.y,
+                `consecutive duplicate at ${index}: ${JSON.stringify(point)}`);
+        }
+    }
+    for (let index = 1; index < path.length - 1; index++) {
+        const a = path[index - 1];
+        const b = path[index];
+        const c = path[index + 1];
+        const horizontal = a.y === b.y && b.y === c.y
+            && b.x >= Math.min(a.x, c.x) && b.x <= Math.max(a.x, c.x);
+        const vertical = a.x === b.x && b.x === c.x
+            && b.y >= Math.min(a.y, c.y) && b.y <= Math.max(a.y, c.y);
+        assert.ok(!horizontal && !vertical,
+            `redundant collinear point at ${index}: ${JSON.stringify(path)}`);
+    }
+}
+
+function assertCleanPlan(plan) {
+    const paths = [
+        plan.sourcePath,
+        plan.barPath,
+        ...Object.values(plan.childPaths || {}),
+        ...Object.values(plan.relationshipPaths || {}),
+        ...(plan.twinGroups || []).flatMap(group => [
+            ...(group.paths || []).map(item => item.points),
+            group.monoBar
+        ])
+    ].filter(path => Array.isArray(path) && path.length > 0);
+    paths.forEach(assertCleanPath);
+}
+
+function planFamily(input) {
+    const plan = FamilyRoutePlanner.planFamily(input);
+    assertCleanPlan(plan);
+    return plan;
+}
+
+check('cleanPath drops non-finite and consecutive duplicate points', () => {
+    assert.deepEqual(FamilyRoutePlanner.cleanPath([
+        { x: 0, y: 0 }, { x: NaN, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 0 }
+    ]), [{ x: 0, y: 0 }, { x: 20, y: 0 }]);
+});
+
+check('cleanPath removes horizontal and vertical middle points', () => {
+    assert.deepEqual(FamilyRoutePlanner.cleanPath([
+        { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 },
+        { x: 20, y: 10 }, { x: 20, y: 20 }
+    ]), [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }]);
+});
+
+check('cleanPath preserves a collinear reversal waypoint', () => {
+    assert.deepEqual(FamilyRoutePlanner.cleanPath([
+        { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 10, y: 0 }
+    ]), [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 10, y: 0 }]);
+});
+
+check('cleanPath duplicates a single valid point fallback', () => {
+    assert.deepEqual(FamilyRoutePlanner.cleanPath([{ x: 4, y: 7 }]),
+        [{ x: 4, y: 7 }, { x: 4, y: 7 }]);
+});
+
 check('normal family uses one shared deterministic trunk path', () => {
-    const plan = FamilyRoutePlanner.planFamily(baseInput());
+    const plan = planFamily(baseInput());
     assert.equal(plan.mode, 'normal-trunk');
     assert.equal(plan.safe, true);
     assert.deepEqual(plan.relationshipPaths['dad->kid'], plan.relationshipPaths['mom->kid']);
@@ -47,7 +116,7 @@ check('normal family uses one shared deterministic trunk path', () => {
 });
 
 check('normal path is vertically monotonic and ends at the child top port', () => {
-    const plan = FamilyRoutePlanner.planFamily(baseInput());
+    const plan = planFamily(baseInput());
     const path = plan.relationshipPaths['dad->kid'];
     for (let i = 1; i < path.length; i++) {
         assert.ok(path[i].y >= path[i - 1].y, `${path[i - 1].y} -> ${path[i].y} backtracks`);
@@ -65,7 +134,7 @@ check('sibling bar stays below the parents symbol safety boundary', () => {
         { ownerId: 'dad', kind: 'symbol', left: 405, right: 475, top: 265, bottom: 335 },
         { ownerId: 'mom', kind: 'symbol', left: 525, right: 595, top: 265, bottom: 335 }
     ];
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.safe, true);
     assert.ok(plan.barY >= 335, `barY ${plan.barY} enters the parent safety band`);
 });
@@ -76,7 +145,7 @@ check('a central obstacle selects a safe offset inside the marriage segment', ()
         ownerId: 'other', kind: 'symbol',
         left: 488, right: 512, top: 330, bottom: 430
     });
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.safe, true);
     assert.notEqual(plan.trunkX, 500);
     assert.ok(plan.trunkX >= 465 && plan.trunkX <= 535);
@@ -110,7 +179,7 @@ check('an unrelated parent label does not push a clear central trunk downward', 
         ownerId: 'dad', kind: 'text',
         left: 400, right: 460, top: 333, bottom: 385
     });
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.safe, true);
     assert.equal(plan.trunkX, 500);
     assert.equal(plan.sourcePath[0].y, 300);
@@ -127,7 +196,7 @@ check('single-parent side prefix stays connected while routing outside the name 
         personSize: 50,
         margin: 10
     };
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.safe, true);
     assert.deepEqual(plan.relationshipPaths['parent->kid'][0], { x: 325, y: 300 });
     assert.equal(
@@ -147,7 +216,7 @@ check('reversed generations use a finite upward orthogonal route', () => {
     input.children = [{ id: 'kid', x: 500, y: 180 }];
     delete input.source;
     delete input.sourceRange;
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.mode, 'reversed');
     const path = plan.relationshipPaths['dad->kid'];
     assertFinitePath(path);
@@ -165,7 +234,7 @@ check('same-row generations connect through side ports without crossing symbol c
     input.children = [{ id: 'kid', x: 500, y: 300 }];
     delete input.source;
     delete input.sourceRange;
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.mode, 'same-row');
     const path = plan.relationshipPaths['dad->kid'];
     assertFinitePath(path);
@@ -179,7 +248,7 @@ check('mixed twins keep one clinical V origin and finite child endpoints', () =>
         { id: 't1', x: 460, y: 500, twinGroup: 'tw-a', zygosity: 'mono' },
         { id: 't2', x: 540, y: 500, twinGroup: 'tw-a', zygosity: 'mono' }
     ];
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.mode, 'normal-trunk');
     assert.equal(plan.twinGroups.length, 1);
     assert.equal(plan.twinGroups[0].paths.length, 2);
@@ -204,7 +273,7 @@ check('vertically staggered children receive separate safe branches before any p
         { ownerId: 'near', kind: 'symbol', left: 365, right: 435, top: 265, bottom: 335 },
         { ownerId: 'far', kind: 'symbol', left: 365, right: 435, top: 385, bottom: 455 }
     ];
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.mode, 'staggered');
     assert.equal(plan.safe, true);
     assertFinitePath(plan.relationshipPaths['dad->near']);
@@ -223,7 +292,7 @@ check('degenerate and fully blocked input returns a finite bounded fallback', ()
     const input = baseInput();
     input.children = [{ id: 'kid', x: 500, y: 326 }];
     input.obstacles = [{ ownerId: 'wall', kind: 'symbol', left: 0, right: 1000, top: 250, bottom: 400 }];
-    const plan = FamilyRoutePlanner.planFamily(input);
+    const plan = planFamily(input);
     assert.equal(plan.safe, false);
     assert.ok(plan.collisions.length > 0);
     assertFinitePath(plan.relationshipPaths['dad->kid']);
@@ -232,9 +301,9 @@ check('degenerate and fully blocked input returns a finite bounded fallback', ()
 check('same input produces byte-identical point sequences', () => {
     const input = baseInput();
     input.obstacles.push({ ownerId: 'other', kind: 'text', left: 488, right: 512, top: 330, bottom: 430 });
-    const first = JSON.stringify(FamilyRoutePlanner.planFamily(input));
-    const second = JSON.stringify(FamilyRoutePlanner.planFamily(input));
-    const third = JSON.stringify(FamilyRoutePlanner.planFamily(input));
+    const first = JSON.stringify(planFamily(input));
+    const second = JSON.stringify(planFamily(input));
+    const third = JSON.stringify(planFamily(input));
     assert.equal(first, second);
     assert.equal(second, third);
 });

@@ -11,6 +11,30 @@ function check(name, pass, detail = '') {
     console.log(`${pass ? 'PASS' : 'FAIL'} | ${name}${detail ? ` | ${detail}` : ''}`);
 }
 
+function isCleanOrthogonalPath(path) {
+    if (!Array.isArray(path) || path.length < 2) return false;
+    for (let index = 0; index < path.length; index++) {
+        const point = path[index];
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+        if (index > 0) {
+            const previous = path[index - 1];
+            if (previous.x !== point.x && previous.y !== point.y) return false;
+            if (path.length > 2 && previous.x === point.x && previous.y === point.y) return false;
+        }
+        if (index > 0 && index < path.length - 1) {
+            const a = path[index - 1];
+            const b = point;
+            const c = path[index + 1];
+            const horizontal = a.y === b.y && b.y === c.y
+                && b.x >= Math.min(a.x, c.x) && b.x <= Math.max(a.x, c.x);
+            const vertical = a.x === b.x && b.x === c.x
+                && b.y >= Math.min(a.y, c.y) && b.y <= Math.max(a.y, c.y);
+            if (horizontal || vertical) return false;
+        }
+    }
+    return true;
+}
+
 (async () => {
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -88,12 +112,23 @@ function check(name, pass, detail = '') {
                 parentChild: dadEdge.getLineStyle().color
             };
             let exportOk = false;
+            const exportPaths = [];
+            const originalGetRelationshipPath = app.canvas.getRelationshipPath;
+            app.canvas.getRelationshipPath = function(from, to, relationship, ...rest) {
+                const path = originalGetRelationshipPath.call(this, from, to, relationship, ...rest);
+                if (relationship?.id === dadEdge.id) {
+                    exportPaths.push(path.map(point => ({ x: point.x, y: point.y })));
+                }
+                return path;
+            };
             try {
                 exportOk = /^data:image\/png;base64,/.test(
                     app.canvas.exportToPNG(app.persons, app.relationships, [], [], true, false, 1)
                 );
             } catch (error) {
                 exportOk = false;
+            } finally {
+                app.canvas.getRelationshipPath = originalGetRelationshipPath;
             }
             return {
                 route,
@@ -106,7 +141,9 @@ function check(name, pass, detail = '') {
                 repeatedRenderPlanCalls,
                 maxPlannerObstacleCount,
                 colors: beforeColors,
-                exportOk
+                exportOk,
+                exportPathMatches: exportPaths.length > 0
+                    && exportPaths.every(path => JSON.stringify(path) === JSON.stringify(route))
             };
         });
 
@@ -124,10 +161,13 @@ function check(name, pass, detail = '') {
             `planner obstacles=${data.maxPlannerObstacleCount}`);
         check('family route contains only finite points',
             data.route.length >= 2 && data.route.every(point => Number.isFinite(point.x) && Number.isFinite(point.y)));
+        check('family route removes redundant points and remains orthogonal',
+            isCleanOrthogonalPath(data.route), JSON.stringify(data.route));
         check('routing does not change clinical line colors',
             data.colors.familyStroke === '#333' && data.colors.parentChild === '#333333',
             JSON.stringify(data.colors));
         check('PNG export uses the same planner without throwing', data.exportOk);
+        check('PNG export reuses the exact clean screen path', data.exportPathMatches);
 
         const incremental = await page.evaluate(() => {
             const app = window.app;
@@ -199,11 +239,11 @@ function check(name, pass, detail = '') {
             return { sameRow, reversed };
         });
         check('same-row route uses side ports and remains orthogonal',
-            edgeModes.sameRow.length >= 2 && edgeModes.sameRow.every((point, index, points) =>
-                index === 0 || point.x === points[index - 1].x || point.y === points[index - 1].y));
+            isCleanOrthogonalPath(edgeModes.sameRow));
         check('reversed route exits parent top and reaches child bottom without downward backtracking',
-            edgeModes.reversed.length >= 2 && edgeModes.reversed.every((point, index, points) =>
-                index === 0 || point.y <= points[index - 1].y));
+            isCleanOrthogonalPath(edgeModes.reversed)
+                && edgeModes.reversed.every((point, index, points) =>
+                    index === 0 || point.y <= points[index - 1].y));
     }
 
     check('routing integration has no console or page errors', errors.length === 0, errors.join('; '));

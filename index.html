@@ -231,6 +231,8 @@
                 </div>
             </div>
 
+            <div class="inspector-rail-spacer" id="inspectorRailSpacer" aria-hidden="true"></div>
+
             <!-- 右側面板 -->
             <aside class="side-panel inspector-panel" id="inspectorPanel">
                 <div class="inspector-header">
@@ -258,64 +260,7 @@
                         關係類型圖例
                         <span class="toggle-icon">▼</span>
                     </h3>
-                    <div class="panel-content legend-content" id="legendContent">
-                        <div class="legend-category">
-                            <h4>家庭關係</h4>
-                            <div class="legend-item"><span class="legend-line parent-child"></span><span>親生子女</span></div>
-                            <div class="legend-item"><span class="legend-line parent-child-adopted"></span><span>收養子女</span></div>
-                            <div class="legend-item"><span class="legend-line parent-child-foster"></span><span>寄養子女</span></div>
-                            <div class="legend-item"><span class="legend-line married"></span><span>結婚</span></div>
-                            <div class="legend-item"><span class="legend-line engaged"></span><span>訂婚</span></div>
-                            <div class="legend-item"><span class="legend-line cohabiting"></span><span>同居</span></div>
-                            <div class="legend-item"><span class="legend-line legal-cohabiting"></span><span>法律同居</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line separated"></span><span>事實分居</span></div>
-                            <div class="legend-item"><span class="legend-line legal-separated"></span><span>法律分居</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line divorced"></span><span>離婚</span></div>
-                            <div class="legend-item"><span class="legend-line widowed"></span><span>喪偶</span></div>
-                            <div class="legend-item"><span class="legend-line affair"></span><span>外遇</span></div>
-                        </div>
-                        <div class="legend-category">
-                            <h4>情感關係（正向）</h4>
-                            <div class="legend-item"><span class="legend-line harmony"></span><span>和諧</span></div>
-                            <div class="legend-item"><span class="legend-line love"></span><span>愛</span></div>
-                            <div class="legend-item"><span class="legend-line in-love"></span><span>熱戀</span></div>
-                            <div class="legend-item"><span class="legend-line close"></span><span>親密/友誼</span></div>
-                            <div class="legend-item"><span class="legend-line very-close"></span><span>非常親密</span></div>
-                            <div class="legend-item"><span class="legend-line admiration"></span><span>崇拜</span></div>
-                            <div class="legend-item"><span class="legend-line focused"></span><span>關注</span></div>
-                        </div>
-                        <div class="legend-category">
-                            <h4>情感關係（負向）</h4>
-                            <div class="legend-item"><span class="legend-line indifferent"></span><span>冷漠</span></div>
-                            <div class="legend-item"><span class="legend-line distant"></span><span>疏離</span></div>
-                            <div class="legend-item"><span class="legend-line cutoff"></span><span>斷絕</span></div>
-                            <div class="legend-item"><span class="legend-line conflict"></span><span>衝突</span></div>
-                            <div class="legend-item"><span class="legend-line hate"></span><span>仇恨</span></div>
-                            <div class="legend-item"><span class="legend-line hostile"></span><span>敵對</span></div>
-                            <div class="legend-item"><span class="legend-line distant-hostile"></span><span>遠距敵對</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line close-hostile"></span><span>親密敵對</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line conflict-close"></span><span>衝突又親密</span>
-                            </div>
-                        </div>
-                        <div class="legend-category">
-                            <h4>虐待/暴力</h4>
-                            <div class="legend-item"><span class="legend-line violence"></span><span>暴力</span></div>
-                            <div class="legend-item"><span class="legend-line abuse"></span><span>虐待</span></div>
-                            <div class="legend-item"><span class="legend-line physical-abuse"></span><span>身體虐待</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line emotional-abuse"></span><span>情緒虐待</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line sexual-abuse"></span><span>性虐待</span>
-                            </div>
-                            <div class="legend-item"><span class="legend-line neglect"></span><span>忽視</span></div>
-                            <div class="legend-item"><span class="legend-line manipulative"></span><span>操控</span></div>
-                            <div class="legend-item"><span class="legend-line controlling"></span><span>控制</span></div>
-                        </div>
-                    </div>
+                    <div class="panel-content legend-content" id="legendContent"></div>
                 </section>
                 <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view"
                     role="tabpanel" aria-labelledby="viewTab" hidden>

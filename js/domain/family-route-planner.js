@@ -508,18 +508,42 @@ class FamilyRoutePlanner {
                 String(a.ownerId).localeCompare(String(b.ownerId)) || a.kind.localeCompare(b.kind));
     }
 
-    static _dedupePoints(points) {
-        const result = [];
+    static cleanPath(points) {
+        const finite = [];
         (points || []).forEach(point => {
             if (!this._finitePoint(point)) return;
-            const normalized = { x: point.x, y: point.y };
-            const previous = result[result.length - 1];
-            if (!previous || Math.abs(previous.x - normalized.x) > 1e-9 || Math.abs(previous.y - normalized.y) > 1e-9) {
-                result.push(normalized);
+            const next = { x: point.x, y: point.y };
+            const previous = finite[finite.length - 1];
+            if (!previous || Math.abs(previous.x - next.x) > 1e-9
+                || Math.abs(previous.y - next.y) > 1e-9) {
+                finite.push(next);
             }
+        });
+
+        const result = [];
+        finite.forEach(point => {
+            while (result.length >= 2) {
+                const a = result[result.length - 2];
+                const b = result[result.length - 1];
+                const horizontal = Math.abs(a.y - b.y) <= 1e-9
+                    && Math.abs(b.y - point.y) <= 1e-9
+                    && b.x >= Math.min(a.x, point.x) - 1e-9
+                    && b.x <= Math.max(a.x, point.x) + 1e-9;
+                const vertical = Math.abs(a.x - b.x) <= 1e-9
+                    && Math.abs(b.x - point.x) <= 1e-9
+                    && b.y >= Math.min(a.y, point.y) - 1e-9
+                    && b.y <= Math.max(a.y, point.y) + 1e-9;
+                if (!horizontal && !vertical) break;
+                result.pop();
+            }
+            result.push(point);
         });
         if (result.length === 1) result.push({ ...result[0] });
         return result;
+    }
+
+    static _dedupePoints(points) {
+        return this.cleanPath(points);
     }
 
     static _finitePoint(point) {

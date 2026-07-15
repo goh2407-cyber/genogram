@@ -16,6 +16,46 @@ function check(name, condition, detail = '') {
     }
 }
 
+async function shellMetrics(page) {
+    return page.evaluate(() => {
+        const rect = selector => {
+            const value = document.querySelector(selector)?.getBoundingClientRect();
+            return value ? {
+                left: value.left,
+                right: value.right,
+                top: value.top,
+                bottom: value.bottom,
+                width: value.width,
+                height: value.height
+            } : null;
+        };
+        return {
+            app: rect('.app-container'),
+            bar: rect('#globalBar'),
+            dock: rect('#canvasToolDock'),
+            actions: rect('.global-actions'),
+            canvas: rect('#canvasContainer'),
+            inspector: rect('#inspectorPanel'),
+            spacer: rect('#inspectorRailSpacer'),
+            compact: document.body.classList.contains('inspector-compact'),
+            overlay: document.body.classList.contains('inspector-overlay-open'),
+            collapsed: document.body.classList.contains('inspector-collapsed'),
+            documentNameVisible: Boolean(document.querySelector('.document-name')?.getClientRects().length),
+            scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
+        };
+    });
+}
+
+function overlaps(a, b) {
+    return Boolean(a && b && a.left < b.right && a.right > b.left
+        && a.top < b.bottom && a.bottom > b.top);
+}
+
+async function settleResponsiveLayout(page) {
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.waitForTimeout(180);
+}
+
 async function checkIconOnlyAccessibility(page) {
     const missing = await page.locator('button:has(svg)').evaluateAll(buttons => buttons
         .filter(button => {
@@ -75,7 +115,7 @@ async function checkIconOnlyAccessibility(page) {
     await page.waitForFunction(() => window.app && window.app.canvas);
 
     const required = [
-        '#globalBar', '#canvasToolDock', '#inspectorPanel', '#inspectorToggle',
+        '#globalBar', '#canvasToolDock', '#inspectorPanel', '#inspectorToggle', '#inspectorRailSpacer',
         '[data-inspector-tab="properties"]',
         '[data-inspector-tab="legend"]',
         '[data-inspector-tab="view"]'
@@ -127,73 +167,125 @@ async function checkIconOnlyAccessibility(page) {
             `existing command #${id} missing`);
     }
 
-    const inspector = page.locator('#inspectorPanel');
-    if (await inspector.count()) {
-        const width = await inspector.evaluate(element => element.getBoundingClientRect().width);
-        check('inspector width at 1366px is 296–336px', width >= 296 && width <= 336,
-            `width=${width.toFixed(1)}px`);
-    } else {
-        check('inspector width at 1366px is 296–336px', false,
-            'cannot measure: #inspectorPanel missing');
-    }
-    await page.setViewportSize({ width: 900, height: 768 });
     const toggle = page.locator('#inspectorToggle');
     const canvasContainer = page.locator('#canvasContainer');
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await settleResponsiveLayout(page);
+    const wide = await shellMetrics(page);
+    check('1920px uses fixed desktop inspector', !wide.compact && !wide.overlay
+        && wide.inspector?.width >= 315 && wide.inspector?.width <= 317, JSON.stringify(wide));
+    check('1920px canvas dock does not collide with global actions',
+        !overlaps(wide.dock, wide.actions), JSON.stringify({ dock: wide.dock, actions: wide.actions }));
+
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await settleResponsiveLayout(page);
+    const standard = await shellMetrics(page);
+    check('1366px stays desktop with a 296–336px inspector',
+        !standard.compact && standard.inspector?.width >= 296 && standard.inspector?.width <= 336,
+        JSON.stringify(standard));
+    check('1366px global bar remains one row', standard.bar?.height <= 66,
+        JSON.stringify(standard.bar));
+
     if (await toggle.count() && await canvasContainer.count()) {
-        await page.waitForFunction(() => document.body.classList.contains('inspector-collapsed'));
-        check('inspector auto-collapses after crossing into narrow viewport',
-            await page.locator('body.inspector-collapsed').count() === 1);
-        await page.setViewportSize({ width: 1024, height: 768 });
-        await page.waitForFunction(() => !document.body.classList.contains('inspector-collapsed'));
-        check('auto-collapsed inspector restores on return to wide viewport',
-            await page.locator('body.inspector-collapsed').count() === 0);
-        const headerCollision = await page.evaluate(() => {
-            const documentContext = document.querySelector('.document-context');
-            const documentName = document.querySelector('.document-name');
-            const dock = document.getElementById('canvasToolDock');
-            const isVisible = element => element && element.getClientRects().length > 0
-                && getComputedStyle(element).visibility !== 'hidden';
-            if (!isVisible(documentContext) || !isVisible(documentName)) return { hidden: true };
-            const documentRect = documentContext.getBoundingClientRect();
-            const nameRect = documentName.getBoundingClientRect();
-            const dockRect = dock.getBoundingClientRect();
-            const intersects = (a, b) => Math.max(a.left, b.left) < Math.min(a.right, b.right)
-                && Math.max(a.top, b.top) < Math.min(a.bottom, b.bottom);
-            return { hidden: false, intersects: intersects(documentRect, dockRect) || intersects(nameRect, dockRect),
-                documentRect: documentRect.toJSON(), nameRect: nameRect.toJSON(), dockRect: dockRect.toJSON() };
-        });
-        check('1024px document context is hidden or does not overlap the canvas tool dock',
-            headerCollision.hidden || !headerCollision.intersects, JSON.stringify(headerCollision));
-        const widthBefore = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
         await toggle.click();
-        check('inspector toggle applies body.inspector-collapsed',
-            await page.locator('body.inspector-collapsed').count() === 1,
-            'body.inspector-collapsed missing after toggle');
-        await page.waitForFunction(width => document.getElementById('canvasContainer').getBoundingClientRect().width > width,
-            widthBefore);
-        const widthAfter = await canvasContainer.evaluate(element => element.getBoundingClientRect().width);
-        check('collapsed inspector gives canvas usable width', widthAfter > widthBefore,
-            `canvas width ${widthBefore.toFixed(1)}px → ${widthAfter.toFixed(1)}px`);
-        check('collapsed toggle exposes expand action text',
-            await toggle.getAttribute('title') === '展開檢視面板'
-                && await toggle.getAttribute('aria-label') === '展開檢視面板');
-        await page.setViewportSize({ width: 900, height: 768 });
-        await page.setViewportSize({ width: 1024, height: 768 });
-        check('responsive changes preserve a manual inspector choice',
-            await page.locator('body.inspector-collapsed').count() === 1);
+        await settleResponsiveLayout(page);
+        check('desktop toggle stores a collapsed inspector choice',
+            (await shellMetrics(page)).collapsed === true);
+
+        await page.setViewportSize({ width: 1181, height: 820 });
+        await settleResponsiveLayout(page);
+        const boundaryDesktop = await shellMetrics(page);
+        check('1181px remains desktop rather than compact overlay mode',
+            !boundaryDesktop.compact && boundaryDesktop.collapsed, JSON.stringify(boundaryDesktop));
+
+        await page.setViewportSize({ width: 1180, height: 820 });
+        await settleResponsiveLayout(page);
+        const rail = await shellMetrics(page);
+        check('1180px defaults to compact rail mode', rail.compact && !rail.overlay && !rail.collapsed,
+            JSON.stringify(rail));
+        check('compact rail and layout spacer are both 52px',
+            Math.abs((rail.inspector?.width || 0) - 52) < 0.5
+                && Math.abs((rail.spacer?.width || 0) - 52) < 0.5,
+            JSON.stringify({ inspector: rail.inspector, spacer: rail.spacer }));
+        check('compact mode hides the document name', rail.documentNameVisible === false);
+
+        const compactCanvasWidth = rail.canvas?.width;
         await toggle.click();
-        check('expanded toggle exposes collapse action text',
+        await settleResponsiveLayout(page);
+        const opened = await shellMetrics(page);
+        check('compact toggle opens a 296px overlay', opened.compact && opened.overlay
+            && Math.abs((opened.inspector?.width || 0) - 296) < 0.5, JSON.stringify(opened));
+        check('compact overlay does not change canvas layout width',
+            Math.abs((opened.canvas?.width || 0) - compactCanvasWidth) < 0.5,
+            `${compactCanvasWidth} → ${opened.canvas?.width}`);
+        check('opened compact toggle exposes collapse action text',
+            await toggle.getAttribute('title') === '收合檢視面板'
+                && await toggle.getAttribute('aria-label') === '收合檢視面板');
+
+        await toggle.click();
+        await settleResponsiveLayout(page);
+        check('compact toggle closes the overlay', (await shellMetrics(page)).overlay === false);
+
+        await toggle.click();
+        await settleResponsiveLayout(page);
+        await canvasContainer.click({ position: { x: 12, y: 12 } });
+        await settleResponsiveLayout(page);
+        check('clicking the canvas closes the compact overlay', (await shellMetrics(page)).overlay === false);
+
+        await toggle.click();
+        await settleResponsiveLayout(page);
+        await page.evaluate(() => { window.app.connectingFrom = 'responsive-priority-check'; });
+        await page.keyboard.press('Escape');
+        await settleResponsiveLayout(page);
+        const priority = await page.evaluate(() => ({
+            connectingFrom: window.app.connectingFrom,
+            overlay: document.body.classList.contains('inspector-overlay-open')
+        }));
+        check('Escape cancels a higher-priority connection before the compact overlay',
+            priority.connectingFrom === null && priority.overlay === true, JSON.stringify(priority));
+        await page.keyboard.press('Escape');
+        await settleResponsiveLayout(page);
+        check('a second Escape closes the compact overlay', (await shellMetrics(page)).overlay === false);
+
+        await page.setViewportSize({ width: 1024, height: 768 });
+        await settleResponsiveLayout(page);
+        const compact1024 = await shellMetrics(page);
+        check('1024px remains compact with a one-row global bar',
+            compact1024.compact && compact1024.bar?.height <= 66, JSON.stringify(compact1024));
+        check('1024px canvas dock does not collide with global actions',
+            !overlaps(compact1024.dock, compact1024.actions),
+            JSON.stringify({ dock: compact1024.dock, actions: compact1024.actions }));
+        const toolbarTargets = await page.locator('#globalBar button').evaluateAll(buttons => buttons
+            .filter(button => button.getClientRects().length > 0)
+            .map(button => {
+                const rect = button.getBoundingClientRect();
+                return { id: button.id, width: rect.width, height: rect.height };
+            }));
+        check('1024px toolbar buttons keep at least 36px pointer targets',
+            toolbarTargets.every(target => target.width >= 36 && target.height >= 36),
+            JSON.stringify(toolbarTargets));
+
+        await page.setViewportSize({ width: 1023, height: 768 });
+        await settleResponsiveLayout(page);
+        const belowMinimum = await shellMetrics(page);
+        check('1023px keeps a 1024px minimum layout with horizontal scrolling',
+            belowMinimum.app?.width >= 1024 && belowMinimum.scrollWidth >= 1024 && belowMinimum.compact,
+            JSON.stringify(belowMinimum));
+
+        await page.setViewportSize({ width: 1181, height: 820 });
+        await settleResponsiveLayout(page);
+        const restoredDesktop = await shellMetrics(page);
+        check('leaving compact restores the prior manual desktop collapse choice',
+            !restoredDesktop.compact && restoredDesktop.collapsed, JSON.stringify(restoredDesktop));
+        await toggle.click();
+        await settleResponsiveLayout(page);
+        check('expanded desktop toggle exposes collapse action text',
             await toggle.getAttribute('title') === '收合檢視面板'
                 && await toggle.getAttribute('aria-label') === '收合檢視面板');
     } else {
-        const missing = [
-            await toggle.count() ? null : '#inspectorToggle',
-            await canvasContainer.count() ? null : '#canvasContainer'
-        ].filter(Boolean).join(', ');
-        check('inspector toggle applies body.inspector-collapsed', false,
-            `cannot toggle: ${missing} missing`);
-        check('collapsed inspector gives canvas usable width', false,
-            `cannot compare canvas width: ${missing} missing`);
+        check('responsive inspector interactions are available', false,
+            'missing #inspectorToggle or #canvasContainer');
     }
     await checkIconOnlyAccessibility(page);
 

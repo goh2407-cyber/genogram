@@ -3141,11 +3141,41 @@ class GenogramCanvas {
         return exportCanvas.toDataURL('image/jpeg', quality);
     }
 
+    getLegendRenderItem(entry) {
+        if (!entry || !Object.values(Relationship.TYPES).includes(entry.type)) return null;
+        const relationship = new Relationship({ type: entry.type, linkType: entry.linkType });
+        const line = relationship.getLineStyle();
+        let style = line.pattern;
+        if (entry.type === 'parent-child' && entry.linkType === 'adopted') style = 'dashed';
+        if (entry.type === 'parent-child' && entry.linkType === 'foster') style = 'dotted';
+        const pattern = style === 'dashed' ? DASH_PATTERNS.engaged
+            : style === 'dotted' ? DASH_PATTERNS.cohabit
+                : DASH_PATTERNS.solid;
+        return {
+            label: entry.label,
+            style,
+            color: line.color,
+            width: line.width,
+            pattern,
+            decoration: line.decoration
+        };
+    }
+
+    getLegendRenderSections(viewOptions = {}) {
+        const view = this.normalizeViewOptions(viewOptions);
+        return Relationship.getLegendSections({
+            showEmotional: view.showEmotionalRelationships
+        }).map(section => ({
+            ...section,
+            title: section.exportTitle,
+            items: section.entries.map(entry => this.getLegendRenderItem(entry)).filter(Boolean)
+        }));
+    }
+
     /**
      * 繪製匯出用的關係圖例
      */
     drawExportLegend(ctx, x, y, viewOptions = {}) {
-        const view = this.normalizeViewOptions(viewOptions);
         const padding = 16;
         const lineHeight = 26;
         const lineWidth = 40;
@@ -3154,79 +3184,13 @@ class GenogramCanvas {
         const sectionGap = 16;
         const columnGap = 32; // 欄位間距
 
-        // 圖例資料 - 分為左右兩欄
-        // [一致化] 顏色與虛線間距以 Relationship.getLineStyle() / DASH_PATTERNS 為準，
-        // 確保匯出圖例 = 側欄圖例 = 畫布實際線條
-        const legendDataLeft = {
-            family: {
-                title: '家庭關係',
-                items: [
-                    { label: '親生子女', style: 'solid', color: '#333333' },
-                    { label: '收養子女', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
-                    { label: '寄養子女', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
-                    { label: '結婚', style: 'solid', color: '#333333' },
-                    { label: '訂婚', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
-                    { label: '同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
-                    { label: '法律同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit, decoration: 'house' },
-                    { label: '事實分居', style: 'solid', color: '#333333', decoration: 'single-slash' },
-                    { label: '法律分居', style: 'solid', color: '#333333', decoration: 'double-slash' },
-                    { label: '離婚', style: 'solid', color: '#333333', decoration: 'divorce-slash' },
-                    { label: '喪偶', style: 'solid', color: '#333333', decoration: 'x' },
-                    { label: '外遇', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged }
-                ]
-            },
-            emotional_pos: {
-                title: '情感關係 (正向)',
-                items: [
-                    { label: '和諧', style: 'solid', color: '#4caf50' },
-                    { label: '愛', style: 'solid', color: '#4caf50', decoration: 'circle' },
-                    { label: '熱戀', style: 'solid', color: '#4caf50', decoration: 'double-circle' },
-                    { label: '親密/友誼', style: 'double', color: '#4caf50' },
-                    { label: '非常親密', style: 'triple', color: '#4caf50' },
-                    { label: '崇拜', style: 'solid', color: '#333333', decoration: 'circle-arrow' },
-                    { label: '關注', style: 'solid', color: '#333333', decoration: 'arrow' }
-                ]
-            }
-        };
-
-        const legendDataRight = {
-            emotional_neg: {
-                title: '情感關係 (負向)',
-                items: [
-                    { label: '冷漠', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged },
-                    { label: '疏離', style: 'dashed', color: '#9e9e9e', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' },
-                    { label: '斷絕', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' }, // 紅色斷絕
-                    { label: '衝突', style: 'double', color: '#E53935' }, // Double Red
-                    { label: '仇恨', style: 'triple', color: '#E53935' }, // Triple Red
-                    { label: '敵對', style: 'wave', color: '#E53935' },
-                    { label: '遠距敵對', style: 'wave', color: '#E53935', decoration: 'arrow' },
-                    { label: '親密敵對', style: 'close-hostile', color: '#E53935' },
-
-                    { label: '衝突又親密', style: 'conflict-close', color: '#E53935' }
-                ]
-            },
-            abuse: {
-                title: '虐待/暴力',
-                items: [
-                    { label: '暴力', style: 'zigzag', color: '#007BFF', decoration: 'arrow' },
-                    { label: '虐待', style: 'wave', color: '#007BFF', decoration: 'arrow' },
-                    { label: '身體虐待', style: 'physical-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '情緒虐待', style: 'emotional-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '性虐待', style: 'sexual-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '忽視', style: 'solid', color: '#007BFF', decoration: 'arrow-bar' },
-                    { label: '操控', style: 'solid', color: '#000000', decoration: 'x' },
-                    { label: '控制', style: 'solid', color: '#E53935', decoration: 'box-cross-arrow' }
-                ]
-            }
-        };
+        const sections = this.getLegendRenderSections(viewOptions);
+        const leftSections = sections.filter(section => section.column === 'left');
+        const rightSections = sections.filter(section => section.column === 'right');
 
         // 計算尺寸
-        // 左欄高度
-        const showEmotional = view.showEmotionalRelationships;
-        const leftItemsCount = legendDataLeft.family.items.length
-            + (showEmotional ? legendDataLeft.emotional_pos.items.length : 0);
-        const rightItemsCount = legendDataRight.abuse.items.length
-            + (showEmotional ? legendDataRight.emotional_neg.items.length : 0);
+        const leftItemsCount = leftSections.reduce((total, section) => total + section.items.length, 0);
+        const rightItemsCount = rightSections.reduce((total, section) => total + section.items.length, 0);
 
         const maxItemsPerColumn = Math.max(leftItemsCount + 4, rightItemsCount + 4); // +4 for titles
 
@@ -3247,25 +3211,16 @@ class GenogramCanvas {
         let currentYRight = y + padding;
         const rightX = x + padding + columnWidth + columnGap;
 
-        // --- 左欄繪製 ---
-        // 家庭關係
-        this.drawLegendSection(ctx, legendDataLeft.family, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
-        currentYLeft += (legendDataLeft.family.items.length + 1.5) * lineHeight;
-
-        // 情感正向
-        if (showEmotional) {
-            this.drawLegendSection(ctx, legendDataLeft.emotional_pos, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
-        }
-
-        // --- 右欄繪製 ---
-        // 情感負向
-        if (showEmotional) {
-            this.drawLegendSection(ctx, legendDataRight.emotional_neg, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
-            currentYRight += (legendDataRight.emotional_neg.items.length + 1.5) * lineHeight;
-        }
-
-        // 虐待暴力
-        this.drawLegendSection(ctx, legendDataRight.abuse, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
+        leftSections.forEach(section => {
+            this.drawLegendSection(ctx, section, x + padding, currentYLeft,
+                lineWidth, lineHeight, titleFontSize, fontSize);
+            currentYLeft += (section.items.length + 1.5) * lineHeight;
+        });
+        rightSections.forEach(section => {
+            this.drawLegendSection(ctx, section, rightX, currentYRight,
+                lineWidth, lineHeight, titleFontSize, fontSize);
+            currentYRight += (section.items.length + 1.5) * lineHeight;
+        });
     }
 
     /**

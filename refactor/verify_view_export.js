@@ -65,7 +65,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         result.householdCount === 0 && result.circleCount === 0, JSON.stringify(result));
     check('View notes off overrides export-dialog notes on', result.effectiveNotes === false);
     check('hidden emotional sections are removed from the export legend',
-        JSON.stringify(result.legendTitles) === JSON.stringify(['家庭關係', '虐待/暴力']),
+        JSON.stringify(result.legendTitles) === JSON.stringify(['家庭與伴侶', '暴力與特殊關係']),
         JSON.stringify(result.legendTitles));
     check('person-level export options hide names ages notes and medical markers', result.personOptionsApplied);
     check('filtered export still produces PNG', result.pngOk);
