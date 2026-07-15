@@ -2,7 +2,7 @@
  * 對抗審查修正項的回歸測試
  * 用法：NODE_PATH=<playwright node_modules> node refactor/verify_fixes.js
  * 涵蓋：
- *  F1 圖例標題文字左緣與「屬性編輯」對齊
+ *  F1 Inspector 三個分頁按鈕可見、同列、依序且等高
  *  F2 兩名子女情境的等距吸附（單鄰居標準格寬 + 手足鏡像）
  *  F3 拖曳中 blur → 輔助線不殘留
  *  F4 1px 手震不觸發吸附、不寫 history
@@ -30,26 +30,30 @@ function check(name, cond, detail = '') {
     await page.goto(url);
     await page.waitForFunction(() => window.app && window.app.canvas);
 
-    // ===== F1 標題對齊 =====
-    const titleX = await page.evaluate(() => {
-        const textLeft = (el) => {
-            // 取第一個文字節點的左緣
-            for (const node of el.childNodes) {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                    const r = document.createRange();
-                    r.selectNodeContents(node);
-                    const rect = r.getBoundingClientRect();
-                    if (rect.width > 0) return rect.left;
-                }
-            }
-            return el.getBoundingClientRect().left;
+    // ===== F1 Inspector tablist 幾何契約 =====
+    const tabs = await page.locator('[data-inspector-tab]').evaluateAll(elements => elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            name: element.dataset.inspectorTab,
+            visible: rect.width > 0 && rect.height > 0
+                && style.display !== 'none' && style.visibility !== 'hidden',
+            left: rect.left,
+            top: rect.top,
+            height: rect.height
         };
-        const prop = document.querySelector('#propertyPanel .panel-title');
-        const legend = document.querySelector('#legendPanel .panel-title');
-        return { prop: textLeft(prop), legend: textLeft(legend) };
-    });
-    check('F1 標題文字左緣對齊', Math.abs(titleX.prop - titleX.legend) < 1.5,
-        `屬性編輯=${titleX.prop.toFixed(1)} 圖例=${titleX.legend.toFixed(1)}`);
+    }));
+    const expectedTabs = ['properties', 'legend', 'view'];
+    const tops = tabs.map(tab => tab.top);
+    const heights = tabs.map(tab => tab.height);
+    check('F1a 三個 Inspector tabs 均可見', tabs.length === 3
+        && tabs.every(tab => tab.visible) && tabs.every((tab, i) => tab.name === expectedTabs[i]), JSON.stringify(tabs));
+    check('F1b Inspector tabs 位於同一水平列', Math.max(...tops) - Math.min(...tops) < 1.5,
+        `tops=${tops.map(value => value.toFixed(1)).join(',')}`);
+    check('F1c Inspector tabs 依 DOM 順序由左至右', tabs.every((tab, i) => i === 0 || tabs[i - 1].left < tab.left),
+        `left=${tabs.map(tab => tab.left.toFixed(1)).join(',')}`);
+    check('F1d Inspector tabs 按鈕高度一致', Math.max(...heights) - Math.min(...heights) < 1.5,
+        `heights=${heights.map(value => value.toFixed(1)).join(',')}`);
 
     // ===== 建立 2 子女家庭 =====
     await page.evaluate(() => {

@@ -46,6 +46,16 @@ const GRID_STYLE = {
  * GenogramCanvas 類別 - 管理畫布繪製
  */
 class GenogramCanvas {
+    static DEFAULT_VIEW_OPTIONS = Object.freeze({
+        showNames: true,
+        showAges: true,
+        showNotes: true,
+        showMedical: true,
+        showEmotionalRelationships: true,
+        showHouseholds: true,
+        showLifeCircles: true
+    });
+
     constructor(canvasId, containerId, onResize = null) {
         this.canvas = document.getElementById(canvasId);
         this.container = document.getElementById(containerId);
@@ -66,6 +76,12 @@ class GenogramCanvas {
         this.personSize = 50;
         this.fontSize = 14;
         this.fontFamily = 'Noto Sans TC, sans-serif';
+
+        // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
+        this._familyRoutePlans = [];
+        this._familyRelationshipPaths = new Map();
+        this._familyRouteSignature = null;
+        this._familyPlanCache = new Map();
 
         // 初始化
         this.resize();
@@ -259,6 +275,7 @@ class GenogramCanvas {
         if (!this.personMap) {
             this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
         }
+        const view = this.normalizeViewOptions(this.viewOptions);
 
         this.clear();
         this.drawGrid(); // [D1] 背景網格（在 clear 後、applyTransform 前繪製於螢幕座標）
@@ -268,14 +285,14 @@ class GenogramCanvas {
 
         // 0.5 繪製生活圈（最底層背景脈絡；由 App.render 注入）
         // [Fix] 原本以 overlay 蓋在最上層，會罩染人物符號且與匯出 z-order 相反
-        if (this.lifeCirclesToDraw && this.lifeCirclesToDraw.length > 0) {
+        if (view.showLifeCircles && this.lifeCirclesToDraw && this.lifeCirclesToDraw.length > 0) {
             this.lifeCirclesToDraw.forEach(lc => {
                 this._drawSingleLifeCircle(lc, this.selectedLifeCircleId === lc.id);
             });
         }
 
         // 1. 繪製同住家庭 (底層)
-        if (households && households.length > 0) {
+        if (view.showHouseholds && households && households.length > 0) {
             this.drawHouseholds(households, persons, relationships, false, selectedHouseholdId);
         }
 
@@ -303,10 +320,12 @@ class GenogramCanvas {
             // 以 KinshipEngine 提供方向判斷，避免 Y 座標誤判
             kinship = new KinshipEngine(persons, relationships);
         }
-        this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId, kinship);
+        const visibleOtherRels = otherRels.filter(rel => view.showEmotionalRelationships
+            || !Relationship.isEmotionalDisplayType(rel.type));
+        this.drawFamilies(familyRels, persons, visibleOtherRels, selectedRelationshipId, kinship);
 
         // 3. 繪製非親子關係
-        otherRels.forEach(rel => {
+        visibleOtherRels.forEach(rel => {
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
@@ -317,13 +336,15 @@ class GenogramCanvas {
         });
 
         // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
-        otherRels.forEach(rel => {
-            const fromPerson = this.personMap.get(rel.fromPersonId);
-            const toPerson = this.personMap.get(rel.toPersonId);
-            if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
-                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
-            }
-        });
+        if (view.showNotes) {
+            visibleOtherRels.forEach(rel => {
+                const fromPerson = this.personMap.get(rel.fromPersonId);
+                const toPerson = this.personMap.get(rel.toPersonId);
+                if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
+                    this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+                }
+            });
+        }
 
         // 4. 繪製正在連接的線
         if (connectingFrom && connectingFrom.targetX !== undefined) {
@@ -344,8 +365,13 @@ class GenogramCanvas {
             const isMultiSelected = (selectedPersonIds || []).includes(person.id);
             const isHighlighted = (highlightedIds || []).includes(person.id);
             const isConnecting = connectingFrom && connectingFrom.person.id === person.id;
-            this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted);
+            this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted, view);
         });
+
+        // 5.5 智慧格位預覽只屬於編輯器畫面；匯出路徑不呼叫此方法。
+        if (this.placementPreview) {
+            this.drawPlacementPreview(this.placementPreview);
+        }
 
         // 6. 繪製多選邊框 (視覺提示可移動區域)
         if (selectedPersonIds && selectedPersonIds.length > 1) {
@@ -357,8 +383,8 @@ class GenogramCanvas {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
         }
 
-        // 8. 繪製快速新增按鈕（選取角色後才顯示，不再 hover 顯示；拖曳中隱藏避免與對齊輔助線重疊）
-        if (selectedId && !this.isDragging) {
+        // 8. 繪製快速新增按鈕（拖曳或格位預覽中隱藏，避免遮住人物與預覽線）
+        if (selectedId && !this.isDragging && !this.placementPreview) {
             const selPerson = this.personMap.get(selectedId);
             if (selPerson) {
                 this.drawQuickAddButtons(selPerson);
@@ -368,7 +394,9 @@ class GenogramCanvas {
         // 9. 繪製關係線編輯按鈕 (選中關係線時顯示)
         if (selectedRelationshipId) {
             const selectedRel = relationships.find(r => r.id === selectedRelationshipId);
-            if (selectedRel) {
+            const isVisible = selectedRel && (view.showEmotionalRelationships
+                || !Relationship.isEmotionalDisplayType(selectedRel.type));
+            if (isVisible) {
                 const fromPerson = this.personMap.get(selectedRel.fromPersonId);
                 const toPerson = this.personMap.get(selectedRel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -396,6 +424,89 @@ class GenogramCanvas {
         }
 
         this.ctx.restore();
+    }
+
+    /** Draw the editor-only smart-placement overlay without retaining canvas state. */
+    drawPlacementPreview(preview) {
+        if (!preview || !Number.isFinite(preview.x) || !Number.isFinite(preview.y)) return;
+        this.ctx.save();
+        try {
+            const suppliedGhost = preview.ghostPerson || {};
+            const ghostDefaults = { gender: 'unknown', name: '', age: '' };
+            const ghost = { ...ghostDefaults, ...suppliedGhost, x: preview.x, y: preview.y };
+            const ghosts = (preview.ghostPeople && preview.ghostPeople.length > 0)
+                ? preview.ghostPeople.map(person => ({ ...ghostDefaults, ...person }))
+                : [ghost];
+            const ghostMap = new Map(ghosts.map(person => [person.id, person]));
+
+            // Relationship previews deliberately use a neutral selection dash rather than
+            // any clinical relationship style.
+            (preview.relationshipPreview || []).forEach(rel => {
+                const resolveEndpoint = id => ghostMap.get(id) || (this.personMap && this.personMap.get(id));
+                const fromPoint = resolveEndpoint(rel.fromPersonId);
+                const toPoint = resolveEndpoint(rel.toPersonId);
+                if (!fromPoint || !toPoint || fromPoint === toPoint) return;
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.55;
+                this.ctx.strokeStyle = '#6b7280';
+                this.ctx.lineWidth = 2;
+                this.ctx.lineCap = 'round';
+                this.ctx.setLineDash(DASH_PATTERNS.selection);
+                this.ctx.beginPath();
+                this.ctx.moveTo(fromPoint.x, fromPoint.y);
+                this.ctx.lineTo(toPoint.x, toPoint.y);
+                this.ctx.stroke();
+                this.ctx.restore();
+            });
+
+            this.drawPlacementCell(preview);
+            this.ctx.globalAlpha = 0.38;
+            ghosts.forEach(person => this.drawPerson(person, false, false, false));
+        } finally {
+            this.ctx.restore();
+        }
+    }
+
+    /** Draw the candidate cell, placement alignment guides, and unavailable marker. */
+    drawPlacementCell(candidate) {
+        if (!candidate || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) return;
+        this.ctx.save();
+        try {
+            const halfCell = 54;
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.strokeStyle = '#ed1261';
+            this.ctx.fillStyle = '#ed1261';
+            this.ctx.lineWidth = 2;
+            this.ctx.lineCap = 'round';
+            this.ctx.setLineDash(DASH_PATTERNS.selection);
+            this.ctx.strokeRect(candidate.x - halfCell, candidate.y - halfCell, halfCell * 2, halfCell * 2);
+
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
+            this.ctx.globalAlpha = 0.45;
+            this.ctx.beginPath();
+            this.ctx.moveTo(candidate.x - halfCell, candidate.y);
+            this.ctx.lineTo(candidate.x + halfCell, candidate.y);
+            this.ctx.moveTo(candidate.x, candidate.y - halfCell);
+            this.ctx.lineTo(candidate.x, candidate.y + halfCell);
+            this.ctx.stroke();
+
+            const blocked = candidate.occupied
+                ? { x: candidate.x, y: candidate.y }
+                : candidate.blockedAt;
+            if (blocked) {
+                this.ctx.globalAlpha = 0.95;
+                this.ctx.lineWidth = 3;
+                const markerHalf = 10;
+                this.ctx.beginPath();
+                this.ctx.moveTo(blocked.x - markerHalf, blocked.y - markerHalf);
+                this.ctx.lineTo(blocked.x + markerHalf, blocked.y + markerHalf);
+                this.ctx.moveTo(blocked.x + markerHalf, blocked.y - markerHalf);
+                this.ctx.lineTo(blocked.x - markerHalf, blocked.y + markerHalf);
+                this.ctx.stroke();
+            }
+        } finally {
+            this.ctx.restore();
+        }
     }
 
     /**
@@ -603,13 +714,62 @@ class GenogramCanvas {
         same:      '#f4effb',  // 淡紫（同性別圓頂方底）
     };
 
+    normalizeViewOptions(options = {}) {
+        return Object.fromEntries(Object.keys(GenogramCanvas.DEFAULT_VIEW_OPTIONS)
+            .map(key => [key, options[key] !== false]));
+    }
+
+    getPersonTextLayout(person, options = {}) {
+        const view = this.normalizeViewOptions(options);
+        const nameY = person.y + this.personSize / 2 + 8;
+        const name = view.showNames ? (person.name || '') : '';
+        const noteLines = view.showNotes && person.notes
+            ? person.notes.split('\n').filter(Boolean).slice(0, 2)
+            : [];
+        return {
+            name,
+            noteLines,
+            nameY,
+            noteStartY: nameY + (name ? this.fontSize + 4 : 0)
+        };
+    }
+
+    drawPersonText(person, options = {}) {
+        const text = this.getPersonTextLayout(person, options);
+        const S = GenogramCanvas.DRAW_PERSON_STYLES;
+        this.ctx.shadowBlur = 0;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        if (text.name) {
+            this.ctx.font = this.fontSize + 'px ' + this.fontFamily;
+            this.ctx.fillStyle = '#333';
+            this.ctx.lineWidth = S.nameHalo.lineWidth;
+            this.ctx.strokeStyle = S.nameHalo.color;
+            this.ctx.strokeText(text.name, person.x, text.nameY);
+            this.ctx.fillText(text.name, person.x, text.nameY);
+        }
+        if (text.noteLines.length) {
+            this.ctx.font = (this.fontSize * .8) + 'px ' + this.fontFamily;
+            this.ctx.fillStyle = '#666';
+            const lineHeight = this.fontSize * .8 + 2;
+            text.noteLines.forEach((line, index) => {
+                const y = text.noteStartY + index * lineHeight;
+                this.ctx.lineWidth = S.notesHalo.lineWidth;
+                this.ctx.strokeStyle = S.notesHalo.color;
+                this.ctx.strokeText(line, person.x, y);
+                this.ctx.fillText(line, person.x, y);
+            });
+        }
+    }
+
     /**
      * [Phase 1] 繪製生育結果小符號（流產/人工流產/死產）。
      * McGoldrick：流產=小型實心三角；人工流產=小 X；死產=縮小性別符號 + 死亡 X。
      * 與正常人物共用姓名標籤位置（以 personSize 為基準），符號本身縮小。
      */
-    _drawLossSymbol(person, isActive) {
-        const { x, y, name, lossType } = person;
+    _drawLossSymbol(person, isActive, viewOptions = this.viewOptions) {
+        const view = this.normalizeViewOptions(viewOptions);
+        const { x, y, lossType } = person;
         const h = this.personSize * 0.42 / 2; // 縮小符號半徑
         this.ctx.save();
         this.ctx.strokeStyle = '#333';
@@ -643,23 +803,14 @@ class GenogramCanvas {
             this.ctx.stroke();
         }
 
-        // 姓名標籤（與正常人物同基準位置）
-        if (name) {
-            const S = GenogramCanvas.DRAW_PERSON_STYLES;
-            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'top';
-            this.ctx.lineWidth = S.nameHalo.lineWidth;
-            this.ctx.strokeStyle = S.nameHalo.color;
-            this.ctx.strokeText(name, x, y + this.personSize / 2 + 8);
-            this.ctx.fillStyle = '#333';
-            this.ctx.fillText(name, x, y + this.personSize / 2 + 8);
-        }
+        this.drawPersonText(person, view);
         this.ctx.restore();
     }
 
-    drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
-        const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
+    drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false,
+        viewOptions = this.viewOptions) {
+        const view = this.normalizeViewOptions(viewOptions);
+        const { x, y, gender, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
         const size = this.personSize;
         const halfSize = size / 2;
         const S = GenogramCanvas.DRAW_PERSON_STYLES; // shorthand
@@ -669,7 +820,7 @@ class GenogramCanvas {
         // [Phase 1] 生育結果（流產/人工流產）：畫專屬小符號 + 標籤後結束，不走正常性別/醫療/死亡路徑
         // 僅認 miscarriage/abortion；其餘值（含已移除的 stillbirth、舊資料）走正常人物渲染
         if (person.lossType === 'miscarriage' || person.lossType === 'abortion') {
-            this._drawLossSymbol(person, isSelected || isConnecting || isHighlighted);
+            this._drawLossSymbol(person, isSelected || isConnecting || isHighlighted, view);
             this.ctx.restore();
             return;
         }
@@ -770,7 +921,7 @@ class GenogramCanvas {
         }
 
         // 繪製醫學符號 (若未過世)
-        if (!isDeceased && medical) {
+        if (!isDeceased && medical && view.showMedical) {
             this.drawMedicalSymbols(x, y, size, gender, medical, transgender);
         }
 
@@ -829,7 +980,7 @@ class GenogramCanvas {
         }
 
         // 年齡 (如果有醫學標記，可能需要調整位置，這裡先保持)
-        if (age !== null && age !== '') {
+        if (view.showAges && age !== null && age !== '') {
             this.ctx.shadowBlur = 0;
             this.ctx.font = `bold ${this.fontSize}px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
@@ -851,43 +1002,7 @@ class GenogramCanvas {
             this.drawSexualOrientationMarker(x, y, halfSize);
         }
 
-        // 姓名
-        if (name) {
-            this.ctx.shadowBlur = 0;
-            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'top';
-            this.ctx.fillStyle = '#333';
-
-            // [C5] Name halo: strokeText with solid white before fillText.
-            // Solid #fff (no alpha) ensures maximum coverage against family lines
-            // (spatial clarity principle — label legibility over decorative restraint).
-            this.ctx.lineWidth = S.nameHalo.lineWidth;
-            this.ctx.strokeStyle = S.nameHalo.color;
-            this.ctx.strokeText(name, x, y + halfSize + 8);
-
-            this.ctx.fillText(name, x, y + halfSize + 8);
-
-            // 備註 (顯示於姓名下方，支援換行，最多2行)
-            if (person.notes) {
-                this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`; // 較小字體
-                this.ctx.fillStyle = '#666'; // 灰色
-                // 過濾空行，最多顯示2行
-                const noteLines = person.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
-                const noteLineHeight = this.fontSize * 0.8 + 2;
-
-                noteLines.forEach((line, i) => {
-                    const lineY = y + halfSize + 8 + (this.fontSize + 4) + i * noteLineHeight;
-
-                    // [C5] Notes halo: same solid white halo via DRAW_PERSON_STYLES.notesHalo.
-                    this.ctx.lineWidth = S.notesHalo.lineWidth;
-                    this.ctx.strokeStyle = S.notesHalo.color;
-                    this.ctx.strokeText(line, x, lineY);
-
-                    this.ctx.fillText(line, x, lineY);
-                });
-            }
-        }
+        this.drawPersonText(person, view);
 
         this.ctx.restore();
     }
@@ -920,19 +1035,12 @@ class GenogramCanvas {
     }
 
     /**
-     * 匯出專用的人物繪製 (可選擇是否繪製備註)
+     * 匯出專用的人物繪製
      * @param {Object} person - 人物物件
-     * @param {boolean} showNotes - 是否顯示備註
+     * @param {Object} viewOptions - 顯示策略
      */
-    drawPersonForExport(person, showNotes = true) {
-        // 如果不顯示備註，暫時清空 notes 然後重宫
-        const originalNotes = person.notes;
-        if (!showNotes) {
-            person.notes = '';
-        }
-        this.drawPerson(person, false, false, false);
-        // 還原
-        person.notes = originalNotes;
+    drawPersonForExport(person, viewOptions = {}) {
+        this.drawPerson(person, false, false, false, viewOptions);
     }
 
     /**
@@ -2712,10 +2820,32 @@ class GenogramCanvas {
 
 
 
+    getVisibleExportData(persons, relationships, households = [], lifeCircles = [], viewOptions = {}) {
+        const view = this.normalizeViewOptions(viewOptions);
+        return {
+            persons,
+            relationships: relationships.filter(rel => view.showEmotionalRelationships
+                || !Relationship.isEmotionalDisplayType(rel.type)),
+            households: view.showHouseholds ? households : [],
+            lifeCircles: view.showLifeCircles ? lifeCircles : [],
+            viewOptions: view
+        };
+    }
+
+    getContentBounds(persons, relationships, households = [], lifeCircles = [], viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        return this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            visible.viewOptions, relationships);
+    }
+
     /**
      * 計算內容邊界 (包含所有人物、關係、同住框、生活圈)
      */
-    _calculateContentBounds(persons, relationships, households, lifeCircles) {
+    _calculateContentBounds(persons, relationships, households, lifeCircles,
+        viewOptions = {}, allRelationships = relationships) {
+        const view = this.normalizeViewOptions(viewOptions);
         // [Fix] 不再因 persons 為空提前 return：
         // 純生活圈/同住框的畫布也要能匯出（最後以 Infinity 檢查是否真的全空）
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2726,7 +2856,11 @@ class GenogramCanvas {
             minX = Math.min(minX, p.x - halfSize);
             minY = Math.min(minY, p.y - halfSize);
             maxX = Math.max(maxX, p.x + halfSize);
-            maxY = Math.max(maxY, p.y + halfSize + 30); // 留點空間給名字
+            maxY = Math.max(maxY, p.y + halfSize);
+            const text = this.getPersonTextLayout(p, view);
+            const textHeight = (text.name ? this.fontSize + 4 : 0)
+                + text.noteLines.length * (this.fontSize * .8 + 2);
+            if (textHeight > 0) maxY = Math.max(maxY, text.nameY + textHeight);
         });
 
         // 2. 同住家庭
@@ -2766,7 +2900,7 @@ class GenogramCanvas {
                 if (fromPerson && toPerson) {
                     // 使用相同的 getRelationshipPath 邏輯來取得所有路徑點
                     // 注意：這裡傳入 relationships 是為了正確計算 offset和天橋配置
-                    const points = this.getRelationshipPath(fromPerson, toPerson, rel, relationships);
+                    const points = this.getRelationshipPath(fromPerson, toPerson, rel, allRelationships);
                     points.forEach(pt => {
                         minX = Math.min(minX, pt.x);
                         minY = Math.min(minY, pt.y);
@@ -2802,8 +2936,17 @@ class GenogramCanvas {
      * @param {boolean} showLegend - 是否顯示關係類型圖例
      * @param {number} scale - 匯出縮放倍率 (解析度)
      */
-    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true, showLegend = true, scale = 3) {
-        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true,
+        showLegend = true, scale = 3, viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        const effectiveView = {
+            ...visible.viewOptions,
+            showNotes: visible.viewOptions.showNotes && showNotes
+        };
+        const bounds = this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            effectiveView, relationships);
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
@@ -2813,7 +2956,7 @@ class GenogramCanvas {
         // 如果不顯示圖例，寬度設為 0
         const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = 850;
+        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
 
         // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
@@ -2840,18 +2983,18 @@ class GenogramCanvas {
         this.ctx.translate(-minX, -minY);
 
         // 1. 先繪製生活圈 (最最底層)
-        if (lifeCircles && lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(lifeCircles);
+        if (visible.lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(visible.lifeCircles);
         }
 
         // 1.5 繪製同住家庭
-        if (households && households.length > 0) {
-            this.drawHouseholds(households, persons, relationships, false, null);
+        if (visible.households.length > 0) {
+            this.drawHouseholds(visible.households, persons, relationships, false, null);
         }
 
         // 2. 繪製親子關係
-        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
-        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
+        const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
         this.drawFamilies(familyRels, persons, otherRels);
 
@@ -2865,8 +3008,8 @@ class GenogramCanvas {
         });
 
         // 3.5 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
-        if (showNotes) {
-            relationships.forEach(rel => {
+        if (effectiveView.showNotes) {
+            visible.relationships.forEach(rel => {
                 const fromPerson = this.personMap.get(rel.fromPersonId);
                 const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -2877,7 +3020,7 @@ class GenogramCanvas {
 
         // 4. 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPersonForExport(person, showNotes);
+            this.drawPersonForExport(person, effectiveView);
         });
 
         this.ctx.restore();
@@ -2886,7 +3029,7 @@ class GenogramCanvas {
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = (totalHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
         // 還原 context
@@ -2907,8 +3050,17 @@ class GenogramCanvas {
      * @param {number} scale - 匯出縮放倍率
      * @returns {string|null} - Data URL 或 null
      */
-    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true, showLegend = true, scale = 3) {
-        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92,
+        showNotes = true, showLegend = true, scale = 3, viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        const effectiveView = {
+            ...visible.viewOptions,
+            showNotes: visible.viewOptions.showNotes && showNotes
+        };
+        const bounds = this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            effectiveView, relationships);
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
@@ -2916,7 +3068,7 @@ class GenogramCanvas {
 
         const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = 850;
+        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
 
         const totalWidth = contentWidth + legendWidth + legendPadding;
         const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
@@ -2939,16 +3091,16 @@ class GenogramCanvas {
         this.ctx.translate(-minX, -minY);
 
         // 繪製生活圈
-        if (lifeCircles && lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(lifeCircles);
+        if (visible.lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(visible.lifeCircles);
         }
 
-        if (households && households.length > 0) {
-            this.drawHouseholds(households, persons, relationships, false, null);
+        if (visible.households.length > 0) {
+            this.drawHouseholds(visible.households, persons, relationships, false, null);
         }
 
-        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
-        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
+        const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
         this.drawFamilies(familyRels, persons, otherRels);
 
@@ -2961,8 +3113,8 @@ class GenogramCanvas {
         });
 
         // 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
-        if (showNotes) {
-            relationships.forEach(rel => {
+        if (effectiveView.showNotes) {
+            visible.relationships.forEach(rel => {
                 const fromPerson = this.personMap.get(rel.fromPersonId);
                 const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -2973,7 +3125,7 @@ class GenogramCanvas {
 
         // 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPersonForExport(person, showNotes);
+            this.drawPersonForExport(person, effectiveView);
         });
 
         this.ctx.restore();
@@ -2981,7 +3133,7 @@ class GenogramCanvas {
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = (totalHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
         this.ctx = originalCtx;
@@ -2989,10 +3141,41 @@ class GenogramCanvas {
         return exportCanvas.toDataURL('image/jpeg', quality);
     }
 
+    getLegendRenderItem(entry) {
+        if (!entry || !Object.values(Relationship.TYPES).includes(entry.type)) return null;
+        const relationship = new Relationship({ type: entry.type, linkType: entry.linkType });
+        const line = relationship.getLineStyle();
+        let style = line.pattern;
+        if (entry.type === 'parent-child' && entry.linkType === 'adopted') style = 'dashed';
+        if (entry.type === 'parent-child' && entry.linkType === 'foster') style = 'dotted';
+        const pattern = style === 'dashed' ? DASH_PATTERNS.engaged
+            : style === 'dotted' ? DASH_PATTERNS.cohabit
+                : DASH_PATTERNS.solid;
+        return {
+            label: entry.label,
+            style,
+            color: line.color,
+            width: line.width,
+            pattern,
+            decoration: line.decoration
+        };
+    }
+
+    getLegendRenderSections(viewOptions = {}) {
+        const view = this.normalizeViewOptions(viewOptions);
+        return Relationship.getLegendSections({
+            showEmotional: view.showEmotionalRelationships
+        }).map(section => ({
+            ...section,
+            title: section.exportTitle,
+            items: section.entries.map(entry => this.getLegendRenderItem(entry)).filter(Boolean)
+        }));
+    }
+
     /**
      * 繪製匯出用的關係圖例
      */
-    drawExportLegend(ctx, x, y) {
+    drawExportLegend(ctx, x, y, viewOptions = {}) {
         const padding = 16;
         const lineHeight = 26;
         const lineWidth = 40;
@@ -3001,76 +3184,13 @@ class GenogramCanvas {
         const sectionGap = 16;
         const columnGap = 32; // 欄位間距
 
-        // 圖例資料 - 分為左右兩欄
-        // [一致化] 顏色與虛線間距以 Relationship.getLineStyle() / DASH_PATTERNS 為準，
-        // 確保匯出圖例 = 側欄圖例 = 畫布實際線條
-        const legendDataLeft = {
-            family: {
-                title: '家庭關係',
-                items: [
-                    { label: '親生子女', style: 'solid', color: '#333333' },
-                    { label: '收養子女', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
-                    { label: '寄養子女', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
-                    { label: '結婚', style: 'solid', color: '#333333' },
-                    { label: '訂婚', style: 'dashed', color: '#333333', pattern: DASH_PATTERNS.engaged },
-                    { label: '同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit },
-                    { label: '法律同居', style: 'dotted', color: '#333333', pattern: DASH_PATTERNS.cohabit, decoration: 'house' },
-                    { label: '事實分居', style: 'solid', color: '#333333', decoration: 'single-slash' },
-                    { label: '法律分居', style: 'solid', color: '#333333', decoration: 'double-slash' },
-                    { label: '離婚', style: 'solid', color: '#333333', decoration: 'divorce-slash' },
-                    { label: '喪偶', style: 'solid', color: '#333333', decoration: 'x' },
-                    { label: '外遇', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged }
-                ]
-            },
-            emotional_pos: {
-                title: '情感關係 (正向)',
-                items: [
-                    { label: '和諧', style: 'solid', color: '#4caf50' },
-                    { label: '愛', style: 'solid', color: '#4caf50', decoration: 'circle' },
-                    { label: '熱戀', style: 'solid', color: '#4caf50', decoration: 'double-circle' },
-                    { label: '親密/友誼', style: 'double', color: '#4caf50' },
-                    { label: '非常親密', style: 'triple', color: '#4caf50' },
-                    { label: '崇拜', style: 'solid', color: '#333333', decoration: 'circle-arrow' },
-                    { label: '關注', style: 'solid', color: '#333333', decoration: 'arrow' }
-                ]
-            }
-        };
-
-        const legendDataRight = {
-            emotional_neg: {
-                title: '情感關係 (負向)',
-                items: [
-                    { label: '冷漠', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged },
-                    { label: '疏離', style: 'dashed', color: '#9e9e9e', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' },
-                    { label: '斷絕', style: 'dashed', color: '#E53935', pattern: DASH_PATTERNS.engaged, decoration: 'double-bar' }, // 紅色斷絕
-                    { label: '衝突', style: 'double', color: '#E53935' }, // Double Red
-                    { label: '仇恨', style: 'triple', color: '#E53935' }, // Triple Red
-                    { label: '敵對', style: 'wave', color: '#E53935' },
-                    { label: '遠距敵對', style: 'wave', color: '#E53935', decoration: 'arrow' },
-                    { label: '親密敵對', style: 'close-hostile', color: '#E53935' },
-
-                    { label: '衝突又親密', style: 'conflict-close', color: '#E53935' }
-                ]
-            },
-            abuse: {
-                title: '虐待/暴力',
-                items: [
-                    { label: '暴力', style: 'zigzag', color: '#007BFF', decoration: 'arrow' },
-                    { label: '虐待', style: 'wave', color: '#007BFF', decoration: 'arrow' },
-                    { label: '身體虐待', style: 'physical-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '情緒虐待', style: 'emotional-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '性虐待', style: 'sexual-abuse', color: '#007BFF', decoration: 'arrow' },
-                    { label: '忽視', style: 'solid', color: '#007BFF', decoration: 'arrow-bar' },
-                    { label: '操控', style: 'solid', color: '#000000', decoration: 'x' },
-                    { label: '控制', style: 'solid', color: '#E53935', decoration: 'box-cross-arrow' }
-                ]
-            }
-        };
+        const sections = this.getLegendRenderSections(viewOptions);
+        const leftSections = sections.filter(section => section.column === 'left');
+        const rightSections = sections.filter(section => section.column === 'right');
 
         // 計算尺寸
-        // 左欄高度
-        const leftItemsCount = legendDataLeft.family.items.length + legendDataLeft.emotional_pos.items.length;
-        const rightItemsCount = legendDataRight.emotional_neg.items.length + legendDataRight.abuse.items.length;
+        const leftItemsCount = leftSections.reduce((total, section) => total + section.items.length, 0);
+        const rightItemsCount = rightSections.reduce((total, section) => total + section.items.length, 0);
 
         const maxItemsPerColumn = Math.max(leftItemsCount + 4, rightItemsCount + 4); // +4 for titles
 
@@ -3091,21 +3211,16 @@ class GenogramCanvas {
         let currentYRight = y + padding;
         const rightX = x + padding + columnWidth + columnGap;
 
-        // --- 左欄繪製 ---
-        // 家庭關係
-        this.drawLegendSection(ctx, legendDataLeft.family, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
-        currentYLeft += (legendDataLeft.family.items.length + 1.5) * lineHeight;
-
-        // 情感正向
-        this.drawLegendSection(ctx, legendDataLeft.emotional_pos, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
-
-        // --- 右欄繪製 ---
-        // 情感負向
-        this.drawLegendSection(ctx, legendDataRight.emotional_neg, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
-        currentYRight += (legendDataRight.emotional_neg.items.length + 1.5) * lineHeight;
-
-        // 虐待暴力
-        this.drawLegendSection(ctx, legendDataRight.abuse, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
+        leftSections.forEach(section => {
+            this.drawLegendSection(ctx, section, x + padding, currentYLeft,
+                lineWidth, lineHeight, titleFontSize, fontSize);
+            currentYLeft += (section.items.length + 1.5) * lineHeight;
+        });
+        rightSections.forEach(section => {
+            this.drawLegendSection(ctx, section, rightX, currentYRight,
+                lineWidth, lineHeight, titleFontSize, fontSize);
+            currentYRight += (section.items.length + 1.5) * lineHeight;
+        });
     }
 
     /**
@@ -3346,10 +3461,538 @@ class GenogramCanvas {
 
 
 
+    _getFamilyRouteSignature(persons, relationships) {
+        const personData = (Array.isArray(persons) ? persons : [])
+            .map(person => [
+                String(person.id), person.x, person.y, person.name || '', person.notes || '',
+                person.twinGroup || '', person.zygosity || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        const relationshipData = (Array.isArray(relationships) ? relationships : [])
+            .map(rel => [
+                String(rel.id), rel.type, rel.fromPersonId, rel.toPersonId,
+                rel.linkType || '', rel.routeMode || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
+    }
+
+    getPersonRouteObstacles(persons) {
+        const obstacles = [];
+        const half = this.personSize / 2;
+        const symbolMargin = 10;
+        const textMargin = 4;
+        this.ctx.save();
+
+        (Array.isArray(persons) ? persons : []).forEach(person => {
+            if (!person || !Number.isFinite(person.x) || !Number.isFinite(person.y)) return;
+            obstacles.push({
+                ownerId: person.id,
+                kind: 'symbol',
+                left: person.x - half - symbolMargin,
+                right: person.x + half + symbolMargin,
+                top: person.y - half - symbolMargin,
+                bottom: person.y + half + symbolMargin
+            });
+
+            if (!person.name) return;
+            const nameTop = person.y + half + 8;
+            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
+            const nameWidth = this.ctx.measureText(person.name).width;
+            obstacles.push({
+                ownerId: person.id,
+                kind: 'text',
+                left: person.x - nameWidth / 2 - textMargin,
+                right: person.x + nameWidth / 2 + textMargin,
+                top: nameTop - textMargin,
+                bottom: nameTop + this.fontSize + textMargin
+            });
+
+            if (!person.notes) return;
+            const noteLines = person.notes.split('\n').filter(line => line.length > 0).slice(0, 2);
+            const noteFontSize = this.fontSize * 0.8;
+            const noteLineHeight = noteFontSize + 2;
+            this.ctx.font = `${noteFontSize}px ${this.fontFamily}`;
+            noteLines.forEach((line, index) => {
+                const lineTop = nameTop + this.fontSize + 4 + index * noteLineHeight;
+                const width = this.ctx.measureText(line).width;
+                obstacles.push({
+                    ownerId: person.id,
+                    kind: 'text',
+                    left: person.x - width / 2 - textMargin,
+                    right: person.x + width / 2 + textMargin,
+                    top: lineTop - textMargin,
+                    bottom: lineTop + noteFontSize + textMargin
+                });
+            });
+        });
+
+        this.ctx.restore();
+        return obstacles;
+    }
+
+    _buildFamilyGroups(familyRels, kinship) {
+        const childParents = new Map();
+        const pairRelIds = new Map();
+        familyRels.forEach(rel => {
+            const normalized = kinship.normalizeParentChild(rel);
+            if (!normalized) return;
+            const { parentId, childId } = normalized;
+            if (!childParents.has(childId)) childParents.set(childId, new Set());
+            childParents.get(childId).add(parentId);
+            const pairKey = `${parentId}\u0000${childId}`;
+            if (!pairRelIds.has(pairKey)) pairRelIds.set(pairKey, []);
+            pairRelIds.get(pairKey).push(rel.id);
+        });
+
+        const familyMap = new Map();
+        Array.from(childParents.keys()).sort().forEach(childId => {
+            const parentIds = Array.from(childParents.get(childId)).sort();
+            const familyKey = parentIds.join('\u0001');
+            if (!familyMap.has(familyKey)) {
+                familyMap.set(familyKey, {
+                    key: familyKey,
+                    parentIds,
+                    childIds: [],
+                    relIds: [],
+                    childToRelIds: {},
+                    pairToRelIds: {}
+                });
+            }
+            const family = familyMap.get(familyKey);
+            family.childIds.push(childId);
+            family.childToRelIds[childId] = [];
+            parentIds.forEach(parentId => {
+                const pairKey = `${parentId}\u0000${childId}`;
+                const ids = [...(pairRelIds.get(pairKey) || [])].sort();
+                family.pairToRelIds[pairKey] = ids;
+                ids.forEach(relId => {
+                    family.childToRelIds[childId].push(relId);
+                    if (!family.relIds.includes(relId)) family.relIds.push(relId);
+                });
+            });
+            family.childToRelIds[childId].sort();
+            family.relIds.sort();
+        });
+        return Array.from(familyMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    }
+
+    _getFamilySource(parentObjs, childObjs, otherRels, obstacles) {
+        const half = this.personSize / 2;
+        const childCenterX = childObjs.reduce((sum, child) => sum + child.x, 0) / childObjs.length;
+        if (parentObjs.length >= 2) {
+            const p1 = parentObjs[0];
+            const p2 = parentObjs[1];
+            const marriageRel = otherRels.find(rel => {
+                const category = typeof rel.getCategory === 'function'
+                    ? rel.getCategory()
+                    : Relationship.getCategory(rel.type);
+                const connects = typeof rel.involvesPerson === 'function'
+                    ? rel.involvesPerson(p1.id) && rel.involvesPerson(p2.id)
+                    : ((rel.fromPersonId === p1.id && rel.toPersonId === p2.id) ||
+                       (rel.fromPersonId === p2.id && rel.toPersonId === p1.id));
+                return category === 'marriage' && connects;
+            });
+
+            if (marriageRel) {
+                const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
+                let minX;
+                let maxX;
+                let y;
+                if (config.isBridge) {
+                    const top1 = p1.getConnectionPoint('top');
+                    const top2 = p2.getConnectionPoint('top');
+                    minX = Math.min(top1.x, top2.x);
+                    maxX = Math.max(top1.x, top2.x);
+                    y = config.bridgeY;
+                } else if (config.isArch) {
+                    minX = Math.min(p1.x, p2.x);
+                    maxX = Math.max(p1.x, p2.x);
+                    y = config.archBarY;
+                } else {
+                    const leftParent = p1.x <= p2.x ? p1 : p2;
+                    const rightParent = p1.x <= p2.x ? p2 : p1;
+                    const leftPort = leftParent.getConnectionPoint('right');
+                    const rightPort = rightParent.getConnectionPoint('left');
+                    minX = Math.min(leftPort.x, rightPort.x);
+                    maxX = Math.max(leftPort.x, rightPort.x);
+                    y = (p1.y + p2.y) / 2;
+                }
+                const desiredX = childObjs.length === 1 ? childObjs[0].x : childCenterX;
+                return {
+                    source: { x: Math.max(minX, Math.min(maxX, desiredX)), y },
+                    sourceRange: { minX, maxX },
+                    sourcePrefix: [],
+                    marriageRel,
+                    virtualPair: false
+                };
+            }
+
+            const midpoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+            return {
+                source: midpoint,
+                sourceRange: { minX: midpoint.x, maxX: midpoint.x },
+                sourcePrefix: [],
+                marriageRel: null,
+                virtualPair: true
+            };
+        }
+
+        const parent = parentObjs[0];
+        const textBoxes = obstacles.filter(rect => rect.ownerId === parent.id && rect.kind === 'text');
+        if (textBoxes.length === 0) {
+            const source = { x: parent.x, y: parent.y + half };
+            return {
+                source,
+                sourceRange: { minX: source.x, maxX: source.x },
+                sourcePrefix: [],
+                marriageRel: null,
+                virtualPair: false
+            };
+        }
+
+        const direction = childCenterX >= parent.x ? 1 : -1;
+        const textEdge = direction > 0
+            ? Math.max(...textBoxes.map(rect => rect.right))
+            : Math.min(...textBoxes.map(rect => rect.left));
+        const outerX = direction > 0
+            ? Math.max(parent.x + half + 10, textEdge + 10)
+            : Math.min(parent.x - half - 10, textEdge - 10);
+        const port = { x: parent.x + direction * half, y: parent.y };
+        const source = { x: outerX, y: parent.y };
+        return {
+            source,
+            sourceRange: { minX: source.x, maxX: source.x },
+            sourcePrefix: [port, source],
+            marriageRel: null,
+            virtualPair: false
+        };
+    }
+
+    _getRelevantFamilyRouteObstacles(obstacles, parentObjs, childObjs, sourceInfo) {
+        const parentY = parentObjs.reduce((sum, person) => sum + person.y, 0) / parentObjs.length;
+        const childY = childObjs.reduce((sum, person) => sum + person.y, 0) / childObjs.length;
+        if (childY < parentY || Math.abs(childY - parentY) < this.personSize) return obstacles;
+
+        const xs = childObjs.map(child => child.x);
+        const ys = childObjs.map(child => child.y - this.personSize / 2);
+        if (sourceInfo.source) {
+            xs.push(sourceInfo.source.x);
+            ys.push(sourceInfo.source.y);
+        }
+        if (sourceInfo.sourceRange) {
+            xs.push(sourceInfo.sourceRange.minX, sourceInfo.sourceRange.maxX);
+        }
+        (sourceInfo.sourcePrefix || []).forEach(point => {
+            xs.push(point.x);
+            ys.push(point.y);
+        });
+        if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) return obstacles;
+
+        const left = Math.min(...xs);
+        const right = Math.max(...xs);
+        const top = Math.min(...ys);
+        const bottom = Math.max(...ys);
+        return obstacles.filter(obstacle =>
+            obstacle.right > left && obstacle.left < right &&
+            obstacle.bottom > top && obstacle.top < bottom
+        );
+    }
+
+    _getRouteObstacleSignature(obstacles) {
+        return JSON.stringify(obstacles
+            .map(obstacle => [
+                String(obstacle.ownerId || ''), obstacle.kind || '',
+                obstacle.left, obstacle.right, obstacle.top, obstacle.bottom
+            ])
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+    }
+
+    _getFamilyPlanCacheSignature(group, parentObjs, childObjs, sourceInfo, obstacles) {
+        const people = [...parentObjs, ...childObjs]
+            .map(person => [
+                String(person.id), person.x, person.y,
+                person.twinGroup || '', person.zygosity || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        return JSON.stringify([
+            this.personSize,
+            group.key,
+            group.childIds,
+            group.relIds,
+            people,
+            sourceInfo.source || null,
+            sourceInfo.sourceRange || null,
+            sourceInfo.sourcePrefix || [],
+            Boolean(sourceInfo.virtualPair),
+            this._getRouteObstacleSignature(obstacles)
+        ]);
+    }
+
+    getFamilyRoutePlans(familyRels, persons, otherRels, kinship = null) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = [...(familyRels || []), ...(otherRels || [])];
+        if (typeof FamilyRoutePlanner === 'undefined') return [];
+        const signature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        if (signature === this._familyRouteSignature && Array.isArray(this._familyRoutePlans)) {
+            return this._familyRoutePlans;
+        }
+        if (!(this.personMap instanceof Map) || allPersons.some(person => !this.personMap.has(person.id))) {
+            this.personMap = new Map(allPersons.map(person => [person.id, person]));
+        }
+        const engine = kinship || new KinshipEngine(allPersons, allRelationships);
+        const obstacles = this.getPersonRouteObstacles(allPersons);
+        const groups = this._buildFamilyGroups(familyRels || [], engine);
+        const relationshipPaths = new Map();
+        const nextFamilyPlanCache = new Map();
+        const allObstacleSignature = this._getRouteObstacleSignature(obstacles);
+
+        const plans = groups.map(group => {
+            const parentObjs = group.parentIds.map(id => this.personMap.get(id)).filter(Boolean);
+            const childObjs = group.childIds.map(id => this.personMap.get(id)).filter(Boolean);
+            if (parentObjs.length === 0 || childObjs.length === 0) return null;
+            const sourceInfo = this._getFamilySource(parentObjs, childObjs, otherRels || [], obstacles);
+            const relevantObstacles = this._getRelevantFamilyRouteObstacles(
+                obstacles, parentObjs, childObjs, sourceInfo
+            );
+            const localSignature = this._getFamilyPlanCacheSignature(
+                group, parentObjs, childObjs, sourceInfo, relevantObstacles
+            );
+            const planInput = {
+                parents: parentObjs,
+                children: childObjs,
+                source: sourceInfo.source,
+                sourceRange: sourceInfo.sourceRange,
+                sourcePrefix: sourceInfo.sourcePrefix,
+                obstacles: relevantObstacles,
+                personSize: this.personSize,
+                margin: 10
+            };
+            const cached = this._familyPlanCache.get(group.key);
+            let plan = null;
+            let cacheSignature = localSignature;
+            if (cached && cached.plan) {
+                const expectedSignature = cached.plan.safe
+                    ? localSignature
+                    : `${localSignature}|${allObstacleSignature}`;
+                if (cached.signature === expectedSignature) {
+                    plan = cached.plan;
+                    cacheSignature = expectedSignature;
+                }
+            }
+            if (!plan) {
+                plan = FamilyRoutePlanner.planFamily(planInput);
+                if (!plan.safe && relevantObstacles.length !== obstacles.length) {
+                    plan = FamilyRoutePlanner.planFamily({ ...planInput, obstacles });
+                }
+                if (!plan.safe) {
+                    cacheSignature = `${localSignature}|${allObstacleSignature}`;
+                }
+            }
+            nextFamilyPlanCache.set(group.key, { signature: cacheSignature, plan });
+            plan.family = {
+                key: group.key,
+                parentIds: [...group.parentIds],
+                childIds: [...group.childIds],
+                relIds: [...group.relIds],
+                childToRelIds: group.childToRelIds,
+                pairToRelIds: group.pairToRelIds,
+                virtualPair: sourceInfo.virtualPair
+            };
+            group.parentIds.forEach(parentId => {
+                group.childIds.forEach(childId => {
+                    const path = plan.relationshipPaths[`${parentId}->${childId}`];
+                    const relIds = group.pairToRelIds[`${parentId}\u0000${childId}`] || [];
+                    if (!path) return;
+                    relIds.forEach(relId => relationshipPaths.set(relId, path.map(point => ({ ...point }))));
+                });
+            });
+            return plan;
+        }).filter(Boolean);
+
+        this._familyPlanCache = nextFamilyPlanCache;
+        this._familyRoutePlans = plans;
+        this._familyRelationshipPaths = relationshipPaths;
+        this._familyRouteSignature = signature;
+        return plans;
+    }
+
+    findSafeFamilyRouteAdjustment(personId, offsets, persons, relationships) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = Array.isArray(relationships) ? relationships : [];
+        const person = this.personMap instanceof Map ? this.personMap.get(personId) : null;
+        if (!person || typeof FamilyRoutePlanner === 'undefined') {
+            return { dx: 0, beforeUnsafe: 0, afterUnsafe: 0 };
+        }
+
+        const familyRels = [];
+        const otherRels = [];
+        allRelationships.forEach(rel => {
+            const category = typeof rel.getCategory === 'function'
+                ? rel.getCategory()
+                : Relationship.getCategory(rel.type);
+            (category === 'family' ? familyRels : otherRels).push(rel);
+        });
+        const engine = new KinshipEngine(allPersons, allRelationships);
+        const unsafeCount = () => this.getFamilyRoutePlans(familyRels, allPersons, otherRels, engine)
+            .filter(plan =>
+                (plan.family.parentIds.includes(personId) || plan.family.childIds.includes(personId)) && !plan.safe
+            ).length;
+
+        const originalX = person.x;
+        const beforeUnsafe = unsafeCount();
+        let best = { dx: 0, beforeUnsafe, afterUnsafe: beforeUnsafe };
+        if (beforeUnsafe > 0) {
+            for (const dx of Array.isArray(offsets) ? offsets : []) {
+                if (!Number.isFinite(dx) || dx === 0) continue;
+                const candidateX = originalX + dx;
+                const occupied = allPersons.some(other =>
+                    other.id !== personId &&
+                    Math.abs(other.x - candidateX) < this.personSize + 10 &&
+                    Math.abs(other.y - person.y) < this.personSize + 10
+                );
+                if (occupied) continue;
+                person.x = candidateX;
+                const candidateUnsafe = unsafeCount();
+                if (candidateUnsafe < best.afterUnsafe) {
+                    best = { dx, beforeUnsafe, afterUnsafe: candidateUnsafe };
+                    if (candidateUnsafe === 0) break;
+                }
+            }
+        }
+
+        person.x = originalX;
+        unsafeCount(); // 還原目前座標對應的繪製／命中快取
+        return best;
+    }
+
+    _getPlannedFamilyRelationshipPath(relationship, allRelationships) {
+        if (typeof FamilyRoutePlanner === 'undefined') return null;
+        const persons = Array.isArray(this.lastPersons) ? this.lastPersons : [];
+        const relationships = Array.isArray(allRelationships) && allRelationships.length > 0
+            ? allRelationships
+            : (Array.isArray(this.lastRelationships) ? this.lastRelationships : []);
+        const signature = this._getFamilyRouteSignature(persons, relationships);
+        if (signature !== this._familyRouteSignature || !this._familyRelationshipPaths.has(relationship.id)) {
+            const familyRels = [];
+            const otherRels = [];
+            relationships.forEach(rel => {
+                const category = typeof rel.getCategory === 'function'
+                    ? rel.getCategory()
+                    : Relationship.getCategory(rel.type);
+                (category === 'family' ? familyRels : otherRels).push(rel);
+            });
+            this.getFamilyRoutePlans(familyRels, persons, otherRels, new KinshipEngine(persons, relationships));
+        }
+        const path = this._familyRelationshipPaths.get(relationship.id);
+        return path ? path.map(point => ({ ...point })) : null;
+    }
+
+    _getFamilyLinkDash(relIds, relById) {
+        let linkType = 'biological';
+        for (const relId of relIds || []) {
+            const rel = relById.get(relId);
+            if (!rel) continue;
+            if (rel.linkType === 'foster') return DASH_PATTERNS.cohabit;
+            if (rel.linkType === 'adopted') linkType = 'adopted';
+        }
+        return linkType === 'adopted' ? DASH_PATTERNS.engaged : DASH_PATTERNS.solid;
+    }
+
+    _strokeFamilyPolyline(points, dash = DASH_PATTERNS.solid) {
+        if (!Array.isArray(points) || points.length < 2) return;
+        this.ctx.setLineDash(dash);
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        for (let index = 1; index < points.length; index++) {
+            this.ctx.lineTo(points[index].x, points[index].y);
+        }
+        this.ctx.stroke();
+    }
+
+    _drawFamilyPlan(plan, relById, selectedRelationshipId) {
+        const family = plan.family;
+        if (family.virtualPair && family.parentIds.length >= 2) {
+            const p1 = this.personMap.get(family.parentIds[0]);
+            const p2 = this.personMap.get(family.parentIds[1]);
+            if (p1 && p2) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#f0f0f0';
+                this._strokeFamilyPolyline([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }], DASH_PATTERNS.fosterLink);
+                this.ctx.restore();
+            }
+        }
+
+        const selectedPath = selectedRelationshipId
+            ? this._familyRelationshipPaths.get(selectedRelationshipId)
+            : null;
+        if (selectedPath && family.relIds.includes(selectedRelationshipId)) {
+            this.ctx.save();
+            this.ctx.strokeStyle = 'rgba(74, 144, 217, 0.3)';
+            this.ctx.lineWidth = 10;
+            this._strokeFamilyPolyline(selectedPath, DASH_PATTERNS.solid);
+            this.ctx.restore();
+        }
+
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 2;
+        const pairwise = plan.mode === 'reversed' || plan.mode === 'same-row';
+        if (pairwise) {
+            family.parentIds.forEach(parentId => {
+                family.childIds.forEach(childId => {
+                    const relIds = family.pairToRelIds[`${parentId}\u0000${childId}`] || [];
+                    const path = plan.relationshipPaths[`${parentId}->${childId}`];
+                    if (relIds.length > 0) this._strokeFamilyPolyline(path, this._getFamilyLinkDash(relIds, relById));
+                });
+            });
+        } else {
+            const singleChildDash = family.childIds.length === 1
+                ? this._getFamilyLinkDash(family.childToRelIds[family.childIds[0]], relById)
+                : DASH_PATTERNS.solid;
+            this._strokeFamilyPolyline(plan.sourcePath, singleChildDash);
+            this._strokeFamilyPolyline(plan.barPath, DASH_PATTERNS.solid);
+            family.childIds.forEach(childId => {
+                this._strokeFamilyPolyline(
+                    plan.childPaths[childId],
+                    this._getFamilyLinkDash(family.childToRelIds[childId], relById)
+                );
+            });
+            plan.twinGroups.forEach(group => {
+                if (group.monoBar) this._strokeFamilyPolyline(group.monoBar, DASH_PATTERNS.solid);
+            });
+        }
+
+        if (selectedPath && family.relIds.includes(selectedRelationshipId)) {
+            this.ctx.save();
+            this.ctx.strokeStyle = '#4a90d9';
+            this.ctx.lineWidth = 4;
+            this._strokeFamilyPolyline(selectedPath, DASH_PATTERNS.solid);
+            this.ctx.restore();
+        }
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
+    }
+
     /**
-     * 繪製家庭樹狀結構 (親子關係)
+     * 繪製家庭樹狀結構；正式路徑由 FamilyRoutePlanner 統一計算。
      */
     drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
+        if (typeof FamilyRoutePlanner === 'undefined') {
+            return this._drawFamiliesLegacy(familyRels, persons, otherRels, selectedRelationshipId, kinship);
+        }
+        const engine = kinship || new KinshipEngine(persons, [...familyRels, ...otherRels]);
+        const relById = new Map(familyRels.map(rel => [rel.id, rel]));
+        const plans = this.getFamilyRoutePlans(familyRels, persons, otherRels, engine);
+        this.ctx.save();
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+        plans.forEach(plan => this._drawFamilyPlan(plan, relById, selectedRelationshipId));
+        this.ctx.restore();
+    }
+
+    /**
+     * 舊版家庭幾何只保留為依賴載入失敗時的降級路徑。
+     */
+    _drawFamiliesLegacy(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {
         // 若未提供 kinship（例如外部直接呼叫），就地建立以保持函式可獨立使用
         if (!kinship) kinship = new KinshipEngine(persons, familyRels);
         // [Phase 1] relId -> relationship，供推導每個子女的 linkType（親生/收養/寄養）以決定下行線型
@@ -4413,6 +5056,9 @@ class GenogramCanvas {
         }
 
         if (category === 'family') {
+            const plannedPath = this._getPlannedFamilyRelationshipPath(relationship, allRelationships);
+            if (plannedPath) return plannedPath;
+
             // 親子關係：使用與 drawFamilies 對齊的路徑，避免「只有小段能點」問題
             // 方向 (parent/child) 由資料決定 (from=parent, to=child)，不看 Y 座標
             const fallbackFamilyPath = () => {
