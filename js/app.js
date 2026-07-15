@@ -1985,7 +1985,7 @@ class GenogramApp {
         const halfGap = placement.gap / 2;
         const fatherId = '__placement_father__';
         const motherId = '__placement_mother__';
-        const session = this.beginPlacement({ kind: 'parent-pair', basePersonId: child.id,
+        const request = { kind: 'parent-pair', basePersonId: child.id,
             people: [
                 { personId: fatherId, gender: 'male', generation: this.getGenerationAbove(child.generation), x: centerX - halfGap, y: parentY },
                 { personId: motherId, gender: 'female', generation: this.getGenerationAbove(child.generation), x: centerX + halfGap, y: parentY }
@@ -1995,20 +1995,28 @@ class GenogramApp {
                 { type: 'parent-child', fromPersonId: fatherId, toPersonId: child.id },
                 { type: 'parent-child', fromPersonId: motherId, toPersonId: child.id }
             ]
-        });
+        };
+        if (placement.existingPersonAdjustment) {
+            request.existingPersonAdjustment = placement.existingPersonAdjustment;
+        }
+        const session = this.beginPlacement(request);
+        if (placement.existingPersonAdjustment) {
+            this.updateStatus('父母位置受阻，確認後會將此人物向外微調', 'info');
+        }
         this.render();
         return session;
     }
 
-    isQuickParentPairSafe(centerX, parentY, gap, child) {
+    isQuickParentPairSafe(centerX, parentY, gap, child, obstaclePersons = this.persons) {
         if (!Number.isFinite(centerX) || !Number.isFinite(parentY) || !Number.isFinite(gap) || !child) return false;
         const personSize = this.canvas?.personSize || 50;
         const half = personSize / 2;
         const safety = 10;
         const candidateHalf = half + safety;
         const parentXs = [centerX - gap / 2, centerX + gap / 2];
+        const routePersons = Array.isArray(obstaclePersons) ? obstaclePersons : this.persons;
         const obstacles = typeof this.canvas?.getPersonRouteObstacles === 'function'
-            ? this.canvas.getPersonRouteObstacles(this.persons)
+            ? this.canvas.getPersonRouteObstacles(routePersons)
             : [];
         const overlaps = (a, b) =>
             a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -2043,11 +2051,83 @@ class GenogramApp {
         return routePlan.safe;
     }
 
+    findQuickParentPairChildAdjustment(child, parentY, gap) {
+        const grid = GenogramApp.GRID;
+        const spouses = this.getSpouses(child.id).filter(spouse =>
+            Math.abs(spouse.y - child.y) < grid.CELL_HEIGHT * 0.5);
+        const spouse = this.pickSpouseForChildCreation(child, spouses);
+        if (!spouse || spouse.x === child.x) return null;
+
+        const spouseParentIds = new Set(this.getKinshipEngine().getParentIds(spouse.id));
+        if (spouseParentIds.size < 2) return null;
+
+        const personSize = this.canvas?.personSize || 50;
+        const candidateHalf = personSize / 2 + 10;
+        const obstacles = typeof this.canvas?.getPersonRouteObstacles === 'function'
+            ? this.canvas.getPersonRouteObstacles(this.persons)
+            : [];
+        const overlaps = (a, b) =>
+            a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        const rectAt = (x, y) => ({
+            left: x - candidateHalf,
+            right: x + candidateHalf,
+            top: y - candidateHalf,
+            bottom: y + candidateHalf
+        });
+        const centeredParentXs = [child.x - gap / 2, child.x + gap / 2];
+        const blockedBySpouseParent = centeredParentXs.some(x =>
+            obstacles.some(obstacle => spouseParentIds.has(obstacle.ownerId) &&
+                overlaps(rectAt(x, parentY), obstacle)));
+        if (!blockedBySpouseParent) return null;
+
+        const direction = child.x < spouse.x ? -1 : 1;
+        const distances = [];
+        for (let distance = grid.CELL_WIDTH / 2; distance < grid.CELL_WIDTH; distance += 10) {
+            distances.push(distance);
+        }
+        distances.push(grid.CELL_WIDTH);
+
+        for (const distance of distances) {
+            const targetX = child.x + direction * distance;
+            const childRect = rectAt(targetX, child.y);
+            const destinationFree = obstacles.every(obstacle =>
+                obstacle.ownerId === child.id || !overlaps(childRect, obstacle));
+            if (!destinationFree) continue;
+
+            const virtualChild = { ...child, x: targetX, y: child.y };
+            const obstaclePeople = this.persons.map(person =>
+                person.id === child.id ? virtualChild : person);
+            if (!this.isQuickParentPairSafe(targetX, parentY, gap, virtualChild, obstaclePeople)) continue;
+
+            return {
+                personId: child.id,
+                from: { x: child.x, y: child.y },
+                to: { x: targetX, y: child.y }
+            };
+        }
+        return null;
+    }
+
     findQuickParentPairPlacement(child) {
         const grid = GenogramApp.GRID;
         const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
         const standardGap = grid.CELL_WIDTH;
-        const offsets = [0];
+        if (this.isQuickParentPairSafe(child.x, parentY, standardGap, child)) {
+            return { centerX: child.x, parentY, gap: standardGap };
+        }
+
+        const existingPersonAdjustment = this.findQuickParentPairChildAdjustment(
+            child, parentY, standardGap);
+        if (existingPersonAdjustment) {
+            return {
+                centerX: existingPersonAdjustment.to.x,
+                parentY,
+                gap: standardGap,
+                existingPersonAdjustment
+            };
+        }
+
+        const offsets = [];
         for (let distance = 1; distance <= this.persons.length + 4; distance++) {
             offsets.push(-distance * grid.CELL_WIDTH, distance * grid.CELL_WIDTH);
         }
@@ -4554,6 +4634,17 @@ class GenogramApp {
                 ...person, id: person.personId, x: person.x, y: person.y
             }));
         }
+        const adjustment = request.existingPersonAdjustment;
+        if (adjustment && this.placementSession.ghostPeople) {
+            const existingPerson = this.personMap.get(adjustment.personId);
+            if (existingPerson) {
+                this.placementSession.ghostPeople.push({
+                    ...existingPerson,
+                    x: adjustment.to.x,
+                    y: adjustment.to.y
+                });
+            }
+        }
         this.updateStatus('請選擇新增人物的位置', 'info');
         return this.placementSession;
     }
@@ -4611,7 +4702,13 @@ class GenogramApp {
             return null;
         }
         if (session.request.people) {
+            const adjustment = session.request.existingPersonAdjustment;
             this.saveState();
+            if (adjustment) {
+                const adjustedPerson = this.personMap.get(adjustment.personId);
+                adjustedPerson.x = adjustment.to.x;
+                adjustedPerson.y = adjustment.to.y;
+            }
             const idMap = new Map();
             session.request.people.forEach(spec => {
                 const dx = session.candidate.x - session.request.people[0].x;
