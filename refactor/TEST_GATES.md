@@ -56,7 +56,7 @@
 
 ## 驗收記錄
 - 測試日期：2026-07-15
-- 測試版本：`codex/view-controls-release-hardening`
+- 測試版本：`codex/desktop-rwd-line-legend-polish`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：21 支 `verify_*.js` 全數通過；Golden 16/16、三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過。200 人／384 關係 warm 平均 1.85ms、P95 2.58ms、pan/zoom 60.5 FPS，cold first-render 最大 321.7ms。
+- 備註：22 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。
