@@ -4445,6 +4445,9 @@ class GenogramApp {
     updatePlacement(x, y, bypassSnap = false) {
         if (!this.placementSession) return null;
         const originalRequest = this.placementSession.request;
+        if (originalRequest.kind === 'parent-pair') {
+            return this.placementSession.candidate;
+        }
         const request = originalRequest.kind === 'person' && !originalRequest.basePersonId
             ? { ...originalRequest, x, y }
             : { ...originalRequest, pointerX: x };
