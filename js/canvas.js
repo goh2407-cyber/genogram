@@ -368,8 +368,8 @@ class GenogramCanvas {
             this.drawSelectionBox(boxSelectStart, boxSelectEnd);
         }
 
-        // 8. 繪製快速新增按鈕（選取角色後才顯示，不再 hover 顯示；拖曳中隱藏避免與對齊輔助線重疊）
-        if (selectedId && !this.isDragging) {
+        // 8. 繪製快速新增按鈕（拖曳或格位預覽中隱藏，避免遮住人物與預覽線）
+        if (selectedId && !this.isDragging && !this.placementPreview) {
             const selPerson = this.personMap.get(selectedId);
             if (selPerson) {
                 this.drawQuickAddButtons(selPerson);

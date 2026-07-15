@@ -1972,19 +1972,18 @@ class GenogramApp {
     findQuickParentPairPlacement(child) {
         const grid = GenogramApp.GRID;
         const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
+        const standardGap = grid.CELL_WIDTH;
         const offsets = [0];
         for (let distance = 1; distance <= this.persons.length + 4; distance++) {
             offsets.push(-distance * grid.CELL_WIDTH, distance * grid.CELL_WIDTH);
         }
         for (const offset of offsets) {
             const centerX = child.x + offset;
-            for (const gap of [grid.CELL_WIDTH, grid.CELL_WIDTH * 1.5]) {
-                if (this.isQuickParentPairSafe(centerX, parentY, gap, child)) {
-                    return { centerX, parentY, gap };
-                }
+            if (this.isQuickParentPairSafe(centerX, parentY, standardGap, child)) {
+                return { centerX, parentY, gap: standardGap };
             }
         }
-        return { centerX: child.x, parentY, gap: grid.CELL_WIDTH };
+        return { centerX: child.x, parentY, gap: standardGap };
     }
 
     /**
@@ -4495,13 +4494,12 @@ class GenogramApp {
         if (session.request.people) {
             this.saveState();
             const idMap = new Map();
-            session.request.people.forEach((spec, index) => {
+            session.request.people.forEach(spec => {
                 const dx = session.candidate.x - session.request.people[0].x;
                 const dy = session.candidate.y - session.request.people[0].y;
                 const person = new Person({ ...spec, x: spec.x + dx, y: spec.y + dy });
                 this.persons.push(person); this.personMap.set(person.id, person);
                 idMap.set(spec.personId, person.id);
-                if (index === 0) this.selectedPersonId = person.id;
             });
             previews.forEach(preview => this.relationships.push(new Relationship({
                 ...preview,
@@ -4509,7 +4507,9 @@ class GenogramApp {
                 toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
             })));
             this.placementSession = null;
+            this.selectedPersonId = null;
             this.selectedPersonIds = [];
+            this.selectedRelationshipId = null;
             this.setTool('select'); this.autoSave(); this.render();
             this.updateStatus('已建立父母（父親 + 母親 + 婚姻線 + 親子線）', 'success');
             return session;

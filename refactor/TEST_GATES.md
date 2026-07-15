@@ -37,7 +37,7 @@
 - `node refactor/verify_family_route_planner.js`：純規劃器所有 fixture 通過，無 `NaN`／`Infinity`。
 - `node refactor/verify_family_routing.js`：畫面、命中、鉛筆與匯出共用相同家庭路徑；未變更的 render 不重算，遠方人物不進入局部障礙集合，移動一個家庭只重算受影響家庭。
 - `node refactor/verify_drag.js`：無安全路徑時水平校正不超過 60px；`Alt` 保留精確落點；一次 Undo 完整復原。
-- `node refactor/verify_placement.js`：快速父母使用 120／180px 剛性間距，既有人物座標不變。
+- `node refactor/verify_placement.js`：快速父母固定使用 120px 系統格距；受阻時整組平移、既有人物座標不變；預覽保留 V 字，提交後清除暫時選取。
 - `Relationship.getLineStyle()`、`DASH_PATTERNS` 與臨床符號顏色／幾何不得因走線功能修改。
 - 根目錄、`geno/`、`refactor/app/` 的所有 `js/` 檔案 MD5 必須一致。
 - 三份 `index.html` 都必須在 `kinship-engine.js` 後、`canvas.js` 前載入 `family-route-planner.js`；`geno/index.html` 保留本地字型與 vendor 路徑，並通過完全離線驗證。
