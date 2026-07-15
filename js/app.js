@@ -146,6 +146,7 @@ class GenogramApp {
         this.cacheElements();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        this.renderRelationshipLegend();
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
         this._canvasFontSignature = null;
@@ -248,6 +249,61 @@ class GenogramApp {
         });
         document.querySelectorAll('[data-inspector-panel]').forEach(panel => {
             panel.hidden = panel.dataset.inspectorPanel !== next;
+        });
+    }
+
+    renderRelationshipLegend() {
+        const container = document.getElementById('legendContent');
+        if (!container || typeof Relationship.getLegendSections !== 'function') return;
+        const knownTypes = new Set(Object.values(Relationship.TYPES));
+        const sections = Relationship.getLegendSections();
+        const sectionCounts = sections.reduce((counts, section) => {
+            counts.set(section.groupId, (counts.get(section.groupId) || 0) + 1);
+            return counts;
+        }, new Map());
+        const groups = new Map();
+        container.replaceChildren();
+
+        sections.forEach(section => {
+            let group = groups.get(section.groupId);
+            if (!group) {
+                group = document.createElement('section');
+                group.className = 'legend-group';
+                group.dataset.legendGroup = section.groupId;
+                const heading = document.createElement('h4');
+                heading.className = 'legend-group-title';
+                heading.textContent = section.groupTitle;
+                group.appendChild(heading);
+                groups.set(section.groupId, group);
+                container.appendChild(group);
+            }
+
+            const sectionElement = document.createElement('div');
+            sectionElement.className = 'legend-subcategory';
+            sectionElement.dataset.legendSection = section.id;
+            if ((sectionCounts.get(section.groupId) || 0) > 1) {
+                const subheading = document.createElement('h5');
+                subheading.className = 'legend-subcategory-title';
+                subheading.textContent = section.title;
+                sectionElement.appendChild(subheading);
+            }
+
+            section.entries.forEach(entry => {
+                if (!knownTypes.has(entry.type)) return;
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.dataset.legendType = entry.type;
+                if (entry.linkType) item.dataset.legendLinkType = entry.linkType;
+                const sample = document.createElement('span');
+                sample.classList.add('legend-line', entry.legendClass);
+                sample.setAttribute('aria-hidden', 'true');
+                const label = document.createElement('span');
+                label.className = 'legend-label';
+                label.textContent = entry.label;
+                item.append(sample, label);
+                sectionElement.appendChild(item);
+            });
+            group.appendChild(sectionElement);
         });
     }
 

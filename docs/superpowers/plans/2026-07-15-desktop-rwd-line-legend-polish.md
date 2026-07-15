@@ -13,7 +13,7 @@
 - 不改人物符號、案主灰底、死亡 X、生育結果符號或任何臨床關係語意。
 - 不改 `Relationship.getLineStyle()` 的 `color`、`width`、`pattern`、`decoration`。
 - 不改 `DASH_PATTERNS`、wave／zigzag、箭頭、斜線、圓、房屋、X 等繪法。
-- 不改現有 40×14px `.legend-line` SVG data URI。基線 SHA-256：`e5ea6c3faf6016d975b4948bb4093a03d16526d9d36bc2dc7b2926a60e1b9b88`。
+- 不改現有 40×14px `.legend-line` SVG data URI。只雜湊 `.legend-line` 規則集合的基線 SHA-256：`10401936d761d5fc515ceaea8c76ecce921d28c2a523af997e2d5d426b492c80`。
 - `getLineStyle()` 函式基線 SHA-256：`39965b588e39143742f8da07d6587cdcea00b0c97b24dc0b718a068d08eb65eb`。
 - `DASH_PATTERNS` 基線 SHA-256：`0d4daad95281fa3eb9693cffffc38209574248f52a746b2f411c73349267f0ff`。
 - 不做 1024px 以下的手機重排；根版面 `min-width: 1024px`，窄於 1024px 時允許水平捲動。
@@ -344,7 +344,7 @@ const hash = text => crypto.createHash('sha256')
 
 ```js
 check('40x14 legend SVG source is unchanged', legendCssHash ===
-    'e5ea6c3faf6016d975b4948bb4093a03d16526d9d36bc2dc7b2926a60e1b9b88');
+    '10401936d761d5fc515ceaea8c76ecce921d28c2a523af997e2d5d426b492c80');
 check('Relationship.getLineStyle is unchanged', lineStyleHash ===
     '39965b588e39143742f8da07d6587cdcea00b0c97b24dc0b718a068d08eb65eb');
 check('DASH_PATTERNS is unchanged', dashHash ===

@@ -731,30 +731,44 @@ body {
    關係圖例
    =================================== */
 .legend-content {
-    padding: 12px 16px;
+    display: grid;
+    gap: 18px;
+    padding: 14px 16px 18px;
 }
 
-.legend-category {
-    margin-bottom: 16px;
+.legend-group {
+    display: grid;
+    gap: 8px;
 }
 
-.legend-category:last-child {
-    margin-bottom: 0;
-}
-
-.legend-category h4 {
+.legend-group-title {
+    margin: 0;
+    padding-bottom: 6px;
     font-size: 12px;
     font-weight: 700;
     color: var(--text-secondary);
-    margin-bottom: 6px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--border-light);
+    border-bottom: 1px solid var(--line-ui);
+}
+
+.legend-subcategory {
+    display: grid;
+    gap: 2px;
+}
+
+.legend-subcategory-title {
+    margin: 5px 0 2px;
+    color: var(--ink-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
 }
 
 .legend-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
     align-items: center;
-    gap: 12px;
+    column-gap: 12px;
+    min-height: 30px;
     padding: 4px 6px;
     margin: 0 -6px;
     font-size: 13px;
@@ -763,8 +777,8 @@ body {
 }
 
 .legend-item:hover {
-    background: #fff;
-    box-shadow: var(--shadow-sm);
+    background: var(--surface-subtle);
+    box-shadow: none;
 }
 
 /* ===================================

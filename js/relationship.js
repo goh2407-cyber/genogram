@@ -55,6 +55,97 @@ class Relationship {
         ADMIRATION: 'admiration'                 // 崇拜
     };
 
+    static freezeLegendSections(sections) {
+        return Object.freeze(sections.map(section => Object.freeze({
+            ...section,
+            entries: Object.freeze(section.entries.map(entry => Object.freeze({ ...entry })))
+        })));
+    }
+
+    static LEGEND_SECTIONS = Relationship.freezeLegendSections([
+        {
+            id: 'family',
+            groupId: 'family',
+            groupTitle: '家庭與伴侶',
+            title: '家庭與伴侶',
+            exportTitle: '家庭與伴侶',
+            column: 'left',
+            entries: [
+                { type: 'parent-child', linkType: 'biological', label: '親生子女', legendClass: 'parent-child' },
+                { type: 'parent-child', linkType: 'adopted', label: '收養子女', legendClass: 'parent-child-adopted' },
+                { type: 'parent-child', linkType: 'foster', label: '寄養子女', legendClass: 'parent-child-foster' },
+                { type: 'married', label: '結婚', legendClass: 'married' },
+                { type: 'engaged', label: '訂婚', legendClass: 'engaged' },
+                { type: 'cohabiting', label: '同居', legendClass: 'cohabiting' },
+                { type: 'legal-cohabiting', label: '法律同居', legendClass: 'legal-cohabiting' },
+                { type: 'separated', label: '事實分居', legendClass: 'separated' },
+                { type: 'legal-separated', label: '法律分居', legendClass: 'legal-separated' },
+                { type: 'divorced', label: '離婚', legendClass: 'divorced' },
+                { type: 'widowed', label: '喪偶', legendClass: 'widowed' },
+                { type: 'affair', label: '外遇', legendClass: 'affair' }
+            ]
+        },
+        {
+            id: 'emotional-positive',
+            groupId: 'emotional',
+            groupTitle: '情感關係',
+            title: '正向',
+            exportTitle: '情感關係（正向）',
+            column: 'left',
+            entries: [
+                ['harmony', '和諧'],
+                ['love', '愛'],
+                ['in-love', '熱戀'],
+                ['close', '親密/友誼'],
+                ['very-close', '非常親密'],
+                ['admiration', '崇拜'],
+                ['focused', '關注']
+            ].map(([type, label]) => ({ type, label, legendClass: type }))
+        },
+        {
+            id: 'emotional-negative',
+            groupId: 'emotional',
+            groupTitle: '情感關係',
+            title: '負向',
+            exportTitle: '情感關係（負向）',
+            column: 'right',
+            entries: [
+                ['indifferent', '冷漠'],
+                ['distant', '疏離'],
+                ['cutoff', '斷絕'],
+                ['conflict', '衝突'],
+                ['hate', '仇恨'],
+                ['hostile', '敵對'],
+                ['distant-hostile', '遠距敵對'],
+                ['close-hostile', '親密敵對'],
+                ['conflict-close', '衝突又親密']
+            ].map(([type, label]) => ({ type, label, legendClass: type }))
+        },
+        {
+            id: 'special',
+            groupId: 'special',
+            groupTitle: '暴力與特殊關係',
+            title: '暴力與特殊關係',
+            exportTitle: '暴力與特殊關係',
+            column: 'right',
+            entries: [
+                ['violence', '暴力'],
+                ['abuse', '虐待'],
+                ['physical-abuse', '身體虐待'],
+                ['emotional-abuse', '情緒虐待'],
+                ['sexual-abuse', '性虐待'],
+                ['neglect', '忽視'],
+                ['manipulative', '操控'],
+                ['controlling', '控制']
+            ].map(([type, label]) => ({ type, label, legendClass: type }))
+        }
+    ]);
+
+    static getLegendSections({ showEmotional = true } = {}) {
+        return Relationship.LEGEND_SECTIONS.filter(section =>
+            showEmotional || section.groupId !== 'emotional');
+    }
+
     static ABUSE_DISPLAY_TYPES = new Set([
         'violence', 'abuse', 'physical-abuse', 'emotional-abuse',
         'sexual-abuse', 'neglect', 'manipulative', 'controlling'
