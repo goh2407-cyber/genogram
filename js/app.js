@@ -5053,7 +5053,9 @@ class GenogramApp {
      */
     async exportPNG(showNotes = true, showLegend = true, scale = 3) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
+            this.viewOptions);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -5161,7 +5163,9 @@ class GenogramApp {
      */
     async exportJPEG(showNotes = true, showLegend = true, scale = 3) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale);
+        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships,
+            this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale,
+            this.viewOptions);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -5177,7 +5181,9 @@ class GenogramApp {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
+            this.viewOptions);
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -5206,7 +5212,9 @@ class GenogramApp {
      */
     async exportPDF(showNotes = true, showLegend = true, scale = 3) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
+        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
+            this.viewOptions);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -5304,7 +5312,9 @@ class GenogramApp {
                 }
             }
 
-            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
+            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
+                this.viewOptions);
             if (!dataUrl) {
                 this.updateStatus('產生圖片失敗', 'error');
                 return;

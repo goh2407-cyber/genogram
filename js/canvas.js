@@ -1035,19 +1035,12 @@ class GenogramCanvas {
     }
 
     /**
-     * 匯出專用的人物繪製 (可選擇是否繪製備註)
+     * 匯出專用的人物繪製
      * @param {Object} person - 人物物件
-     * @param {boolean} showNotes - 是否顯示備註
+     * @param {Object} viewOptions - 顯示策略
      */
-    drawPersonForExport(person, showNotes = true) {
-        // 如果不顯示備註，暫時清空 notes 然後重宫
-        const originalNotes = person.notes;
-        if (!showNotes) {
-            person.notes = '';
-        }
-        this.drawPerson(person, false, false, false);
-        // 還原
-        person.notes = originalNotes;
+    drawPersonForExport(person, viewOptions = {}) {
+        this.drawPerson(person, false, false, false, viewOptions);
     }
 
     /**
@@ -2827,10 +2820,24 @@ class GenogramCanvas {
 
 
 
+    getVisibleExportData(persons, relationships, households = [], lifeCircles = [], viewOptions = {}) {
+        const view = this.normalizeViewOptions(viewOptions);
+        return {
+            persons,
+            relationships: relationships.filter(rel => view.showEmotionalRelationships
+                || !Relationship.isEmotionalDisplayType(rel.type)),
+            households: view.showHouseholds ? households : [],
+            lifeCircles: view.showLifeCircles ? lifeCircles : [],
+            viewOptions: view
+        };
+    }
+
     /**
      * 計算內容邊界 (包含所有人物、關係、同住框、生活圈)
      */
-    _calculateContentBounds(persons, relationships, households, lifeCircles) {
+    _calculateContentBounds(persons, relationships, households, lifeCircles,
+        viewOptions = {}, allRelationships = relationships) {
+        const view = this.normalizeViewOptions(viewOptions);
         // [Fix] 不再因 persons 為空提前 return：
         // 純生活圈/同住框的畫布也要能匯出（最後以 Infinity 檢查是否真的全空）
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2841,7 +2848,11 @@ class GenogramCanvas {
             minX = Math.min(minX, p.x - halfSize);
             minY = Math.min(minY, p.y - halfSize);
             maxX = Math.max(maxX, p.x + halfSize);
-            maxY = Math.max(maxY, p.y + halfSize + 30); // 留點空間給名字
+            maxY = Math.max(maxY, p.y + halfSize);
+            const text = this.getPersonTextLayout(p, view);
+            const textHeight = (text.name ? this.fontSize + 4 : 0)
+                + text.noteLines.length * (this.fontSize * .8 + 2);
+            if (textHeight > 0) maxY = Math.max(maxY, text.nameY + textHeight);
         });
 
         // 2. 同住家庭
@@ -2881,7 +2892,7 @@ class GenogramCanvas {
                 if (fromPerson && toPerson) {
                     // 使用相同的 getRelationshipPath 邏輯來取得所有路徑點
                     // 注意：這裡傳入 relationships 是為了正確計算 offset和天橋配置
-                    const points = this.getRelationshipPath(fromPerson, toPerson, rel, relationships);
+                    const points = this.getRelationshipPath(fromPerson, toPerson, rel, allRelationships);
                     points.forEach(pt => {
                         minX = Math.min(minX, pt.x);
                         minY = Math.min(minY, pt.y);
@@ -2917,8 +2928,17 @@ class GenogramCanvas {
      * @param {boolean} showLegend - 是否顯示關係類型圖例
      * @param {number} scale - 匯出縮放倍率 (解析度)
      */
-    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true, showLegend = true, scale = 3) {
-        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+    exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true,
+        showLegend = true, scale = 3, viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        const effectiveView = {
+            ...visible.viewOptions,
+            showNotes: visible.viewOptions.showNotes && showNotes
+        };
+        const bounds = this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            effectiveView, relationships);
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
@@ -2928,7 +2948,7 @@ class GenogramCanvas {
         // 如果不顯示圖例，寬度設為 0
         const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = 850;
+        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
 
         // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
@@ -2955,18 +2975,18 @@ class GenogramCanvas {
         this.ctx.translate(-minX, -minY);
 
         // 1. 先繪製生活圈 (最最底層)
-        if (lifeCircles && lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(lifeCircles);
+        if (visible.lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(visible.lifeCircles);
         }
 
         // 1.5 繪製同住家庭
-        if (households && households.length > 0) {
-            this.drawHouseholds(households, persons, relationships, false, null);
+        if (visible.households.length > 0) {
+            this.drawHouseholds(visible.households, persons, relationships, false, null);
         }
 
         // 2. 繪製親子關係
-        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
-        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
+        const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
         this.drawFamilies(familyRels, persons, otherRels);
 
@@ -2980,8 +3000,8 @@ class GenogramCanvas {
         });
 
         // 3.5 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
-        if (showNotes) {
-            relationships.forEach(rel => {
+        if (effectiveView.showNotes) {
+            visible.relationships.forEach(rel => {
                 const fromPerson = this.personMap.get(rel.fromPersonId);
                 const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -2992,7 +3012,7 @@ class GenogramCanvas {
 
         // 4. 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPersonForExport(person, showNotes);
+            this.drawPersonForExport(person, effectiveView);
         });
 
         this.ctx.restore();
@@ -3001,7 +3021,7 @@ class GenogramCanvas {
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = (totalHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
         // 還原 context
@@ -3022,8 +3042,17 @@ class GenogramCanvas {
      * @param {number} scale - 匯出縮放倍率
      * @returns {string|null} - Data URL 或 null
      */
-    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92, showNotes = true, showLegend = true, scale = 3) {
-        const bounds = this._calculateContentBounds(persons, relationships, households, lifeCircles);
+    exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92,
+        showNotes = true, showLegend = true, scale = 3, viewOptions = {}) {
+        const visible = this.getVisibleExportData(
+            persons, relationships, households, lifeCircles, viewOptions);
+        const effectiveView = {
+            ...visible.viewOptions,
+            showNotes: visible.viewOptions.showNotes && showNotes
+        };
+        const bounds = this._calculateContentBounds(
+            visible.persons, visible.relationships, visible.households, visible.lifeCircles,
+            effectiveView, relationships);
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
@@ -3031,7 +3060,7 @@ class GenogramCanvas {
 
         const legendWidth = showLegend ? 440 : 0;
         const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = 850;
+        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
 
         const totalWidth = contentWidth + legendWidth + legendPadding;
         const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
@@ -3054,16 +3083,16 @@ class GenogramCanvas {
         this.ctx.translate(-minX, -minY);
 
         // 繪製生活圈
-        if (lifeCircles && lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(lifeCircles);
+        if (visible.lifeCircles.length > 0) {
+            this.drawLifeCirclesExport(visible.lifeCircles);
         }
 
-        if (households && households.length > 0) {
-            this.drawHouseholds(households, persons, relationships, false, null);
+        if (visible.households.length > 0) {
+            this.drawHouseholds(visible.households, persons, relationships, false, null);
         }
 
-        const familyRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
-        const otherRels = relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
+        const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
+        const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
         this.drawFamilies(familyRels, persons, otherRels);
 
@@ -3076,8 +3105,8 @@ class GenogramCanvas {
         });
 
         // 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
-        if (showNotes) {
-            relationships.forEach(rel => {
+        if (effectiveView.showNotes) {
+            visible.relationships.forEach(rel => {
                 const fromPerson = this.personMap.get(rel.fromPersonId);
                 const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -3088,7 +3117,7 @@ class GenogramCanvas {
 
         // 繪製人物 (備註根據 showNotes 決定)
         persons.forEach(person => {
-            this.drawPersonForExport(person, showNotes);
+            this.drawPersonForExport(person, effectiveView);
         });
 
         this.ctx.restore();
@@ -3096,7 +3125,7 @@ class GenogramCanvas {
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = (totalHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
         this.ctx = originalCtx;
@@ -3107,7 +3136,8 @@ class GenogramCanvas {
     /**
      * 繪製匯出用的關係圖例
      */
-    drawExportLegend(ctx, x, y) {
+    drawExportLegend(ctx, x, y, viewOptions = {}) {
+        const view = this.normalizeViewOptions(viewOptions);
         const padding = 16;
         const lineHeight = 26;
         const lineWidth = 40;
@@ -3184,8 +3214,11 @@ class GenogramCanvas {
 
         // 計算尺寸
         // 左欄高度
-        const leftItemsCount = legendDataLeft.family.items.length + legendDataLeft.emotional_pos.items.length;
-        const rightItemsCount = legendDataRight.emotional_neg.items.length + legendDataRight.abuse.items.length;
+        const showEmotional = view.showEmotionalRelationships;
+        const leftItemsCount = legendDataLeft.family.items.length
+            + (showEmotional ? legendDataLeft.emotional_pos.items.length : 0);
+        const rightItemsCount = legendDataRight.abuse.items.length
+            + (showEmotional ? legendDataRight.emotional_neg.items.length : 0);
 
         const maxItemsPerColumn = Math.max(leftItemsCount + 4, rightItemsCount + 4); // +4 for titles
 
@@ -3212,12 +3245,16 @@ class GenogramCanvas {
         currentYLeft += (legendDataLeft.family.items.length + 1.5) * lineHeight;
 
         // 情感正向
-        this.drawLegendSection(ctx, legendDataLeft.emotional_pos, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
+        if (showEmotional) {
+            this.drawLegendSection(ctx, legendDataLeft.emotional_pos, x + padding, currentYLeft, lineWidth, lineHeight, titleFontSize, fontSize);
+        }
 
         // --- 右欄繪製 ---
         // 情感負向
-        this.drawLegendSection(ctx, legendDataRight.emotional_neg, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
-        currentYRight += (legendDataRight.emotional_neg.items.length + 1.5) * lineHeight;
+        if (showEmotional) {
+            this.drawLegendSection(ctx, legendDataRight.emotional_neg, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
+            currentYRight += (legendDataRight.emotional_neg.items.length + 1.5) * lineHeight;
+        }
 
         // 虐待暴力
         this.drawLegendSection(ctx, legendDataRight.abuse, rightX, currentYRight, lineWidth, lineHeight, titleFontSize, fontSize);
