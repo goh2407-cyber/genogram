@@ -417,20 +417,26 @@ function assert(name, condition, detail = '') {
             base=reset(); const blocker=new Person({id:'occupied',x:base.x+g.CELL_WIDTH,y:base.y}); app.persons.push(blocker);app.personMap.set(blocker.id,blocker);const before=app.persons.map(p=>[p.id,p.x,p.y]);app.handleQuickAddClick(base,'partner');app.createQuickPersonWithGender('female');const candidate=app.placementSession.candidate;app.commitPlacement();
             result.occupied={fallback:candidate.x!==blocker.x,unchanged:before.every(([id,x,y])=>{const p=app.personMap.get(id);return p.x===x&&p.y===y;})};
             base=reset(); app.handleQuickAddClick(base,'parent'); app.commitPlacement();
-            result.parent={people:app.persons.length,rels:app.relationships.length,edges:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId===base.id),history:app.history.getUndoCount(),selected:app.selectedPersonId!=='e2e-base',status:app.elements.statusBar.textContent};
+            result.parent={people:app.persons.length,rels:app.relationships.length,
+                edges:app.relationships.filter(r=>r.type==='parent-child').every(r=>r.toPersonId===base.id),
+                history:app.history.getUndoCount(),spacing:Math.abs(app.persons[2].x-app.persons[1].x),
+                centered:(app.persons[1].x+app.persons[2].x)/2===base.x,
+                nextRow:app.persons[1].y===base.y-g.CELL_HEIGHT&&app.persons[2].y===base.y-g.CELL_HEIGHT,
+                selectionCleared:app.selectedPersonId===null&&app.selectedPersonIds.length===0&&app.selectedRelationshipId===null,
+                status:app.elements.statusBar.textContent};
             base=reset();
             const pairBlocker=new Person({id:'pair-center-blocker',x:base.x,y:g.ORIGIN_Y-g.CELL_HEIGHT/2});
             app.persons.push(pairBlocker); app.personMap.set(pairBlocker.id,pairBlocker);
             const pairBefore=app.persons.map(p=>[p.id,p.x,p.y]);
             app.handleQuickAddClick(base,'parent');
             const pairGhosts=app.placementSession.ghostPeople.map(p=>({id:p.id,x:p.x,y:p.y}));
-            const pairFallback=pairGhosts.every(p=>p.x!==pairBlocker.x);
+            const pairCenter=(pairGhosts[0].x+pairGhosts[1].x)/2;
             const pairSpacing=Math.abs(pairGhosts[1].x-pairGhosts[0].x);
             app.commitPlacement();
             const pairNewIds=new Set(app.persons.slice(2).map(p=>p.id));
             const pairMarriage=app.relationships.find(r=>r.type==='married');
             const pairChildEdges=app.relationships.filter(r=>r.type==='parent-child');
-            result.parentOccupied={fallback:pairFallback,spacing:pairSpacing,history:app.history.getUndoCount(),
+            result.parentOccupied={shifted:pairCenter!==base.x,spacing:pairSpacing,history:app.history.getUndoCount(),
                 existingUnchanged:pairBefore.every(([id,x,y])=>{const p=app.personMap.get(id);return p.x===x&&p.y===y;}),
                 people:app.persons.length,rels:app.relationships.length,
                 marriageEndpoints:pairMarriage&&pairNewIds.has(pairMarriage.fromPersonId)&&pairNewIds.has(pairMarriage.toPersonId),
@@ -491,8 +497,16 @@ function assert(name, condition, detail = '') {
         assert('quick partner commits relationship in one history with selection/status', quickE2E.partner.people===2 && quickE2E.partner.rels===1 && quickE2E.partner.type==='married' && quickE2E.partner.history===1 && quickE2E.partner.selected && /已建立/.test(quickE2E.partner.status));
         assert('selected spouse child commit writes both parent-to-child edges', quickE2E.selectedSpouse.edges===2 && quickE2E.selectedSpouse.parents.join(',')==='e2e-base,sp-b' && quickE2E.selectedSpouse.child && quickE2E.selectedSpouse.history===1);
         assert('occupied quick-add falls back without moving existing people', quickE2E.occupied.fallback && quickE2E.occupied.unchanged);
-        assert('quick parent pair commit creates two people/three relationships in one history with selection/status', quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges && quickE2E.parent.history===1 && quickE2E.parent.selected && /已建立父母/.test(quickE2E.parent.status));
-        assert('blocked 120px parent pair expands to a rigid 180px unit without moving existing people', quickE2E.parentOccupied.fallback && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH*1.5 && quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged && quickE2E.parentOccupied.people===4 && quickE2E.parentOccupied.rels===3 && quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
+        assert('quick parent pair commit creates a centered system-width family and clears transient selection',
+            quickE2E.parent.people===3 && quickE2E.parent.rels===3 && quickE2E.parent.edges &&
+            quickE2E.parent.history===1 && quickE2E.parent.spacing===data.grid.CELL_WIDTH &&
+            quickE2E.parent.centered && quickE2E.parent.nextRow && quickE2E.parent.selectionCleared &&
+            /已建立父母/.test(quickE2E.parent.status));
+        assert('blocked parent pair shifts as a rigid system-width unit without moving existing people',
+            quickE2E.parentOccupied.shifted && quickE2E.parentOccupied.spacing===data.grid.CELL_WIDTH &&
+            quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged &&
+            quickE2E.parentOccupied.people===4 && quickE2E.parentOccupied.rels===3 &&
+            quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
         assert('quick-add pointermove retains child/partner/sibling/parent request semantics and previews',
             Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base &&
                 item.count===item.before.count && item.count>0 && item.x!==item.before.x && item.y===item.expectedY && item.committed),
@@ -540,6 +554,23 @@ function assert(name, condition, detail = '') {
 
             const canvas = app.canvas.canvas;
             const ctx = canvas.getContext('2d');
+
+            let quickButtonCalls = 0;
+            const realQuickButtons = app.canvas.drawQuickAddButtons;
+            app.canvas.drawQuickAddButtons = () => { quickButtonCalls++; };
+            app.selectedPersonId = base.id;
+            app.render();
+            const idleQuickButtonCalls = quickButtonCalls;
+            app.beginPlacement({ kind: 'partner', basePersonId: base.id, personId: 'button-ghost' });
+            app.render();
+            const placementQuickButtonCalls = quickButtonCalls - idleQuickButtonCalls;
+            app.cancelPlacement();
+            app.render();
+            const restoredQuickButtonCalls = quickButtonCalls - idleQuickButtonCalls - placementQuickButtonCalls;
+            app.canvas.drawQuickAddButtons = realQuickButtons;
+            app.selectedPersonId = null;
+            app.render();
+
             const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             const exportBefore = app.canvas.exportToPNG(app.persons, app.relationships, [], [], false, false, 1);
 
@@ -690,6 +721,7 @@ function assert(name, condition, detail = '') {
                 renderedPlacementText,
                 restored, staleEndpointSkipped, exportOverlayCalls, jpegDuring, svgResult, pdfResult,
                 pairGhostsDrawn, pairRelationshipSegments,
+                idleQuickButtonCalls, placementQuickButtonCalls, restoredQuickButtonCalls,
                 exportsNonNull: Boolean(exportBefore && exportDuring && exportAfterCancel),
                 exportEqual: exportBefore === exportDuring && exportBefore === exportAfterCancel };
         }, suppressGhostMode);
@@ -702,7 +734,12 @@ function assert(name, condition, detail = '') {
         assert('occupied placement draws unavailable-marker-only pixels', overlay.unavailableMarkerPixels > 0, `pixels=${overlay.unavailableMarkerPixels}`);
         assert('placement overlay restores complete canvas drawing state', overlay.restored);
         assert('stale relationship endpoint is not treated as the ghost', overlay.staleEndpointSkipped);
-        assert('parent-pair overlay draws both ghosts and all three preview relationships', overlay.pairGhostsDrawn && overlay.pairRelationshipSegments >= 3, `segments=${overlay.pairRelationshipSegments}`);
+        assert('quick buttons render when idle, hide during placement, and return after cancel',
+            overlay.idleQuickButtonCalls>0 && overlay.placementQuickButtonCalls===0 && overlay.restoredQuickButtonCalls>0,
+            `idle=${overlay.idleQuickButtonCalls}, during=${overlay.placementQuickButtonCalls}, restored=${overlay.restoredQuickButtonCalls}`);
+        assert('parent-pair overlay retains exactly three V-preview relationships',
+            overlay.pairGhostsDrawn && overlay.pairRelationshipSegments===3,
+            `segments=${overlay.pairRelationshipSegments}`);
         assert('JPEG/SVG/PDF export paths never call placement overlay', overlay.exportOverlayCalls === 0, `calls=${overlay.exportOverlayCalls}`);
         assert('JPEG export is a valid non-null data URL', /^data:image\/jpeg/.test(overlay.jpegDuring || ''));
         assert('SVG export produces valid non-null SVG', /^<\?xml[\s\S]*<svg/.test(overlay.svgResult || ''));
