@@ -452,6 +452,105 @@ function assert(name, condition, detail = '') {
                 marriageEndpoints:pairMarriage&&pairNewIds.has(pairMarriage.fromPersonId)&&pairNewIds.has(pairMarriage.toPersonId),
                 childDirections:pairChildEdges.length===2&&pairChildEdges.every(r=>pairNewIds.has(r.fromPersonId)&&r.toPersonId===base.id)};
             base=reset();
+            const baseStartX=base.x;
+            const closePartner=new Person({id:'close-partner',gender:'female',x:base.x+g.CELL_WIDTH,y:base.y});
+            const closeFather=new Person({id:'close-father',gender:'male',x:closePartner.x-g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            const closeMother=new Person({id:'close-mother',gender:'female',x:closePartner.x+g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            app.persons.push(closePartner,closeFather,closeMother);
+            app.relationships.push(
+                new Relationship({id:'close-couple',type:'married',fromPersonId:base.id,toPersonId:closePartner.id}),
+                new Relationship({id:'close-parents',type:'married',fromPersonId:closeFather.id,toPersonId:closeMother.id}),
+                new Relationship({id:'close-father-edge',type:'parent-child',fromPersonId:closeFather.id,toPersonId:closePartner.id}),
+                new Relationship({id:'close-mother-edge',type:'parent-child',fromPersonId:closeMother.id,toPersonId:closePartner.id})
+            );
+            app._syncPersonMap();
+            const stableIds=['close-partner','close-father','close-mother'];
+            const stableBefore=Object.fromEntries(stableIds.map(id=>{const p=app.personMap.get(id);return [id,{x:p.x,y:p.y}];}));
+            const knownIds=new Set(app.persons.map(person=>person.id));
+
+            app.handleQuickAddClick(base,'parent');
+            const firstAdjustment=app.placementSession.request.existingPersonAdjustment||null;
+            const separationPreview={
+                adjustment:firstAdjustment,
+                expectedX:baseStartX-(g.CELL_WIDTH/2+10),
+                baseUnchanged:app.personMap.get(base.id).x===baseStartX,
+                ghostAtTarget:!!firstAdjustment&&app.placementSession.ghostPeople.some(person=>
+                    person.id===base.id&&person.x===firstAdjustment.to.x&&person.y===firstAdjustment.to.y),
+                history:app.history.getUndoCount()
+            };
+            app.cancelPlacement();
+            const separationCancel={
+                baseX:app.personMap.get(base.id).x,
+                people:app.persons.length,
+                rels:app.relationships.length,
+                history:app.history.getUndoCount()
+            };
+
+            app.handleQuickAddClick(app.personMap.get(base.id),'parent');
+            app.commitPlacement();
+            const adjustedBase=app.personMap.get(base.id);
+            const newParents=app.persons.filter(person=>!knownIds.has(person.id));
+            const fixedUnchanged=stableIds.every(id=>{
+                const person=app.personMap.get(id),before=stableBefore[id];
+                return person.x===before.x&&person.y===before.y;
+            });
+            const familyRels=app.relationships.filter(rel=>rel.type==='parent-child');
+            const otherRels=app.relationships.filter(rel=>rel.type!=='parent-child');
+            const plans=app.canvas.getFamilyRoutePlans(familyRels,app.persons,otherRels,app.getKinshipEngine());
+            const basePlan=plans.find(plan=>plan.family.childIds.includes(base.id));
+            const partnerPlan=plans.find(plan=>plan.family.childIds.includes(closePartner.id));
+            const separationCommitted={
+                baseX:adjustedBase.x,
+                movedBy:baseStartX-adjustedBase.x,
+                parents:newParents.length,
+                parentSpacing:newParents.length===2?Math.abs(newParents[1].x-newParents[0].x):null,
+                parentCenter:newParents.length===2?(newParents[0].x+newParents[1].x)/2:null,
+                fixedUnchanged,
+                history:app.history.getUndoCount(),
+                sourcesCentered:!!basePlan&&!!partnerPlan&&basePlan.source.x===adjustedBase.x&&partnerPlan.source.x===closePartner.x
+            };
+            app.undo();
+            const separationUndo={
+                baseX:app.personMap.get(base.id).x,
+                people:app.persons.length,
+                rels:app.relationships.length,
+                history:app.history.getUndoCount(),
+                fixedUnchanged:stableIds.every(id=>{
+                    const person=app.personMap.get(id),before=stableBefore[id];
+                    return person.x===before.x&&person.y===before.y;
+                })
+            };
+            result.gentleParentSeparation={preview:separationPreview,cancel:separationCancel,
+                committed:separationCommitted,undo:separationUndo};
+
+            base=reset();
+            const fallbackPartner=new Person({id:'fallback-partner',x:base.x+g.CELL_WIDTH,y:base.y});
+            const fallbackFather=new Person({id:'fallback-father',x:fallbackPartner.x-g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            const fallbackMother=new Person({id:'fallback-mother',x:fallbackPartner.x+g.CELL_WIDTH/2,y:g.ORIGIN_Y});
+            const blockedDistances=[];
+            for(let distance=g.CELL_WIDTH/2;distance<g.CELL_WIDTH;distance+=10)blockedDistances.push(distance);
+            blockedDistances.push(g.CELL_WIDTH);
+            const shiftBlockers=blockedDistances.map((distance,index)=>
+                new Person({id:`shift-blocker-${index}`,x:base.x-distance,y:base.y}));
+            app.persons.push(fallbackPartner,fallbackFather,fallbackMother,...shiftBlockers);
+            app.relationships.push(
+                new Relationship({type:'married',fromPersonId:base.id,toPersonId:fallbackPartner.id}),
+                new Relationship({type:'married',fromPersonId:fallbackFather.id,toPersonId:fallbackMother.id}),
+                new Relationship({type:'parent-child',fromPersonId:fallbackFather.id,toPersonId:fallbackPartner.id}),
+                new Relationship({type:'parent-child',fromPersonId:fallbackMother.id,toPersonId:fallbackPartner.id})
+            );
+            app._syncPersonMap();
+            const fallbackBaseX=base.x;
+            app.handleQuickAddClick(base,'parent');
+            const fallbackPair=app.placementSession.ghostPeople.slice(0,2);
+            result.gentleParentFallback={
+                adjustment:app.placementSession.request.existingPersonAdjustment||null,
+                childUnchanged:app.personMap.get(base.id).x===fallbackBaseX,
+                pairShifted:(fallbackPair[0].x+fallbackPair[1].x)/2!==fallbackBaseX,
+                pairSpacing:Math.abs(fallbackPair[1].x-fallbackPair[0].x)
+            };
+            app.cancelPlacement();
+            base=reset();
             app.handleQuickAddClick(base,'parent');
             const normalInitial=pairSnapshot();
             app.handlePointerMove(pointerEventAt(base.x+g.CELL_WIDTH*4,g.ORIGIN_Y));
@@ -534,6 +633,31 @@ function assert(name, condition, detail = '') {
             quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged &&
             quickE2E.parentOccupied.people===4 && quickE2E.parentOccupied.rels===3 &&
             quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
+        const gentle=quickE2E.gentleParentSeparation;
+        assert('close partner parents preview the smallest safe outward child adjustment without writes',
+            gentle.preview.adjustment&&gentle.preview.adjustment.personId==='e2e-base'&&
+            gentle.preview.adjustment.from.x===data.grid.ORIGIN_X&&
+            gentle.preview.adjustment.to.x===gentle.preview.expectedX&&
+            gentle.preview.baseUnchanged&&gentle.preview.ghostAtTarget&&gentle.preview.history===0,
+            JSON.stringify(gentle.preview));
+        assert('canceling gentle parent separation leaves people relationships and history unchanged',
+            gentle.cancel.baseX===data.grid.ORIGIN_X&&gentle.cancel.people===4&&gentle.cancel.rels===4&&gentle.cancel.history===0,
+            JSON.stringify(gentle.cancel));
+        assert('gentle parent separation moves only the current child and centers both formal family sources',
+            gentle.committed.baseX===gentle.preview.expectedX&&gentle.committed.movedBy===data.grid.CELL_WIDTH/2+10&&
+            gentle.committed.parents===2&&gentle.committed.parentSpacing===data.grid.CELL_WIDTH&&
+            gentle.committed.parentCenter===gentle.committed.baseX&&gentle.committed.fixedUnchanged&&
+            gentle.committed.history===1&&gentle.committed.sourcesCentered,
+            JSON.stringify(gentle.committed));
+        assert('one undo removes the new parents and restores the adjusted child',
+            gentle.undo.baseX===data.grid.ORIGIN_X&&gentle.undo.people===4&&gentle.undo.rels===4&&
+            gentle.undo.history===0&&gentle.undo.fixedUnchanged,
+            JSON.stringify(gentle.undo));
+        assert('unsafe bounded child shifts retain the rigid parent-pair fallback',
+            quickE2E.gentleParentFallback.adjustment===null&&quickE2E.gentleParentFallback.childUnchanged&&
+            quickE2E.gentleParentFallback.pairShifted&&
+            quickE2E.gentleParentFallback.pairSpacing===data.grid.CELL_WIDTH,
+            JSON.stringify(quickE2E.gentleParentFallback));
         const locked=quickE2E.parentPairLocked;
         assert('parent-pair pointer move and click only confirm the automatic position',
             JSON.stringify(locked.normalMoved)===JSON.stringify(locked.normalInitial) &&
