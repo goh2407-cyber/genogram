@@ -363,6 +363,8 @@ body {
     text-align: center;
     line-height: 1.4;
     box-shadow: var(--shadow-md);
+    opacity: 1;
+    visibility: visible;
 }
 
 .status-bar.connecting {
@@ -378,7 +380,9 @@ body {
 }
 
 .status-bar.hidden {
-    display: none !important;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -6px);
 }
 
 /* 縮放控制 */

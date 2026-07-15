@@ -27,6 +27,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const resetScale = app.canvas.scale;
         document.getElementById('fitView').click();
         const manualScale = app.canvas.scale;
+        app.loadData(makeData([-900, -300, 300, 900, 1500, 2100]));
+        app.canvas.scale = .77;
+        app.canvas.offsetX = 13;
+        app.canvas.offsetY = 17;
+        app.render();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const explicitView = {
+            scale: app.canvas.scale,
+            offsetX: app.canvas.offsetX,
+            offsetY: app.canvas.offsetY
+        };
         app.loadData(makeData([-20000, 20000]));
         await new Promise(resolve => requestAnimationFrame(resolve));
         const limited = app.fitToView();
@@ -44,7 +55,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         app.canvas.scale = .5; app.canvas.offsetX = 20; app.canvas.offsetY = 30;
         const empty = app.fitToView();
         return { small, screen, canvasWidth: app.canvas.width, canvasHeight: app.canvas.height,
-            largeScale, resetScale, manualScale, limited, restored, empty,
+            largeScale, resetScale, manualScale, explicitView, limited, restored, empty,
             zoomText: document.getElementById('zoomLevel').textContent };
     });
     check('small load stays at 100%', result.small.scale === 1);
@@ -53,6 +64,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         && result.screen.top >= 23 && result.screen.bottom <= result.canvasHeight - 23, JSON.stringify(result.screen));
     check('reset remains exactly 100%', result.resetScale === 1);
     check('manual Fit returns to the automatic scale', Math.abs(result.manualScale - result.largeScale) < .001);
+    check('an explicit render cancels a pending automatic fit',
+        result.explicitView.scale === .77 && result.explicitView.offsetX === 13
+            && result.explicitView.offsetY === 17, JSON.stringify(result.explicitView));
     check('extreme content stops at 25% and reports the limit',
         result.limited.limited === true && result.limited.scale === .25, JSON.stringify(result.limited));
     check('LocalStorage restore preserves saved zoom and offsets',

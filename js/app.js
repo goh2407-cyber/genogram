@@ -2,6 +2,11 @@
  * GenogramApp - 主應用程式
  */
 class GenogramApp {
+    static STATUS_TIMEOUTS = Object.freeze({
+        passive: 3500,
+        passiveAlert: 6000
+    });
+
     // 輩分層級定義
     static GENERATION_LEVELS = {
         grandparent: { y: 100, label: '祖父輩' },
@@ -67,6 +72,7 @@ class GenogramApp {
         this.currentInspectorTab = 'properties';
         this.inspectorUserOverride = false;
         this.inspectorAutoCollapsed = false;
+        this.pendingFitFrame = null;
         this.viewOptions = {
             showNames: true,
             showAges: true,
@@ -118,6 +124,7 @@ class GenogramApp {
         // [Bug Fix #7] 加載中狀態，避免競態
         this.isLoading = false;
         this.autoSaveTimer = null;
+        this.statusHideTimer = null;
         this.lastAutoSaveTime = 0;
 
         // [NEW - G 方案] 自動排列預覽狀態
@@ -150,7 +157,9 @@ class GenogramApp {
             this.loadAutoSave();
             // 如果沒有恢復工作階段，才顯示「就緒」
             if (this.persons.length === 0) {
-                this.updateStatus('就緒');
+                this.updateStatus('就緒', null, {
+                    autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive
+                });
             }
             this.updateToolbar();
         }, 0);
@@ -320,7 +329,8 @@ class GenogramApp {
         applyResponsiveInspector(this.inspectorMediaQuery);
 
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
-        this.elements.addPersonBtn.addEventListener('click', () => this.showGenderModal('parent'));
+        this.elements.addPersonBtn.addEventListener('click', () =>
+            this.showGenderModal('parent', '新增人物'));
 
         // 工具列按鈕
         this.elements.selectToolBtn.addEventListener('click', () => this.setTool('select'));
@@ -649,16 +659,28 @@ class GenogramApp {
     /**
      * 更新狀態提示
      */
-    updateStatus(message = null, type = null) {
-        if (message) {
-            this.elements.statusBar.textContent = message;
-            this.elements.statusBar.className = 'status-bar'; // reset
-            this.elements.statusBar.classList.remove('hidden');
-            if (type) {
-                this.elements.statusBar.classList.add(type);
-            }
-        } else {
+    updateStatus(message = null, type = null, { autoHideMs = undefined } = {}) {
+        if (this.statusHideTimer !== null) {
+            clearTimeout(this.statusHideTimer);
+            this.statusHideTimer = null;
+        }
+        if (!message) {
             this.elements.statusBar.classList.add('hidden');
+            return;
+        }
+        const bar = this.elements.statusBar;
+        bar.textContent = message;
+        bar.className = 'status-bar';
+        if (type) bar.classList.add(type);
+        const duration = autoHideMs !== undefined
+            ? autoHideMs
+            : (type === 'success' ? GenogramApp.STATUS_TIMEOUTS.passive : null);
+        if (Number.isFinite(duration) && duration >= 0) {
+            const expectedMessage = message;
+            this.statusHideTimer = setTimeout(() => {
+                this.statusHideTimer = null;
+                if (bar.textContent === expectedMessage) bar.classList.add('hidden');
+            }, duration);
         }
     }
 
@@ -1864,7 +1886,7 @@ class GenogramApp {
      * 顯示性別選擇對話框
      * @param {string} generation - 輩分 ('grandparent', 'parent', 'child', 'grandchild')
      */
-    showGenderModal(generation) {
+    showGenderModal(generation, statusLabel = null) {
         // [UX Fix] 如果正在預覽自動排列，開啟對話框時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -1872,8 +1894,11 @@ class GenogramApp {
 
         this.pendingGeneration = generation;
         const level = GenogramApp.GENERATION_LEVELS[generation];
-        const label = level ? level.label : (generation || '外部');
-        this.updateStatus(`選擇 ${label} 的性別`, 'info');
+        const label = statusLabel || (level ? level.label : (generation || '外部'));
+        const message = statusLabel
+            ? '選擇' + label + '的性別'
+            : '選擇 ' + label + ' 的性別';
+        this.updateStatus(message, 'info');
         this.elements.genderModal.classList.add('active');
     }
 
@@ -1884,7 +1909,9 @@ class GenogramApp {
         this.pendingGeneration = null;
         this.quickAddContext = null;
         this.elements.genderModal.classList.remove('active');
-        this.updateStatus('就緒');
+        this.updateStatus('就緒', null, {
+            autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive
+        });
     }
 
     /**
@@ -4033,6 +4060,10 @@ class GenogramApp {
      * 繪製
      */
     render() {
+        if (this.pendingFitFrame !== null) {
+            cancelAnimationFrame(this.pendingFitFrame);
+            this.pendingFitFrame = null;
+        }
         this.waitForCurrentCanvasFonts(true);
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
@@ -4984,7 +5015,6 @@ class GenogramApp {
                 this.updateStatus(`已快速儲存至瀏覽器。`, 'success');
             }
         }
-        setTimeout(() => this.updateStatus(), 4000);
     }
 
     /**
@@ -5026,7 +5056,11 @@ class GenogramApp {
         this.selectedPersonId = null;
         this.updatePropertyPanel();
         this.autoSave();
-        requestAnimationFrame(() => this.fitToView({ onlyIfNeeded: true }));
+        if (this.pendingFitFrame !== null) cancelAnimationFrame(this.pendingFitFrame);
+        this.pendingFitFrame = requestAnimationFrame(() => {
+            this.pendingFitFrame = null;
+            this.fitToView({ onlyIfNeeded: true });
+        });
 
         if ((norm.normalized + norm.deduped + norm.dropped) > 0) {
             this.updateStatus(
@@ -5436,12 +5470,14 @@ class GenogramApp {
 
             const fileName = this.storage.getOpenFileName();
             if (fileName) {
-                this.updateStatus(`已恢復上次工作階段: ${fileName}`, 'info');
+                this.updateStatus(`已恢復上次工作階段: ${fileName}`, 'info', {
+                    autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive
+                });
             } else {
-                this.updateStatus('已恢復上次工作階段', 'info');
+                this.updateStatus('已恢復上次工作階段', 'info', {
+                    autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive
+                });
             }
-            // 讓恢復訊息停留長一點
-            setTimeout(() => this.updateStatus(), 5000);
         } else {
             // [Bug Fix] 即使沒有儲存資料，也要重置 isLoading 狀態
             this.isLoading = false;
