@@ -401,6 +401,16 @@ function assert(name, condition, detail = '') {
                 }
                 return base;
             };
+            const pointerEventAt=(worldX,worldY,altKey=false)=>{
+                const rect=app.canvas.canvas.getBoundingClientRect();
+                return {button:0,target:null,pointerId:999,
+                    clientX:rect.left+worldX*app.canvas.scale+app.canvas.offsetX,
+                    clientY:rect.top+worldY*app.canvas.scale+app.canvas.offsetY,altKey};
+            };
+            const pairSnapshot=()=>({
+                candidate:{x:app.placementSession.candidate.x,y:app.placementSession.candidate.y},
+                ghosts:app.placementSession.ghostPeople.map(person=>({x:person.x,y:person.y}))
+            });
             const result={};
             for(const type of ['son','daughter','pregnancy']){
                 const base=reset(); app.handleQuickAddClick(base,type); const choosing=app.elements.statusBar.textContent; app.commitPlacement();
@@ -441,6 +451,23 @@ function assert(name, condition, detail = '') {
                 people:app.persons.length,rels:app.relationships.length,
                 marriageEndpoints:pairMarriage&&pairNewIds.has(pairMarriage.fromPersonId)&&pairNewIds.has(pairMarriage.toPersonId),
                 childDirections:pairChildEdges.length===2&&pairChildEdges.every(r=>pairNewIds.has(r.fromPersonId)&&r.toPersonId===base.id)};
+            base=reset();
+            app.handleQuickAddClick(base,'parent');
+            const normalInitial=pairSnapshot();
+            app.handlePointerMove(pointerEventAt(base.x+g.CELL_WIDTH*4,g.ORIGIN_Y));
+            const normalMoved=pairSnapshot();
+            app.handlePointerDown(pointerEventAt(base.x+g.CELL_WIDTH*5,g.ORIGIN_Y));
+            const normalParents=app.persons.slice(1).map(person=>({x:person.x,y:person.y}));
+            result.parentPairLocked={normalInitial,normalMoved,normalParents,
+                normalSelectionCleared:app.selectedPersonId===null};
+            base=reset();
+            app.handleQuickAddClick(base,'parent');
+            const altInitial=pairSnapshot();
+            app.handlePointerMove(pointerEventAt(base.x+g.CELL_WIDTH*3.37,g.ORIGIN_Y+43,true));
+            const altMoved=pairSnapshot();
+            app.handlePointerDown(pointerEventAt(base.x+g.CELL_WIDTH*4.61,g.ORIGIN_Y+71,true));
+            const altParents=app.persons.slice(1).map(person=>({x:person.x,y:person.y}));
+            Object.assign(result.parentPairLocked,{altInitial,altMoved,altParents});
             // Real quick-add pointermove must retain its semantic request and preview.
             result.pointerKinds={};
             for(const type of ['son','partner','sibling','parent']){
@@ -507,9 +534,20 @@ function assert(name, condition, detail = '') {
             quickE2E.parentOccupied.history===1 && quickE2E.parentOccupied.existingUnchanged &&
             quickE2E.parentOccupied.people===4 && quickE2E.parentOccupied.rels===3 &&
             quickE2E.parentOccupied.marriageEndpoints && quickE2E.parentOccupied.childDirections);
+        const locked=quickE2E.parentPairLocked;
+        assert('parent-pair pointer move and click only confirm the automatic position',
+            JSON.stringify(locked.normalMoved)===JSON.stringify(locked.normalInitial) &&
+            JSON.stringify(locked.normalParents)===JSON.stringify(locked.normalInitial.ghosts) &&
+            locked.normalSelectionCleared,
+            JSON.stringify(locked));
+        assert('Alt does not unlock automatic parent-pair placement',
+            JSON.stringify(locked.altMoved)===JSON.stringify(locked.altInitial) &&
+            JSON.stringify(locked.altParents)===JSON.stringify(locked.altInitial.ghosts),
+            JSON.stringify(locked));
         assert('quick-add pointermove retains child/partner/sibling/parent request semantics and previews',
-            Object.values(quickE2E.pointerKinds).every(item => item.kind===item.before.kind && item.base===item.before.base &&
-                item.count===item.before.count && item.count>0 && item.x!==item.before.x && item.y===item.expectedY && item.committed),
+            Object.entries(quickE2E.pointerKinds).every(([type,item]) => item.kind===item.before.kind && item.base===item.before.base &&
+                item.count===item.before.count && item.count>0 &&
+                (type==='parent'?item.x===item.before.x:item.x!==item.before.x) && item.y===item.expectedY && item.committed),
             JSON.stringify(quickE2E.pointerKinds));
         assert('Alt quick-add bypass is fully free while preserving semantic preview',
             quickE2E.altQuick.kind==='child' && quickE2E.altQuick.preview===1 && quickE2E.altQuick.committed &&
