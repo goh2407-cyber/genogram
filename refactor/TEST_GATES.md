@@ -52,8 +52,8 @@
 - `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
 ## 驗收記錄
-- 測試日期：2026-07-13
-- 測試版本：`codex/genogram-ux-drawing-optimization`
+- 測試日期：2026-07-15
+- 測試版本：`codex/view-controls-release-hardening`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：15 支 `verify_*.js` 全數通過；200 人 warm render 1.43ms、pan/zoom 60.5 FPS。Golden 16 張中 9 張 0 差異，7 張僅家庭／親子走線變更且已逐張檢視，baseline 未覆寫。
+- 備註：21 支 `verify_*.js` 全數通過；Golden 16/16、三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過。200 人／384 關係 warm 平均 1.85ms、P95 2.58ms、pan/zoom 60.5 FPS，cold first-render 最大 321.7ms。
