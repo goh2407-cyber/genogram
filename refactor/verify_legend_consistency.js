@@ -144,6 +144,55 @@ const expectedSections = [
         };
     });
 
+    const exportResult = await page.evaluate(() => {
+        const canvas = window.app.canvas;
+        const hasAdapters = typeof canvas.getLegendRenderItem === 'function'
+            && typeof canvas.getLegendRenderSections === 'function';
+        const serializeSections = sections => sections.map(section => ({
+            id: section.id,
+            title: section.title,
+            labels: section.items.map(item => item.label)
+        }));
+        const fullSections = hasAdapters ? canvas.getLegendRenderSections() : [];
+        const hiddenSections = hasAdapters ? canvas.getLegendRenderSections({
+            showEmotionalRelationships: false
+        }) : [];
+        const styleChecks = hasAdapters ? Relationship.getLegendSections().flatMap(section =>
+            section.entries.map(entry => {
+                const line = new Relationship({ type: entry.type, linkType: entry.linkType }).getLineStyle();
+                const item = canvas.getLegendRenderItem(entry);
+                let expectedStyle = line.pattern;
+                if (entry.type === 'parent-child' && entry.linkType === 'adopted') expectedStyle = 'dashed';
+                if (entry.type === 'parent-child' && entry.linkType === 'foster') expectedStyle = 'dotted';
+                return Boolean(item)
+                    && item.label === entry.label
+                    && item.style === expectedStyle
+                    && item.color === line.color
+                    && item.width === line.width
+                    && item.decoration === line.decoration;
+            })) : [];
+
+        const drawn = [];
+        const context = document.createElement('canvas').getContext('2d');
+        const originalDrawLegendSection = canvas.drawLegendSection;
+        canvas.drawLegendSection = function(ctx, section) {
+            drawn.push({ id: section.id, title: section.title, labels: section.items.map(item => item.label) });
+        };
+        canvas.drawExportLegend(context, 0, 0, {});
+        const fullDrawn = drawn.splice(0);
+        canvas.drawExportLegend(context, 0, 0, { showEmotionalRelationships: false });
+        const hiddenDrawn = drawn.splice(0);
+        canvas.drawLegendSection = originalDrawLegendSection;
+        return {
+            hasAdapters,
+            fullSections: serializeSections(fullSections),
+            hiddenSections: serializeSections(hiddenSections),
+            stylesMatch: styleChecks.length === 36 && styleChecks.every(Boolean),
+            fullDrawn,
+            hiddenDrawn
+        };
+    });
+
     check('legend metadata preserves the approved four-section order and all 36 entries',
         JSON.stringify(result.sections) === JSON.stringify(expectedSections), JSON.stringify(result.sections));
     check('legend metadata is deeply frozen', result.deeplyFrozen);
@@ -161,6 +210,29 @@ const expectedSections = [
     check('emotional group retains positive and negative subheadings',
         JSON.stringify(result.subheadings) === JSON.stringify(['正向', '負向']),
         JSON.stringify(result.subheadings));
+    const expectedExport = expectedSections.map(section => ({
+        id: section.id,
+        title: section.id === 'emotional-positive' ? '情感關係（正向）'
+            : section.id === 'emotional-negative' ? '情感關係（負向）'
+            : section.title,
+        labels: section.entries.map(entry => entry[2])
+    }));
+    const expectedHidden = expectedExport.filter(section => !section.id.startsWith('emotional-'));
+    check('Canvas exposes shared legend render adapters', exportResult.hasAdapters);
+    check('export legend sections and entry order come from shared metadata',
+        JSON.stringify(exportResult.fullSections) === JSON.stringify(expectedExport),
+        JSON.stringify(exportResult.fullSections));
+    check('export legend adapter derives every visual style from Relationship',
+        exportResult.stylesMatch);
+    check('hidden emotional view keeps family and special export sections',
+        JSON.stringify(exportResult.hiddenSections) === JSON.stringify(expectedHidden),
+        JSON.stringify(exportResult.hiddenSections));
+    check('drawExportLegend draws shared sections in their metadata order',
+        JSON.stringify(exportResult.fullDrawn) === JSON.stringify(expectedExport),
+        JSON.stringify(exportResult.fullDrawn));
+    check('drawExportLegend omits only emotional sections when hidden',
+        JSON.stringify(exportResult.hiddenDrawn) === JSON.stringify(expectedHidden),
+        JSON.stringify(exportResult.hiddenDrawn));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LEGEND CONSISTENCY CHECKS PASSED');
 })().catch(error => {
