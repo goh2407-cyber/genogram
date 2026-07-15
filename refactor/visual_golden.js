@@ -410,7 +410,13 @@ const FIXTURES = [
 
         await page.goto(URL);
         await page.waitForFunction(() => window.app && window.app.canvas);
+        await page.waitForTimeout(50);
+        await page.waitForFunction(() => window.app.isLoading === false);
         await page.evaluate(fx.build);
+        await page.evaluate(() => {
+            const fitView = document.getElementById('fitView');
+            if (fitView) fitView.style.display = 'none';
+        });
         await page.waitForTimeout(150);
         const buf = await page.locator('#genogramCanvas').screenshot();
         await page.close();
