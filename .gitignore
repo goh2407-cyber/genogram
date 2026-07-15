@@ -35,6 +35,7 @@ refactor/vis_pixel_check.ps1
 line_check.md
 .system_generated/
 app_icon_*.png
+.worktrees/
 
 # OS 檔案
 Thumbs.db
