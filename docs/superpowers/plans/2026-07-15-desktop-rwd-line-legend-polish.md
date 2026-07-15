@@ -26,7 +26,7 @@
 - Playwright 指令統一使用：
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 ```
 
 ---
@@ -59,7 +59,7 @@ Expected: 分支為 `codex/desktop-rwd-line-legend-polish`，沒有未追蹤或�
 - [ ] **Step 3: 跑受影響範圍基線**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_ui_shell.js
 node refactor/verify_family_route_planner.js
 node refactor/verify_family_routing.js
@@ -138,7 +138,7 @@ function overlaps(a, b) {
 - [ ] **Step 2: 跑 UI shell 並確認 RED**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_ui_shell.js
 ```
 
@@ -296,7 +296,7 @@ Escape 既有 placement／life-circle／relationship modal／connecting 分支�
 - [ ] **Step 7: 跑 UI shell GREEN**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_ui_shell.js
 ```
 
@@ -366,7 +366,7 @@ check('DASH_PATTERNS is unchanged', dashHash ===
 - [ ] **Step 2: 跑新 contract 並確認 RED**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_legend_consistency.js
 ```
 
@@ -474,7 +474,7 @@ static LEGEND_SECTIONS = Relationship.freezeLegendSections([
 - [ ] **Step 6: 跑圖例 contract 與 UI shell GREEN**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_legend_consistency.js
 node refactor/verify_ui_shell.js
 ```
@@ -523,7 +523,7 @@ check('hidden emotional sections are removed from the export legend',
 - [ ] **Step 2: 跑 contracts 並確認 RED**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_legend_consistency.js
 node refactor/verify_view_export.js
 ```
@@ -582,7 +582,7 @@ const rightSections = sections.filter(section => section.column === 'right');
 - [ ] **Step 5: 跑 export、圖例與 view contracts GREEN**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_legend_consistency.js
 node refactor/verify_view_export.js
 node refactor/verify_view_controls.js
@@ -701,7 +701,7 @@ Expected: 新清理 cases 與既有所有 fixture 通過。
 在 `verify_family_routing.js` 對 spy 到的 screen／hit-test／edit anchor／export family paths 套同一個 `assertCleanOrthogonalPath()`，並確認相同 family key 的 point array 完全一致。
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_family_routing.js
 node refactor/verify_pencil.js
 node refactor/verify_childlink.js
@@ -782,7 +782,7 @@ git commit -m "fix: harden responsive legend layout"
 - [ ] **Step 2: 跑 mirror 與離線部署測試**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 node refactor/verify_mirror_sync.js
 node refactor/verify_geno_deploy.js
 ```
@@ -824,7 +824,7 @@ git commit -m "chore: sync responsive legend release gates"
 - [ ] **Step 1: 跑全部 verify scripts，遇第一個失敗即停**
 
 ```powershell
-$env:NODE_PATH='C:\Users\goh2407\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+$env:NODE_PATH='C:\Users\goh2407\.cache\pw-smoke\node_modules'
 $tests = Get-ChildItem refactor -Filter 'verify_*.js' | Sort-Object Name
 foreach ($test in $tests) {
     node $test.FullName
