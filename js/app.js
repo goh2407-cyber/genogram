@@ -513,6 +513,8 @@ class GenogramApp {
         if (this.isDrawingLifeCircle) {
             this.cancelLifeCircle();
         }
+        if (tool === 'household') this.ensureViewOption('showHouseholds', { render: false });
+        if (tool === 'lifeCircle') this.ensureViewOption('showLifeCircles', { render: false });
 
         this.currentTool = tool;
 
@@ -1714,6 +1716,8 @@ class GenogramApp {
         // 從後往前檢查（後建立的在上層）
         for (let i = this.relationships.length - 1; i >= 0; i--) {
             const rel = this.relationships[i];
+            if (!this.viewOptions.showEmotionalRelationships
+                && Relationship.isEmotionalDisplayType(rel.type)) continue;
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
@@ -1777,6 +1781,7 @@ class GenogramApp {
      * 取得指定座標的圈選框
      */
     getHouseholdAt(x, y) {
+        if (!this.viewOptions.showHouseholds) return null;
         // [Fix] 容差隨縮放換算（螢幕上 ~15px 恆定，限 8~25 世界 px）
         const tolerance = Math.min(25, Math.max(8, 15 / ((this.canvas && this.canvas.scale) || 1)));
 
@@ -1805,6 +1810,7 @@ class GenogramApp {
      * 2. 圈內空白不再攔截點擊 — 大生活圈罩住全圖時仍可平移畫布、選取人物
      */
     getLifeCircleAt(x, y) {
+        if (!this.viewOptions.showLifeCircles) return null;
         const tol = Math.min(20, Math.max(8, 12 / ((this.canvas && this.canvas.scale) || 1)));
         // 從後往前檢查（後建立的在上層）
         for (let i = this.lifeCircles.length - 1; i >= 0; i--) {
@@ -3332,6 +3338,9 @@ class GenogramApp {
 
         this.closeRelationshipModal();
         this.autoSave();
+        if (Relationship.isEmotionalDisplayType(type)) {
+            this.ensureViewOption('showEmotionalRelationships', { render: false });
+        }
         this.render();
     }
 
@@ -3440,6 +3449,9 @@ class GenogramApp {
         this._dataVersion++; // [Phase 0a] 新增/取代關係 → 結構變動，使快取失效
         this.closeRelationshipModal();
         this.autoSave();
+        if (Relationship.isEmotionalDisplayType(type)) {
+            this.ensureViewOption('showEmotionalRelationships', { render: false });
+        }
         this.render();
 
 
@@ -4022,6 +4034,7 @@ class GenogramApp {
         this.waitForCurrentCanvasFonts(true);
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
+        this.canvas.viewOptions = this.viewOptions;
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
         // 直接呼叫 canvas.render（測試/外部）時取不到 → 自行 fallback 重建，避免取到舊值。
         this.canvas._renderInputs = {

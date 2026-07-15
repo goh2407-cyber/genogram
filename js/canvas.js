@@ -46,6 +46,16 @@ const GRID_STYLE = {
  * GenogramCanvas 類別 - 管理畫布繪製
  */
 class GenogramCanvas {
+    static DEFAULT_VIEW_OPTIONS = Object.freeze({
+        showNames: true,
+        showAges: true,
+        showNotes: true,
+        showMedical: true,
+        showEmotionalRelationships: true,
+        showHouseholds: true,
+        showLifeCircles: true
+    });
+
     constructor(canvasId, containerId, onResize = null) {
         this.canvas = document.getElementById(canvasId);
         this.container = document.getElementById(containerId);
@@ -265,6 +275,7 @@ class GenogramCanvas {
         if (!this.personMap) {
             this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
         }
+        const view = this.normalizeViewOptions(this.viewOptions);
 
         this.clear();
         this.drawGrid(); // [D1] 背景網格（在 clear 後、applyTransform 前繪製於螢幕座標）
@@ -274,14 +285,14 @@ class GenogramCanvas {
 
         // 0.5 繪製生活圈（最底層背景脈絡；由 App.render 注入）
         // [Fix] 原本以 overlay 蓋在最上層，會罩染人物符號且與匯出 z-order 相反
-        if (this.lifeCirclesToDraw && this.lifeCirclesToDraw.length > 0) {
+        if (view.showLifeCircles && this.lifeCirclesToDraw && this.lifeCirclesToDraw.length > 0) {
             this.lifeCirclesToDraw.forEach(lc => {
                 this._drawSingleLifeCircle(lc, this.selectedLifeCircleId === lc.id);
             });
         }
 
         // 1. 繪製同住家庭 (底層)
-        if (households && households.length > 0) {
+        if (view.showHouseholds && households && households.length > 0) {
             this.drawHouseholds(households, persons, relationships, false, selectedHouseholdId);
         }
 
@@ -309,10 +320,12 @@ class GenogramCanvas {
             // 以 KinshipEngine 提供方向判斷，避免 Y 座標誤判
             kinship = new KinshipEngine(persons, relationships);
         }
-        this.drawFamilies(familyRels, persons, otherRels, selectedRelationshipId, kinship);
+        const visibleOtherRels = otherRels.filter(rel => view.showEmotionalRelationships
+            || !Relationship.isEmotionalDisplayType(rel.type));
+        this.drawFamilies(familyRels, persons, visibleOtherRels, selectedRelationshipId, kinship);
 
         // 3. 繪製非親子關係
-        otherRels.forEach(rel => {
+        visibleOtherRels.forEach(rel => {
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
@@ -323,13 +336,15 @@ class GenogramCanvas {
         });
 
         // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
-        otherRels.forEach(rel => {
-            const fromPerson = this.personMap.get(rel.fromPersonId);
-            const toPerson = this.personMap.get(rel.toPersonId);
-            if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
-                this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
-            }
-        });
+        if (view.showNotes) {
+            visibleOtherRels.forEach(rel => {
+                const fromPerson = this.personMap.get(rel.fromPersonId);
+                const toPerson = this.personMap.get(rel.toPersonId);
+                if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
+                    this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+                }
+            });
+        }
 
         // 4. 繪製正在連接的線
         if (connectingFrom && connectingFrom.targetX !== undefined) {
@@ -350,7 +365,7 @@ class GenogramCanvas {
             const isMultiSelected = (selectedPersonIds || []).includes(person.id);
             const isHighlighted = (highlightedIds || []).includes(person.id);
             const isConnecting = connectingFrom && connectingFrom.person.id === person.id;
-            this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted);
+            this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted, view);
         });
 
         // 5.5 智慧格位預覽只屬於編輯器畫面；匯出路徑不呼叫此方法。
@@ -379,7 +394,9 @@ class GenogramCanvas {
         // 9. 繪製關係線編輯按鈕 (選中關係線時顯示)
         if (selectedRelationshipId) {
             const selectedRel = relationships.find(r => r.id === selectedRelationshipId);
-            if (selectedRel) {
+            const isVisible = selectedRel && (view.showEmotionalRelationships
+                || !Relationship.isEmotionalDisplayType(selectedRel.type));
+            if (isVisible) {
                 const fromPerson = this.personMap.get(selectedRel.fromPersonId);
                 const toPerson = this.personMap.get(selectedRel.toPersonId);
                 if (fromPerson && toPerson) {
@@ -697,13 +714,62 @@ class GenogramCanvas {
         same:      '#f4effb',  // 淡紫（同性別圓頂方底）
     };
 
+    normalizeViewOptions(options = {}) {
+        return Object.fromEntries(Object.keys(GenogramCanvas.DEFAULT_VIEW_OPTIONS)
+            .map(key => [key, options[key] !== false]));
+    }
+
+    getPersonTextLayout(person, options = {}) {
+        const view = this.normalizeViewOptions(options);
+        const nameY = person.y + this.personSize / 2 + 8;
+        const name = view.showNames ? (person.name || '') : '';
+        const noteLines = view.showNotes && person.notes
+            ? person.notes.split('\n').filter(Boolean).slice(0, 2)
+            : [];
+        return {
+            name,
+            noteLines,
+            nameY,
+            noteStartY: nameY + (name ? this.fontSize + 4 : 0)
+        };
+    }
+
+    drawPersonText(person, options = {}) {
+        const text = this.getPersonTextLayout(person, options);
+        const S = GenogramCanvas.DRAW_PERSON_STYLES;
+        this.ctx.shadowBlur = 0;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        if (text.name) {
+            this.ctx.font = this.fontSize + 'px ' + this.fontFamily;
+            this.ctx.fillStyle = '#333';
+            this.ctx.lineWidth = S.nameHalo.lineWidth;
+            this.ctx.strokeStyle = S.nameHalo.color;
+            this.ctx.strokeText(text.name, person.x, text.nameY);
+            this.ctx.fillText(text.name, person.x, text.nameY);
+        }
+        if (text.noteLines.length) {
+            this.ctx.font = (this.fontSize * .8) + 'px ' + this.fontFamily;
+            this.ctx.fillStyle = '#666';
+            const lineHeight = this.fontSize * .8 + 2;
+            text.noteLines.forEach((line, index) => {
+                const y = text.noteStartY + index * lineHeight;
+                this.ctx.lineWidth = S.notesHalo.lineWidth;
+                this.ctx.strokeStyle = S.notesHalo.color;
+                this.ctx.strokeText(line, person.x, y);
+                this.ctx.fillText(line, person.x, y);
+            });
+        }
+    }
+
     /**
      * [Phase 1] 繪製生育結果小符號（流產/人工流產/死產）。
      * McGoldrick：流產=小型實心三角；人工流產=小 X；死產=縮小性別符號 + 死亡 X。
      * 與正常人物共用姓名標籤位置（以 personSize 為基準），符號本身縮小。
      */
-    _drawLossSymbol(person, isActive) {
-        const { x, y, name, lossType } = person;
+    _drawLossSymbol(person, isActive, viewOptions = this.viewOptions) {
+        const view = this.normalizeViewOptions(viewOptions);
+        const { x, y, lossType } = person;
         const h = this.personSize * 0.42 / 2; // 縮小符號半徑
         this.ctx.save();
         this.ctx.strokeStyle = '#333';
@@ -737,23 +803,14 @@ class GenogramCanvas {
             this.ctx.stroke();
         }
 
-        // 姓名標籤（與正常人物同基準位置）
-        if (name) {
-            const S = GenogramCanvas.DRAW_PERSON_STYLES;
-            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'top';
-            this.ctx.lineWidth = S.nameHalo.lineWidth;
-            this.ctx.strokeStyle = S.nameHalo.color;
-            this.ctx.strokeText(name, x, y + this.personSize / 2 + 8);
-            this.ctx.fillStyle = '#333';
-            this.ctx.fillText(name, x, y + this.personSize / 2 + 8);
-        }
+        this.drawPersonText(person, view);
         this.ctx.restore();
     }
 
-    drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false) {
-        const { x, y, gender, name, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
+    drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false,
+        viewOptions = this.viewOptions) {
+        const view = this.normalizeViewOptions(viewOptions);
+        const { x, y, gender, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
         const size = this.personSize;
         const halfSize = size / 2;
         const S = GenogramCanvas.DRAW_PERSON_STYLES; // shorthand
@@ -763,7 +820,7 @@ class GenogramCanvas {
         // [Phase 1] 生育結果（流產/人工流產）：畫專屬小符號 + 標籤後結束，不走正常性別/醫療/死亡路徑
         // 僅認 miscarriage/abortion；其餘值（含已移除的 stillbirth、舊資料）走正常人物渲染
         if (person.lossType === 'miscarriage' || person.lossType === 'abortion') {
-            this._drawLossSymbol(person, isSelected || isConnecting || isHighlighted);
+            this._drawLossSymbol(person, isSelected || isConnecting || isHighlighted, view);
             this.ctx.restore();
             return;
         }
@@ -864,7 +921,7 @@ class GenogramCanvas {
         }
 
         // 繪製醫學符號 (若未過世)
-        if (!isDeceased && medical) {
+        if (!isDeceased && medical && view.showMedical) {
             this.drawMedicalSymbols(x, y, size, gender, medical, transgender);
         }
 
@@ -923,7 +980,7 @@ class GenogramCanvas {
         }
 
         // 年齡 (如果有醫學標記，可能需要調整位置，這裡先保持)
-        if (age !== null && age !== '') {
+        if (view.showAges && age !== null && age !== '') {
             this.ctx.shadowBlur = 0;
             this.ctx.font = `bold ${this.fontSize}px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
@@ -945,43 +1002,7 @@ class GenogramCanvas {
             this.drawSexualOrientationMarker(x, y, halfSize);
         }
 
-        // 姓名
-        if (name) {
-            this.ctx.shadowBlur = 0;
-            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'top';
-            this.ctx.fillStyle = '#333';
-
-            // [C5] Name halo: strokeText with solid white before fillText.
-            // Solid #fff (no alpha) ensures maximum coverage against family lines
-            // (spatial clarity principle — label legibility over decorative restraint).
-            this.ctx.lineWidth = S.nameHalo.lineWidth;
-            this.ctx.strokeStyle = S.nameHalo.color;
-            this.ctx.strokeText(name, x, y + halfSize + 8);
-
-            this.ctx.fillText(name, x, y + halfSize + 8);
-
-            // 備註 (顯示於姓名下方，支援換行，最多2行)
-            if (person.notes) {
-                this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`; // 較小字體
-                this.ctx.fillStyle = '#666'; // 灰色
-                // 過濾空行，最多顯示2行
-                const noteLines = person.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
-                const noteLineHeight = this.fontSize * 0.8 + 2;
-
-                noteLines.forEach((line, i) => {
-                    const lineY = y + halfSize + 8 + (this.fontSize + 4) + i * noteLineHeight;
-
-                    // [C5] Notes halo: same solid white halo via DRAW_PERSON_STYLES.notesHalo.
-                    this.ctx.lineWidth = S.notesHalo.lineWidth;
-                    this.ctx.strokeStyle = S.notesHalo.color;
-                    this.ctx.strokeText(line, x, lineY);
-
-                    this.ctx.fillText(line, x, lineY);
-                });
-            }
-        }
+        this.drawPersonText(person, view);
 
         this.ctx.restore();
     }
