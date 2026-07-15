@@ -67,6 +67,15 @@ class GenogramApp {
         this.currentInspectorTab = 'properties';
         this.inspectorUserOverride = false;
         this.inspectorAutoCollapsed = false;
+        this.viewOptions = {
+            showNames: true,
+            showAges: true,
+            showNotes: true,
+            showMedical: true,
+            showEmotionalRelationships: true,
+            showHouseholds: true,
+            showLifeCircles: true
+        };
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -230,6 +239,31 @@ class GenogramApp {
         });
     }
 
+    setViewOption(key, value, { render = true } = {}) {
+        if (!Object.prototype.hasOwnProperty.call(this.viewOptions, key)) return false;
+        const next = value === true;
+        this.viewOptions[key] = next;
+        const control = document.querySelector('[data-view-option="' + key + '"]');
+        if (control) control.checked = next;
+        if (!next) {
+            if (key === 'showEmotionalRelationships' && this.selectedRelationshipId) {
+                const selected = this.relationships.find(rel => rel.id === this.selectedRelationshipId);
+                if (selected && Relationship.isEmotionalDisplayType(selected.type)) this.selectedRelationshipId = null;
+            }
+            if (key === 'showHouseholds') this.selectedHouseholdId = null;
+            if (key === 'showLifeCircles') this.selectedLifeCircleId = null;
+            this.updatePropertyPanel();
+        }
+        if (render) this.render();
+        return true;
+    }
+
+    ensureViewOption(key, { render = true } = {}) {
+        if (this.viewOptions[key] === true) return false;
+        this.setViewOption(key, true, { render });
+        return true;
+    }
+
     setInspectorCollapsed(collapsed) {
         document.body.classList.toggle('inspector-collapsed', Boolean(collapsed));
         this.elements.inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
@@ -257,6 +291,11 @@ class GenogramApp {
                 const nextTab = inspectorTabs[nextIndex];
                 this.setInspectorTab(nextTab.dataset.inspectorTab);
                 nextTab.focus();
+            });
+        });
+        document.querySelectorAll('[data-view-option]').forEach(control => {
+            control.addEventListener('change', event => {
+                this.setViewOption(event.currentTarget.dataset.viewOption, event.currentTarget.checked);
             });
         });
         this.elements.inspectorToggle.addEventListener('click', () => {

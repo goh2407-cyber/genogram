@@ -55,6 +55,16 @@ class Relationship {
         ADMIRATION: 'admiration'                 // 崇拜
     };
 
+    static ABUSE_DISPLAY_TYPES = new Set([
+        'violence', 'abuse', 'physical-abuse', 'emotional-abuse',
+        'sexual-abuse', 'neglect', 'manipulative', 'controlling'
+    ]);
+
+    static isEmotionalDisplayType(type) {
+        return Relationship.getCategory(type) === 'emotional'
+            && !Relationship.ABUSE_DISPLAY_TYPES.has(type);
+    }
+
     /**
      * 取得關係類型的顯示名稱
      * @param {string} type

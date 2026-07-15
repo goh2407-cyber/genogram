@@ -595,6 +595,42 @@ body {
     padding: 24px 0;
 }
 
+.view-options {
+    display: grid;
+    gap: 4px;
+}
+
+.view-options-hint {
+    margin: 0 0 8px;
+    color: var(--ink-muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.view-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 7px 9px;
+    color: var(--ink-body);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.view-option:hover {
+    background: var(--surface-subtle);
+    border-color: var(--line-ui);
+}
+
+.view-option input {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: var(--brand);
+}
+
 /* 屬性表單 */
 .property-form {
     display: flex;

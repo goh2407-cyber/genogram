@@ -313,9 +313,19 @@
                         </div>
                     </div>
                 </section>
-                <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view" role="tabpanel" aria-labelledby="viewTab" hidden>
+                <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view"
+                    role="tabpanel" aria-labelledby="viewTab" hidden>
                     <h3 class="panel-title">畫布檢視</h3>
-                    <div class="panel-content"><p class="empty-hint">使用畫布右下角控制項調整縮放。</p></div>
+                    <div class="panel-content view-options" aria-label="畫布顯示項目">
+                        <p class="view-options-hint">暫時隱藏資訊，不會刪除個案資料。</p>
+                        <label class="view-option"><input type="checkbox" data-view-option="showNames" checked><span>姓名</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showAges" checked><span>年齡</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showNotes" checked><span>備註與關係說明</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showMedical" checked><span>醫學標記</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showEmotionalRelationships" checked><span>情感關係線</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住框</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
+                    </div>
                 </section>
             </aside>
         </main>
