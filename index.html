@@ -29,8 +29,8 @@
 <body>
     <div class="app-container">
         <!-- 頂部工具列 -->
-        <header class="toolbar">
-            <div class="toolbar-left">
+        <header class="global-bar" id="globalBar">
+            <div class="brand-lockup">
                 <h1 class="app-title" style="display: flex; align-items: center; gap: 10px;">
                     <svg id="a" xmlns="http://www.w3.org/2000/svg" width="16.55mm" height="13.99mm"
                         viewBox="0 0 46.91 39.65">
@@ -44,9 +44,10 @@
                     勵馨家系圖生成器
                 </h1>
             </div>
-            <div class="toolbar-center">
+            <div class="document-context"><span class="document-name">未命名家系圖</span></div>
+            <nav class="canvas-tool-dock" id="canvasToolDock" aria-label="畫布工具">
                 <div class="tool-group generation-group">
-                    <button class="tool-btn primary" id="addPerson" title="新增角色 (N)">
+                    <button class="tool-btn primary" id="addPerson" title="新增角色 (N)" aria-label="新增角色 (N)">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -59,14 +60,14 @@
                 </div>
                 <div class="tool-divider"></div>
                 <div class="tool-group">
-                    <button class="tool-btn" id="selectTool" title="選取工具 (V)">
+                    <button class="tool-btn" id="selectTool" title="選取工具 (V)" aria-label="選取工具 (V)">
                         <span class="icon select-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M4 3l7.07 16.97 2.51-7.39 7.39-2.51L4 3z" />
                             </svg></span>
                         <span class="tool-label">選取 (V)</span>
                     </button>
-                    <button class="tool-btn" id="boxSelectTool" title="範圍圈選 (B)">
+                    <button class="tool-btn" id="boxSelectTool" title="範圍圈選 (B)" aria-label="範圍圈選 (B)">
                         <span class="icon box-select-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="4 3" />
@@ -74,7 +75,7 @@
                         <span class="tool-label">範圍圈選 (B)</span>
                     </button>
 
-                    <button class="tool-btn" id="householdTool" title="同住/圈選 (H)">
+                    <button class="tool-btn" id="householdTool" title="同住/圈選 (H)" aria-label="同住/圈選 (H)">
                         <span class="icon household-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 10.5L12 3l9 7.5" />
@@ -83,7 +84,7 @@
                         <span class="tool-label">同住 (H)</span>
                     </button>
 
-                    <button class="tool-btn" id="lifeCircleTool" title="生活圈 (L)">
+                    <button class="tool-btn" id="lifeCircleTool" title="生活圈 (L)" aria-label="生活圈 (L)">
                         <span class="icon life-circle-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="8.5" stroke-dasharray="5 3.5" />
@@ -92,7 +93,7 @@
                         <span class="tool-label">生活圈 (L)</span>
                     </button>
 
-                    <button class="tool-btn" id="connectTool" title="連接關係 (C)">
+                    <button class="tool-btn" id="connectTool" title="連接關係 (C)" aria-label="連接關係 (C)">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="5.5" cy="12" r="3" />
@@ -101,7 +102,7 @@
                             </svg></span>
                         <span class="tool-label">連接 (C)</span>
                     </button>
-                    <button class="tool-btn" id="deleteTool" title="刪除 (Del)">
+                    <button class="tool-btn" id="deleteTool" title="刪除 (Del)" aria-label="刪除 (Del)">
                         <span class="icon delete-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -109,7 +110,7 @@
                             </svg></span>
                         <span class="tool-label">刪除 (Del)</span>
                     </button>
-                    <button class="tool-btn danger" id="clearAllBtn" title="清空畫布">
+                    <button class="tool-btn danger" id="clearAllBtn" title="清空畫布" aria-label="清空畫布">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 6h18" />
@@ -123,23 +124,7 @@
                 </div>
                 <div class="tool-divider"></div>
                 <div class="tool-group">
-                    <button class="tool-btn" id="undoBtn" title="復原 (Ctrl+Z)">
-                        <span class="icon undo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 14L4 9l5-5" />
-                                <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-                            </svg></span>
-                        <span class="tool-label">復原 (Ctrl+Z)</span>
-                    </button>
-                    <button class="tool-btn" id="redoBtn" title="重做 (Ctrl+Y)">
-                        <span class="icon redo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M15 14l5-5-5-5" />
-                                <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
-                            </svg></span>
-                        <span class="tool-label">重做 (Ctrl+Y)</span>
-                    </button>
-                    <button class="tool-btn" id="autoLayoutBtn" title="自動排列同輩份">
+                    <button class="tool-btn" id="autoLayoutBtn" title="自動排列同輩份" aria-label="自動排列同輩份">
                         <span class="icon layout-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="9" y="2.5" width="6" height="6" rx="1" />
@@ -149,7 +134,7 @@
                             </svg></span>
                         <span class="tool-label">自動排列</span>
                     </button>
-                    <button class="tool-btn" id="copyImageBtn" title="複製圖片到剪貼簿">
+                    <button class="tool-btn" id="copyImageBtn" title="複製圖片到剪貼簿" aria-label="複製圖片到剪貼簿">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="9" y="9" width="12" height="12" rx="2" />
@@ -158,10 +143,18 @@
                         <span class="tool-label">複製圖片</span>
                     </button>
                 </div>
-            </div>
-            <div class="toolbar-right">
+            </nav>
+            <nav class="global-actions" aria-label="檔案與歷程操作">
                 <div class="tool-group">
-                    <button class="tool-btn primary" id="saveBtn" title="儲存檔案 (Ctrl+S)">
+                    <button class="tool-btn" id="undoBtn" title="復原 (Ctrl+Z)" aria-label="復原 (Ctrl+Z)">
+                        <span class="icon undo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>
+                        <span class="tool-label">復原 (Ctrl+Z)</span>
+                    </button>
+                    <button class="tool-btn" id="redoBtn" title="重做 (Ctrl+Y)" aria-label="重做 (Ctrl+Y)">
+                        <span class="icon redo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></span>
+                        <span class="tool-label">重做 (Ctrl+Y)</span>
+                    </button>
+                    <button class="tool-btn primary" id="saveBtn" title="儲存檔案 (Ctrl+S)" aria-label="儲存檔案 (Ctrl+S)">
                         <span class="icon save-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -170,7 +163,7 @@
                             </svg></span>
                         <span class="tool-label">儲存 (Ctrl+S)</span>
                     </button>
-                    <button class="tool-btn" id="downloadBtn" title="另存新檔">
+                    <button class="tool-btn" id="downloadBtn" title="另存新檔" aria-label="另存新檔">
                         <span class="icon download-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -179,7 +172,7 @@
                             </svg></span>
                         <span class="tool-label">另存</span>
                     </button>
-                    <button class="tool-btn" id="loadBtn" title="載入檔案">
+                    <button class="tool-btn" id="loadBtn" title="載入檔案" aria-label="載入檔案">
                         <span class="icon load-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path
@@ -188,7 +181,7 @@
                             </svg></span>
                         <span class="tool-label">載入</span>
                     </button>
-                    <button class="tool-btn" id="exportBtn" title="匯出圖片">
+                    <button class="tool-btn" id="exportBtn" title="匯出圖片" aria-label="匯出圖片">
                         <span class="icon export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -197,7 +190,7 @@
                             </svg></span>
                         <span class="tool-label">匯出</span>
                     </button>
-                    <button class="tool-btn" id="helpBtn" title="使用說明">
+                    <button class="tool-btn" id="helpBtn" title="使用說明" aria-label="使用說明">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="9" />
@@ -207,7 +200,7 @@
                         <span class="tool-label">說明</span>
                     </button>
                 </div>
-            </div>
+            </nav>
         </header>
 
         <!-- 主要內容區 -->
@@ -235,9 +228,20 @@
             </div>
 
             <!-- 右側面板 -->
-            <aside class="side-panel" id="sidePanel">
+            <aside class="side-panel inspector-panel" id="inspectorPanel">
+                <div class="inspector-header">
+                    <div><span class="inspector-eyebrow">INSPECTOR</span><h2>檢視與編輯</h2></div>
+                    <button class="inspector-toggle" id="inspectorToggle" type="button" title="收合檢視面板" aria-label="收合檢視面板" aria-expanded="true">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    </button>
+                </div>
+                <div class="inspector-tabs" role="tablist" aria-label="檢視面板">
+                    <button type="button" role="tab" class="inspector-tab active" id="propertiesTab" data-inspector-tab="properties" aria-controls="propertyPanel" aria-selected="true" tabindex="0">屬性</button>
+                    <button type="button" role="tab" class="inspector-tab" id="legendTab" data-inspector-tab="legend" aria-controls="legendPanel" aria-selected="false" tabindex="-1">圖例</button>
+                    <button type="button" role="tab" class="inspector-tab" id="viewTab" data-inspector-tab="view" aria-controls="viewContent" aria-selected="false" tabindex="-1">檢視</button>
+                </div>
                 <!-- 屬性編輯面板 -->
-                <section class="panel-section" id="propertyPanel">
+                <section class="panel-section inspector-tab-panel" id="propertyPanel" data-inspector-panel="properties" role="tabpanel" aria-labelledby="propertiesTab">
                     <h3 class="panel-title">屬性編輯</h3>
                     <div class="panel-content" id="propertyContent">
                         <p class="empty-hint">點選成員以編輯屬性</p>
@@ -245,12 +249,12 @@
                 </section>
 
                 <!-- 關係圖例 -->
-                <section class="panel-section" id="legendPanel">
+                <section class="panel-section inspector-tab-panel" id="legendPanel" data-inspector-panel="legend" role="tabpanel" aria-labelledby="legendTab" hidden>
                     <h3 class="panel-title">
                         關係類型圖例
                         <span class="toggle-icon">▼</span>
                     </h3>
-                    <div class="panel-content legend-content">
+                    <div class="panel-content legend-content" id="legendContent">
                         <div class="legend-category">
                             <h4>家庭關係</h4>
                             <div class="legend-item"><span class="legend-line parent-child"></span><span>親生子女</span></div>
@@ -308,6 +312,10 @@
                             <div class="legend-item"><span class="legend-line controlling"></span><span>控制</span></div>
                         </div>
                     </div>
+                </section>
+                <section class="panel-section inspector-tab-panel" id="viewContent" data-inspector-panel="view" role="tabpanel" aria-labelledby="viewTab" hidden>
+                    <h3 class="panel-title">畫布檢視</h3>
+                    <div class="panel-content"><p class="empty-hint">使用畫布右下角控制項調整縮放。</p></div>
                 </section>
             </aside>
         </main>
@@ -676,6 +684,7 @@
     <script src="js/layout.js"></script>
     <script src="js/relationship.js"></script>
     <script src="js/domain/kinship-engine.js"></script>
+    <script src="js/domain/family-route-planner.js"></script>
     <script src="js/history.js"></script>
     <script src="js/canvas.js"></script>
     <script src="js/storage.js"></script>

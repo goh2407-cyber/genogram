@@ -64,6 +64,9 @@ class GenogramApp {
         this.scale = 1;
         this.offsetX = 0;
         this.offsetY = 0;
+        this.currentInspectorTab = 'properties';
+        this.inspectorUserOverride = false;
+        this.inspectorAutoCollapsed = false;
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -82,6 +85,7 @@ class GenogramApp {
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
+        this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -124,6 +128,11 @@ class GenogramApp {
         this.cacheElements();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
+        // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
+        this._canvasFontSignature = null;
+        this.canvasFontReady = Promise.resolve();
+        this.waitForCurrentCanvasFonts(true);
         this.setupEventListeners();
 
         // 延遲載入自動儲存，確保 canvas 和 ResizeObserver 都已完成初始化
@@ -166,6 +175,7 @@ class GenogramApp {
 
             // 面板
             propertyContent: document.getElementById('propertyContent'),
+            inspectorToggle: document.getElementById('inspectorToggle'),
             statusBar: document.getElementById('statusBar'),
             zoomLevel: document.getElementById('zoomLevel'),
             zoomIn: document.getElementById('zoomIn'),
@@ -205,10 +215,70 @@ class GenogramApp {
         };
     }
 
+    setInspectorTab(tabName) {
+        const allowed = new Set(['properties', 'legend', 'view']);
+        const next = allowed.has(tabName) ? tabName : 'properties';
+        this.currentInspectorTab = next;
+        document.querySelectorAll('[data-inspector-tab]').forEach(button => {
+            const active = button.dataset.inspectorTab === next;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', String(active));
+            button.tabIndex = active ? 0 : -1;
+        });
+        document.querySelectorAll('[data-inspector-panel]').forEach(panel => {
+            panel.hidden = panel.dataset.inspectorPanel !== next;
+        });
+    }
+
+    setInspectorCollapsed(collapsed) {
+        document.body.classList.toggle('inspector-collapsed', Boolean(collapsed));
+        this.elements.inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
+        const action = collapsed ? '展開檢視面板' : '收合檢視面板';
+        this.elements.inspectorToggle.setAttribute('title', action);
+        this.elements.inspectorToggle.setAttribute('aria-label', action);
+        requestAnimationFrame(() => this.canvas.resize());
+    }
+
     /**
      * 設定事件監聽器
      */
     setupEventListeners() {
+        const inspectorTabs = [...document.querySelectorAll('[data-inspector-tab]')];
+        inspectorTabs.forEach((button, index) => {
+            button.addEventListener('click', () => this.setInspectorTab(button.dataset.inspectorTab));
+            button.addEventListener('keydown', event => {
+                let nextIndex;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % inspectorTabs.length;
+                else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + inspectorTabs.length) % inspectorTabs.length;
+                else if (event.key === 'Home') nextIndex = 0;
+                else if (event.key === 'End') nextIndex = inspectorTabs.length - 1;
+                else return;
+                event.preventDefault();
+                const nextTab = inspectorTabs[nextIndex];
+                this.setInspectorTab(nextTab.dataset.inspectorTab);
+                nextTab.focus();
+            });
+        });
+        this.elements.inspectorToggle.addEventListener('click', () => {
+            this.inspectorUserOverride = true;
+            this.inspectorAutoCollapsed = false;
+            this.setInspectorCollapsed(!document.body.classList.contains('inspector-collapsed'));
+        });
+        this.setInspectorTab(this.currentInspectorTab);
+        this.inspectorMediaQuery = window.matchMedia('(max-width: 980px)');
+        const applyResponsiveInspector = event => {
+            if (this.inspectorUserOverride) return;
+            if (event.matches) {
+                this.inspectorAutoCollapsed = true;
+                this.setInspectorCollapsed(true);
+            } else if (this.inspectorAutoCollapsed) {
+                this.inspectorAutoCollapsed = false;
+                this.setInspectorCollapsed(false);
+            }
+        };
+        this.inspectorMediaQuery.addEventListener('change', applyResponsiveInspector);
+        applyResponsiveInspector(this.inspectorMediaQuery);
+
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
         this.elements.addPersonBtn.addEventListener('click', () => this.showGenderModal('parent'));
 
@@ -392,6 +462,9 @@ class GenogramApp {
      * 設定當前工具
      */
     setTool(tool) {
+        // Placement is an ephemeral transaction. Any explicit tool change aborts it
+        // without touching history. commitPlacement clears it before selecting a tool.
+        this.cancelPlacement();
         // [UX Fix] 如果正在預覽自動排列，切換工具時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -455,6 +528,13 @@ class GenogramApp {
      * 用於視窗失焦、tab 切換、觸控中斷等情況
      */
     cancelInteraction() {
+        this.cancelPlacement();
+
+        // 新建關係視窗依賴 connectingFrom/connectingTo。失焦時既然要清除端點，
+        // 也必須同步關閉該視窗，避免回到頁面後只剩一個無法送出的 modal。
+        // 編輯既有關係不依賴暫存端點，因此允許視窗保持開啟。
+        this.cancelRelationshipWorkflow({ preserveEditor: true });
+
         // 清理拖曳狀態
         if (this.canvas) {
             this.canvas.isDragging = false;
@@ -585,6 +665,12 @@ class GenogramApp {
         this.canvas.dragGuides = null;
 
         const point = this.canvas.getMousePos(e);
+
+        if (this.placementSession) {
+            this.updatePlacement(point.x, point.y, Boolean(e.altKey));
+            this.commitPlacement();
+            return;
+        }
 
         // [NEW] 快速按鈕點擊偵測（角色選取後才顯示鈕，故用 selectedPersonId）
         if (this.selectedPersonId && this.currentTool === 'select') {
@@ -899,6 +985,12 @@ class GenogramApp {
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
+
+        if (this.placementSession) {
+            this.updatePlacement(point.x, point.y, e.altKey);
+            this.render();
+            return;
+        }
 
         // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
         if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
@@ -1265,6 +1357,23 @@ class GenogramApp {
                         // this.enforceLocalRules(p);
                     }
                 });
+
+                // [Safe routing] 僅單一人物拖曳、且使用者未按 Alt 時，才允許半格內的水平微調。
+                // 校正仍在同一個 dragStartSnapshot 交易內，不新增 history，也不改 Y／generation。
+                if (this.canvas.draggedPerson && movingPersonIds.length === 1 && !e.altKey &&
+                    typeof this.canvas.findSafeFamilyRouteAdjustment === 'function') {
+                    const dragged = this.personMap.get(movingPersonIds[0]);
+                    if (dragged) {
+                        const halfCell = GenogramApp.GRID.CELL_WIDTH / 2;
+                        const correction = this.canvas.findSafeFamilyRouteAdjustment(
+                            dragged.id,
+                            [-halfCell, halfCell],
+                            this.persons,
+                            this.relationships
+                        );
+                        if (correction && correction.dx) dragged.x += correction.dx;
+                    }
+                }
                 this.render(); // Snap 後重繪
                 } // end else（個別人物拖曳的逐人吸附路徑）
             }
@@ -1465,8 +1574,16 @@ class GenogramApp {
                 break;
             case 'Escape':
                 // [UX Fix] 改進 Esc 處理，顯示明確的狀態訊息
-                if (this.isDrawingLifeCircle) {
+                if (this.placementSession) {
+                    this.cancelPlacement();
+                    this.updateStatus('新增人物已取消', 'info');
+                } else if (this.isDrawingLifeCircle) {
                     this.cancelLifeCircle();
+                } else if (this.elements.relationshipModal?.classList.contains('active')) {
+                    // 新建關係視窗仍保留 connectingFrom/connectingTo；必須先關閉視窗，
+                    // 否則第一次 Esc 只會清掉第一端點，留下無法送出的 modal。
+                    this.closeRelationshipModal();
+                    this.updateStatus('關係設定已取消', 'info');
                 } else if (this.connectingFrom) {
                     this.connectingFrom = null;
                     this.updateStatus('連接已取消', 'info');
@@ -1729,13 +1846,9 @@ class GenogramApp {
      * @param {string} buttonType - 按鈕類型 ('parent', 'sibling', 'partner', 'son', 'daughter', 'pregnancy')
      */
     handleQuickAddClick(basePerson, buttonType) {
-        const grid = GenogramApp.GRID;
-        this.saveState();
-
         switch (buttonType) {
             case 'parent':
-                // 一鍵建立父母（父親 + 母親 + 婚姻線 + 2條親子線）
-                this.createParentsForPerson(basePerson);
+                this.beginQuickParentPlacement(basePerson);
                 break;
 
             case 'sibling':
@@ -1753,17 +1866,124 @@ class GenogramApp {
                 break;
 
             case 'son':
-                this.createChildForPerson(basePerson, 'male');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'male');
                 break;
 
             case 'daughter':
-                this.createChildForPerson(basePerson, 'female');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'female');
                 break;
 
             case 'pregnancy':
-                this.createChildForPerson(basePerson, 'pregnancy');
+                this.beginQuickRelativePlacement(basePerson, 'child', 'pregnancy');
                 break;
         }
+    }
+
+    beginQuickRelativePlacement(basePerson, kind, gender, extras = {}) {
+        const session = this.beginPlacement({ kind, basePersonId: basePerson.id, gender,
+            generation: kind === 'child' ? this.getGenerationBelow(basePerson.generation) : basePerson.generation,
+            ...extras });
+        this.updateStatus('請選擇新增人物的位置', 'info');
+        this.render();
+        return session;
+    }
+
+    beginQuickParentPlacement(child) {
+        const parentIds = this.getKinshipEngine().getParentIds(child.id);
+        if (parentIds.length >= 2) {
+            this.cancelPlacement();
+            this.updateStatus('此人物已有 2 位父母，無法再新增父母', 'error');
+            this.render();
+            return null;
+        }
+        if (parentIds.length === 1) {
+            const existingParent = this.personMap.get(parentIds[0]);
+            const gender = existingParent?.gender === 'female' ? 'male' : 'female';
+            const session = this.beginPlacement({ kind: 'parent', basePersonId: child.id, gender,
+                generation: this.getGenerationAbove(child.generation) });
+            this.render();
+            return session;
+        }
+        const grid = GenogramApp.GRID;
+        const placement = this.findQuickParentPairPlacement(child);
+        const centerX = placement.centerX;
+        const parentY = placement.parentY;
+        const halfGap = placement.gap / 2;
+        const fatherId = '__placement_father__';
+        const motherId = '__placement_mother__';
+        const session = this.beginPlacement({ kind: 'parent-pair', basePersonId: child.id,
+            people: [
+                { personId: fatherId, gender: 'male', generation: this.getGenerationAbove(child.generation), x: centerX - halfGap, y: parentY },
+                { personId: motherId, gender: 'female', generation: this.getGenerationAbove(child.generation), x: centerX + halfGap, y: parentY }
+            ],
+            relationshipPreview: [
+                { type: 'married', fromPersonId: fatherId, toPersonId: motherId },
+                { type: 'parent-child', fromPersonId: fatherId, toPersonId: child.id },
+                { type: 'parent-child', fromPersonId: motherId, toPersonId: child.id }
+            ]
+        });
+        this.render();
+        return session;
+    }
+
+    isQuickParentPairSafe(centerX, parentY, gap, child) {
+        if (!Number.isFinite(centerX) || !Number.isFinite(parentY) || !Number.isFinite(gap) || !child) return false;
+        const personSize = this.canvas?.personSize || 50;
+        const half = personSize / 2;
+        const safety = 10;
+        const candidateHalf = half + safety;
+        const parentXs = [centerX - gap / 2, centerX + gap / 2];
+        const obstacles = typeof this.canvas?.getPersonRouteObstacles === 'function'
+            ? this.canvas.getPersonRouteObstacles(this.persons)
+            : [];
+        const overlaps = (a, b) =>
+            a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        const hasCollision = parentXs.some(x => {
+            const candidate = {
+                left: x - candidateHalf,
+                right: x + candidateHalf,
+                top: parentY - candidateHalf,
+                bottom: parentY + candidateHalf
+            };
+            return obstacles.some(obstacle => overlaps(candidate, obstacle));
+        });
+        if (hasCollision) return false;
+
+        if (typeof FamilyRoutePlanner === 'undefined') return true;
+        const sourceRange = {
+            minX: parentXs[0] + half,
+            maxX: parentXs[1] - half
+        };
+        const routePlan = FamilyRoutePlanner.planFamily({
+            parents: [
+                { id: '__quick_parent_left__', x: parentXs[0], y: parentY },
+                { id: '__quick_parent_right__', x: parentXs[1], y: parentY }
+            ],
+            children: [child],
+            source: { x: centerX, y: parentY },
+            sourceRange,
+            obstacles,
+            personSize,
+            margin: safety
+        });
+        return routePlan.safe;
+    }
+
+    findQuickParentPairPlacement(child) {
+        const grid = GenogramApp.GRID;
+        const parentY = this.getGenerationYByIndex(this.getGenerationIndexByY(child.y) - 1);
+        const standardGap = grid.CELL_WIDTH;
+        const offsets = [0];
+        for (let distance = 1; distance <= this.persons.length + 4; distance++) {
+            offsets.push(-distance * grid.CELL_WIDTH, distance * grid.CELL_WIDTH);
+        }
+        for (const offset of offsets) {
+            const centerX = child.x + offset;
+            if (this.isQuickParentPairSafe(centerX, parentY, standardGap, child)) {
+                return { centerX, parentY, gap: standardGap };
+            }
+        }
+        return { centerX: child.x, parentY, gap: standardGap };
     }
 
     /**
@@ -1978,75 +2198,10 @@ class GenogramApp {
             return;
         }
 
-        const grid = GenogramApp.GRID;
-        this.saveState();
-
-        if (type === 'sibling') {
-            // 建立手足
-            let siblingX = basePerson.x + grid.CELL_WIDTH;
-            const sameLevelPersons = this.persons.filter(p =>
-                Math.abs(p.y - basePerson.y) < grid.CELL_HEIGHT * 0.5
-            );
-            if (sameLevelPersons.length > 0) {
-                const rightmost = Math.max(...sameLevelPersons.map(p => p.x));
-                siblingX = rightmost + grid.CELL_WIDTH;
-            }
-
-            const sibling = new Person({
-                x: siblingX,
-                y: basePerson.y,
-                gender: gender,
-                sexualOrientation: sexualOrientation,
-                transgender: transgender,
-                generation: basePerson.generation
-            });
-            this.persons.push(sibling);
-            this.personMap.set(sibling.id, sibling);
-
-            // 找出基準角色的父母，為手足建立親子關係
-            const parentRels = this.relationships.filter(r =>
-                r.type === 'parent-child' && r.toPersonId === basePerson.id
-            );
-            parentRels.forEach(rel => {
-                const siblingParentRel = new Relationship({
-                    fromPersonId: rel.fromPersonId,
-                    toPersonId: sibling.id,
-                    type: 'parent-child'
-                });
-                this.relationships.push(siblingParentRel);
-            });
-
-            this.updateStatus('已建立手足', 'success');
-        } else if (type === 'partner') {
-            // 建立伴侶
-            const partnerX = basePerson.x + grid.CELL_WIDTH;
-
-            const partner = new Person({
-                x: partnerX,
-                y: basePerson.y,
-                gender: gender,
-                sexualOrientation: sexualOrientation,
-                transgender: transgender,
-                generation: basePerson.generation
-            });
-            this.persons.push(partner);
-            this.personMap.set(partner.id, partner);
-
-            // 建立關係 (預設為 cohabiting，或可改為 marriage)
-            const cohabitRel = new Relationship({
-                fromPersonId: basePerson.id,
-                toPersonId: partner.id,
-                type: 'married' // [Bug Fix] 使用 'married' 以符合 MARRIAGE_TYPES 定義，確保 findSpouse 能正確找到配偶
-
-            });
-            this.relationships.push(cohabitRel);
-
-            this.updateStatus('已建立伴侶關係', 'success');
-        }
-
-        this.closeGenderModal();
-        this.autoSave();
-        this.render();
+        this.elements.genderModal.classList.remove('active');
+        this.quickAddContext = null;
+        this.beginQuickRelativePlacement(basePerson, type, gender, { sexualOrientation, transgender,
+            relationshipType: type === 'partner' ? 'married' : undefined });
     }
 
     /**
@@ -2242,59 +2397,17 @@ class GenogramApp {
         // [Bug Fix] 將數字 generation 轉換為字串格式，與系統其他部分保持一致
         const genNames = ['grandparent', 'parent', 'child', 'grandchild'];
         const generationStr = genNames[genIndex] || 'parent';
-        const person = new Person({
-            x,
-            y,
-            gender,
-            sexualOrientation: sexualOrientation,
-            transgender: transgender,
-            generation: generationStr
-        });
-        this.persons.push(person);
-        this.personMap.set(person.id, person);
-
-        // 自動建立關係
-        let relCount = 0;
-        if (selectedPersons.length > 0) {
-            this.saveState();
-            selectedPersons.forEach(selected => {
-                let fromId, toId;
-                if (['child', 'grandchild'].includes(this.pendingGeneration)) {
-                    fromId = selected.id;
-                    toId = person.id;
-                } else {
-                    fromId = person.id;
-                    toId = selected.id;
-                }
-
-                const relationship = new Relationship({
-                    fromPersonId: fromId,
-                    toPersonId: toId,
-                    type: 'parent-child'
-                });
-                this.relationships.push(relationship);
-                relCount++;
-            });
-        }
-
+        const previewId = '__placement__';
+        const relationshipPreview = selectedPersons.map(selected => ({
+            type: 'parent-child',
+            fromPersonId: ['child', 'grandchild'].includes(this.pendingGeneration) ? selected.id : previewId,
+            toPersonId: ['child', 'grandchild'].includes(this.pendingGeneration) ? previewId : selected.id
+        }));
+        this.beginPlacement({ kind: 'person', x, y, personId: previewId, gender,
+            sexualOrientation, transgender, generation: generationStr, relationshipPreview });
         this.closeGenderModal();
-
-        // 維持選取以便連加
-        if (relCount === 0) {
-            this.selectedPersonId = null;
-            this.selectedPersonIds = [];
-        }
-
-        this.autoSave();
-        this.setTool('select');
-        this.updatePropertyPanel();
         this.render();
-
-        let msg = `已建立人物`;
-        if (relCount > 0) {
-            msg += `，並自動建立 ${relCount} 條親子連線。您可以繼續點擊右側選單新增更多成員。`;
-        }
-        this.updateStatus(msg, (relCount > 0 ? 'success' : 'info'));
+        this.updateStatus('移動游標選擇位置，點擊畫布完成；按 Esc 取消', 'info');
     }
 
     /**
@@ -2993,6 +3106,21 @@ class GenogramApp {
     }
 
     /**
+     * 取消暫存中的連線流程，避免 Undo/Redo、刪除、載入或清空資料後，
+     * connectingFrom/connectingTo 仍指向已不存在的人物。
+     * @param {{preserveEditor?: boolean}} options
+     */
+    cancelRelationshipWorkflow({ preserveEditor = false } = {}) {
+        const modalActive = this.elements.relationshipModal?.classList.contains('active');
+        if (modalActive && (!preserveEditor || !this.editingRelationshipId)) {
+            this.closeRelationshipModal();
+            return;
+        }
+        this.connectingFrom = null;
+        this.connectingTo = null;
+    }
+
+    /**
      * 顯示關係類型編輯對話框（修改現有關係）
      */
     showRelationshipEditModal() {
@@ -3108,6 +3236,39 @@ class GenogramApp {
                 this.closeRelationshipModal();
                 return;
             }
+        }
+
+        // 新建與編輯必須遵守相同的唯一性規則：伴侶類與親子類在同一對人物間
+        // 各只能有一條；情感類可多條並存，但不能有同方向、同類型的完全重複線。
+        const conflictingRelationship = this.relationships.find(other => {
+            if (other.id === relationship.id) return false;
+
+            const sameDirection =
+                other.fromPersonId === relationship.fromPersonId &&
+                other.toPersonId === relationship.toPersonId;
+            const sameUndirectedPair = sameDirection || (
+                other.fromPersonId === relationship.toPersonId &&
+                other.toPersonId === relationship.fromPersonId
+            );
+            const otherCategory = typeof other.getCategory === 'function'
+                ? other.getCategory()
+                : Relationship.getCategory(other.type);
+
+            if (category === 'marriage' || category === 'family') {
+                return sameUndirectedPair && otherCategory === category;
+            }
+            return sameDirection && other.type === type;
+        });
+
+        if (conflictingRelationship) {
+            const message = category === 'marriage'
+                ? '兩人之間已有伴侶類關係，請直接編輯既有關係'
+                : category === 'family'
+                    ? '兩人之間已有親子關係，請直接編輯既有關係'
+                    : '此方向的相同關係已存在';
+            this.updateStatus(message, 'warning');
+            this.closeRelationshipModal();
+            return;
         }
 
         // 儲存狀態供復原使用
@@ -3719,6 +3880,8 @@ class GenogramApp {
      * 刪除選取的項目
      */
     deleteSelected() {
+        this.cancelRelationshipWorkflow();
+
         // [UX Fix] 如果正在預覽自動排列，刪除時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -3817,6 +3980,7 @@ class GenogramApp {
      * 繪製
      */
     render() {
+        this.waitForCurrentCanvasFonts(true);
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
@@ -3829,6 +3993,10 @@ class GenogramApp {
         // 不再以 overlay 蓋在人物符號上罩染臨床底色）
         this.canvas.lifeCirclesToDraw = this.lifeCircles || [];
         this.canvas.selectedLifeCircleId = this.selectedLifeCircleId || null;
+        this.canvas.placementPreview = this.placementSession
+            ? { ...this.placementSession.candidate, ghostPerson: this.placementSession.ghostPerson,
+                ghostPeople: this.placementSession.ghostPeople }
+            : null;
         this.canvas.render(
             this.persons,
             this.relationships,
@@ -4092,6 +4260,291 @@ class GenogramApp {
         return origin + gridIndex * cellSize;
     }
 
+    getCurrentCanvasFontText() {
+        const legend = document.getElementById('legendContent')?.textContent || '';
+        // Canvas text fields: person name/age/notes, relationship notes/date, and life-circle labels.
+        // Medical markers are vector/ASCII symbols and do not contribute arbitrary font glyphs.
+        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes]).filter(Boolean);
+        const relationshipText = this.relationships.flatMap(rel => [rel.notes, rel.date]).filter(Boolean);
+        const lifeCircleText = (this.lifeCircles || []).map(lc => lc.label).filter(Boolean);
+        return [legend, ...personText, ...relationshipText, ...lifeCircleText].join('\n');
+    }
+
+    waitForCurrentCanvasFonts(repaint = false) {
+        if (!document.fonts || typeof document.fonts.load !== 'function') return Promise.resolve();
+        const text = this.getCurrentCanvasFontText();
+        if (text === this._canvasFontSignature) return this.canvasFontReady;
+        this._canvasFontSignature = text;
+        const signature = text;
+        this.canvasFontReady = Promise.all([
+            document.fonts.load('14px "Noto Sans TC"', text),
+            document.fonts.load('bold 14px "Noto Sans TC"', text)
+        ]).then(() => {
+            if (repaint && signature === this._canvasFontSignature) this.render();
+        }).catch(() => undefined);
+        return this.canvasFontReady;
+    }
+
+    /**
+     * 尋找同列最近的空格。搜尋順序固定為 0, -1, +1, -2, +2 ...。
+     */
+    findNearestOpenCell(x, y, excludedIds = new Set()) {
+        const grid = GenogramApp.GRID;
+        const occupiedAt = (candidateX) => this.persons.some(person =>
+            !excludedIds.has(person.id) &&
+            Math.abs(person.x - candidateX) < grid.CELL_WIDTH * 0.35 &&
+            Math.abs(person.y - y) < grid.CELL_HEIGHT * 0.35
+        );
+        const initiallyOccupied = occupiedAt(x);
+        const limit = this.persons.length + 4;
+
+        for (let distance = 0; distance <= limit; distance++) {
+            const offsets = distance === 0 ? [0] : [-distance, distance];
+            for (const offset of offsets) {
+                const candidateX = x + offset * grid.CELL_WIDTH;
+                if (!occupiedAt(candidateX)) {
+                    return { x: candidateX, y, occupied: false,
+                        preferredOccupied: initiallyOccupied,
+                        blockedAt: initiallyOccupied ? { x, y } : null };
+                }
+            }
+        }
+
+        // limit 大於現有人數，理論上必有空格；保留確定性 fallback。
+        return { x: x - (limit + 1) * grid.CELL_WIDTH, y, occupied: false,
+            preferredOccupied: initiallyOccupied,
+            blockedAt: initiallyOccupied ? { x, y } : null };
+    }
+
+    /**
+     * 計算新增人物候選格與尚未提交的關係預覽；不改動任何既有資料。
+     */
+    getPlacementCandidate(request = {}) {
+        const grid = GenogramApp.GRID;
+        const pointerGridX = Number.isFinite(request.pointerX)
+            ? grid.ORIGIN_X + Math.round((request.pointerX - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH
+            : null;
+        const previewPersonId = request.personId || '__placement__';
+        let preferredX;
+        let preferredY;
+        let relationshipPreview = request.relationshipPreview || [];
+
+        if (request.kind === 'parent-pair') {
+            const first = request.people[0];
+            preferredX = pointerGridX ?? first.x;
+            preferredY = first.y;
+        } else if (request.kind === 'person' && !request.basePersonId) {
+            preferredX = grid.ORIGIN_X + Math.round(((request.x || 0) - grid.ORIGIN_X) / grid.CELL_WIDTH) * grid.CELL_WIDTH;
+            preferredY = grid.ORIGIN_Y + Math.round(((request.y || 0) - grid.ORIGIN_Y) / grid.CELL_HEIGHT) * grid.CELL_HEIGHT;
+        } else {
+            const base = this.personMap.get(request.basePersonId);
+            if (!base) throw new Error(`Placement base person not found: ${request.basePersonId}`);
+
+            const baseGeneration = this.getGenerationIndexByY(base.y);
+            const kinship = this.getKinshipEngine();
+            preferredX = base.x;
+            preferredY = base.y;
+
+            if (request.kind === 'partner' || request.kind === 'sibling') {
+                preferredX += grid.CELL_WIDTH;
+            } else if (request.kind === 'child') {
+                preferredY = this.getGenerationYByIndex(baseGeneration + 1);
+                const spouses = this.getSpouses(base.id);
+                const spouse = this.pickSpouseForChildCreation(base, spouses);
+                if (spouse) preferredX = (base.x + spouse.x) / 2;
+                const parentIds = spouse ? [base.id, spouse.id] : [base.id];
+                if (!request.relationshipPreview || request.relationshipPreview.length === 0) {
+                    relationshipPreview = parentIds.map(parentId => ({
+                        type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                    }));
+                }
+            } else if (request.kind === 'parent') {
+                preferredY = this.getGenerationYByIndex(baseGeneration - 1);
+                relationshipPreview = [{
+                    type: 'parent-child', fromPersonId: previewPersonId, toPersonId: base.id
+                }];
+            }
+
+            if (request.kind === 'partner') {
+                relationshipPreview = [{
+                    type: request.relationshipType || 'married',
+                    fromPersonId: base.id,
+                    toPersonId: previewPersonId
+                }];
+            } else if (request.kind === 'sibling') {
+                relationshipPreview = kinship.getParentIds(base.id).map(parentId => {
+                    const source = this.relationships.find(rel => {
+                        const normalized = kinship.normalizeParentChild(rel);
+                        return normalized && normalized.parentId === parentId && normalized.childId === base.id;
+                    });
+                    return {
+                        ...(source && typeof source.toJSON === 'function' ? source.toJSON() : source),
+                        id: undefined,
+                        type: 'parent-child', fromPersonId: parentId, toPersonId: previewPersonId
+                    };
+                });
+            }
+            if (pointerGridX !== null) preferredX = pointerGridX;
+        }
+
+        let open;
+        if (request.kind === 'parent-pair') {
+            const gap = request.people[1].x - request.people[0].x;
+            const excludedIds = request.excludedIds || new Set();
+            const occupiedPairCell = px => this.persons.some(person =>
+                !excludedIds.has(person.id) && Math.abs(person.x - px) < grid.CELL_WIDTH * 0.35 &&
+                Math.abs(person.y - preferredY) < grid.CELL_HEIGHT * 0.35);
+            const pairFree = x => [x, x + gap].every(px => !occupiedPairCell(px));
+            const initiallyOccupied = !pairFree(preferredX);
+            const blockedX = [preferredX, preferredX + gap].find(occupiedPairCell);
+            let x = preferredX;
+            for (let distance = 0; distance <= this.persons.length + 4; distance++) {
+                const offsets = distance === 0 ? [0] : [-distance, distance];
+                const found = offsets.map(offset => preferredX + offset * grid.CELL_WIDTH).find(pairFree);
+                if (found !== undefined) { x = found; break; }
+            }
+            open = { x, y: preferredY, occupied: false,
+                preferredOccupied: initiallyOccupied,
+                blockedAt: initiallyOccupied ? { x: blockedX, y: preferredY } : null };
+        } else {
+            open = this.findNearestOpenCell(preferredX, preferredY, request.excludedIds || new Set());
+        }
+        return {
+            ...open,
+            guides: {
+                x: { pos: open.x, kind: 'placement' },
+                y: { pos: open.y, kind: 'row' },
+                spacing: null
+            },
+            relationshipPreview
+        };
+    }
+
+    beginPlacement(request) {
+        const candidate = this.getPlacementCandidate(request);
+        const selectionBefore = {
+            selectedPersonId: this.selectedPersonId,
+            selectedPersonIds: [...this.selectedPersonIds],
+            selectedRelationshipId: this.selectedRelationshipId
+        };
+        this.placementSession = {
+            request: { ...request },
+            candidate,
+            ghostPerson: { ...request, id: request.personId || (request.people && request.people[0].personId) || '__placement__', x: candidate.x, y: candidate.y },
+            selectionBefore
+        };
+        if (request.people) {
+            this.placementSession.ghostPeople = request.people.map(person => ({
+                ...person, id: person.personId, x: person.x, y: person.y
+            }));
+        }
+        this.updateStatus('請選擇新增人物的位置', 'info');
+        return this.placementSession;
+    }
+
+    updatePlacement(x, y, bypassSnap = false) {
+        if (!this.placementSession) return null;
+        const originalRequest = this.placementSession.request;
+        const request = originalRequest.kind === 'person' && !originalRequest.basePersonId
+            ? { ...originalRequest, x, y }
+            : { ...originalRequest, pointerX: x };
+        const candidate = bypassSnap
+            ? { x, y, occupied: false, guides: null, relationshipPreview: this.placementSession.candidate.relationshipPreview }
+            : this.getPlacementCandidate(request);
+        candidate.relationshipPreview = this.placementSession.candidate.relationshipPreview;
+        this.placementSession.candidate = candidate;
+        this.placementSession.ghostPerson.x = candidate.x;
+        this.placementSession.ghostPerson.y = candidate.y;
+        if (this.placementSession.ghostPeople) {
+            const first = this.placementSession.request.people[0];
+            const dx = candidate.x - first.x;
+            const dy = candidate.y - first.y;
+            this.placementSession.ghostPeople = this.placementSession.request.people.map(person => ({
+                ...person, id: person.personId, x: person.x + dx, y: person.y + dy
+            }));
+        }
+        return candidate;
+    }
+
+    cancelPlacement() {
+        if (this.placementSession && this.placementSession.selectionBefore) {
+            const before = this.placementSession.selectionBefore;
+            this.selectedPersonId = before.selectedPersonId;
+            this.selectedPersonIds = [...before.selectedPersonIds];
+            this.selectedRelationshipId = before.selectedRelationshipId;
+        }
+        this.placementSession = null;
+    }
+
+    commitPlacement() {
+        const session = this.placementSession;
+        if (!session) return null;
+        const previews = session.candidate.relationshipPreview || session.request.relationshipPreview || [];
+        const existingIds = new Set(this.persons.map(person => person.id));
+        const ghostIds = new Set(session.request.people
+            ? session.request.people.map(person => person.personId)
+            : [session.request.personId || '__placement__']);
+        const validEndpoint = id => existingIds.has(id) || ghostIds.has(id);
+        if (previews.some(preview => !validEndpoint(preview.fromPersonId) || !validEndpoint(preview.toPersonId))) {
+            this.cancelPlacement();
+            this.updateStatus('新增已取消：關係端點不存在或已失效', 'error');
+            this.render();
+            return null;
+        }
+        if (session.request.people) {
+            this.saveState();
+            const idMap = new Map();
+            session.request.people.forEach(spec => {
+                const dx = session.candidate.x - session.request.people[0].x;
+                const dy = session.candidate.y - session.request.people[0].y;
+                const person = new Person({ ...spec, x: spec.x + dx, y: spec.y + dy });
+                this.persons.push(person); this.personMap.set(person.id, person);
+                idMap.set(spec.personId, person.id);
+            });
+            previews.forEach(preview => this.relationships.push(new Relationship({
+                ...preview,
+                fromPersonId: idMap.get(preview.fromPersonId) || preview.fromPersonId,
+                toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
+            })));
+            this.placementSession = null;
+            this.selectedPersonId = null;
+            this.selectedPersonIds = [];
+            this.selectedRelationshipId = null;
+            this.setTool('select'); this.autoSave(); this.render();
+            this.updateStatus('已建立父母（父親 + 母親 + 婚姻線 + 親子線）', 'success');
+            return session;
+        }
+        if (session.request.gender) {
+            this.saveState();
+            const person = new Person({
+                ...session.request,
+                x: session.candidate.x,
+                y: session.candidate.y,
+                id: undefined
+            });
+            this.persons.push(person);
+            this.personMap.set(person.id, person);
+            const previewId = session.request.personId || '__placement__';
+            previews.forEach(preview => {
+                this.relationships.push(new Relationship({
+                    ...preview,
+                    fromPersonId: preview.fromPersonId === previewId ? person.id : preview.fromPersonId,
+                    toPersonId: preview.toPersonId === previewId ? person.id : preview.toPersonId
+                }));
+            });
+            this.placementSession = null;
+            this.selectedPersonIds = [];
+            this.selectPerson(person.id);
+            this.setTool('select');
+            this.autoSave();
+            this.render();
+            this.updateStatus('已建立人物', 'success');
+            return session;
+        }
+        this.placementSession = null;
+        return session;
+    }
+
     /**
      * 依照與手動拖曳相同規則，將 Y 轉為輩分索引
      * @param {number} y
@@ -4292,6 +4745,8 @@ class GenogramApp {
      * 撤銷
      */
     undo() {
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，撤銷時僅取消預覽，不執行歷史回溯
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4324,6 +4779,8 @@ class GenogramApp {
      * 重做
      */
     redo() {
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，重做時僅取消預覽 (視為退出預覽模式)
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4460,6 +4917,8 @@ class GenogramApp {
      * 載入數據到應用程式
      */
     loadData(data) {
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         this.saveState();
         this.persons = (data.persons || []).map(p => Person.fromJSON(p));
         this._syncPersonMap();
@@ -4537,7 +4996,8 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    exportPNG(showNotes = true, showLegend = true, scale = 3) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -4584,7 +5044,7 @@ class GenogramApp {
      * 處理不同格式的匯出
      * @param {string} format - 匯出格式 (png, jpeg, svg, pdf, json)
      */
-    handleExportFormat(format) {
+    async handleExportFormat(format) {
         if (this.persons.length === 0) {
             this.updateStatus('沒有內容可匯出', 'error');
             return;
@@ -4612,22 +5072,22 @@ class GenogramApp {
 
         switch (format) {
             case 'png':
-                this.exportPNG(showNotes, showLegend, scale);
+                await this.exportPNG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PNG 圖片', 'success');
                 break;
 
             case 'jpeg':
-                this.exportJPEG(showNotes, showLegend, scale);
+                await this.exportJPEG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 JPEG 圖片', 'success');
                 break;
 
             case 'svg':
-                this.exportSVG(showNotes, showLegend, scale);
+                await this.exportSVG(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 SVG 向量圖', 'success');
                 break;
 
             case 'pdf':
-                this.exportPDF(showNotes, showLegend, scale);
+                await this.exportPDF(showNotes, showLegend, scale);
                 this.updateStatus('已匯出 PDF 文件', 'success');
                 break;
 
@@ -4644,7 +5104,8 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -4657,7 +5118,8 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    exportSVG(showNotes = true, showLegend = true, scale = 3) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
@@ -4687,7 +5149,8 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    exportPDF(showNotes = true, showLegend = true, scale = 3) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3) {
+        await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships, this.households || [], this.lifeCircles || [], showNotes, showLegend, scale);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
@@ -4720,6 +5183,8 @@ class GenogramApp {
      * 清空畫布 (清除所有人物、關係、圈選)
      */
     clearAll() {
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，清空時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -4762,6 +5227,8 @@ class GenogramApp {
             this.updateStatus('沒有內容可複製', 'error');
             return;
         }
+
+        await this.waitForCurrentCanvasFonts();
 
         try {
             // 讀取是否顯示備註的設定 (預設顯示)
@@ -4844,6 +5311,7 @@ class GenogramApp {
      * 載入自動儲存
      */
     loadAutoSave() {
+        this.cancelPlacement();
         this.isLoading = true; // 暫停 autosave
         const saved = this.storage.loadAutoSave();
         if (saved) {

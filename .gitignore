@@ -9,7 +9,26 @@
 # 測試與紀錄
 test_*
 refactor/*.png
-refactor/golden/
+refactor/golden/*
+!refactor/golden/.gitignore
+!refactor/golden/baseline/
+refactor/golden/baseline/*
+!refactor/golden/baseline/01-symbols.png
+!refactor/golden/baseline/02-marriage.png
+!refactor/golden/baseline/03-family-trunk.png
+!refactor/golden/baseline/04-multi-marriage.png
+!refactor/golden/baseline/05-emotional.png
+!refactor/golden/baseline/06-abuse.png
+!refactor/golden/baseline/07-compound.png
+!refactor/golden/baseline/08-child-links.png
+!refactor/golden/baseline/09-twins.png
+!refactor/golden/baseline/10-loss.png
+!refactor/golden/baseline/11-marriage-offset.png
+!refactor/golden/baseline/12-child-links-single.png
+!refactor/golden/baseline/13-multimarriage-overlap.png
+!refactor/golden/baseline/14-multimarriage-full.png
+!refactor/golden/baseline/15-maximal.png
+!refactor/golden/baseline/16-multifamily.png
 refactor/adv_*.js
 refactor/verify_visual_extra.js
 refactor/vis_pixel_check.ps1

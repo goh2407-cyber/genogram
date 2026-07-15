@@ -393,6 +393,14 @@ const FIXTURES = [
 
     const browser = await chromium.launch();
     const results = [];
+    if (!UPDATE) {
+        const expectedBaselines = FIXTURES.map(fx => `${fx.name}.png`).sort();
+        const actualBaselines = fs.readdirSync(BASE_DIR).filter(name => name.endsWith('.png')).sort();
+        if (JSON.stringify(actualBaselines) !== JSON.stringify(expectedBaselines)) {
+            results.push({ name: 'baseline-set', status: 'BASELINE-SET-MISMATCH', errors: [],
+                note: `expected=${expectedBaselines.join(',')} actual=${actualBaselines.join(',')}` });
+        }
+    }
 
     for (const fx of FIXTURES) {
         const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
@@ -410,9 +418,13 @@ const FIXTURES = [
         fs.writeFileSync(path.join(OUT_DIR, fx.name + '.png'), buf);
         const basePath = path.join(BASE_DIR, fx.name + '.png');
 
-        if (UPDATE || !fs.existsSync(basePath)) {
+        if (UPDATE) {
             fs.writeFileSync(basePath, buf);
-            results.push({ name: fx.name, status: UPDATE ? 'updated' : 'baseline-created', errors });
+            results.push({ name: fx.name, status: 'updated', errors });
+            continue;
+        }
+        if (!fs.existsSync(basePath)) {
+            results.push({ name: fx.name, status: 'MISSING-BASELINE', errors });
             continue;
         }
 
@@ -439,7 +451,8 @@ const FIXTURES = [
         const errNote = r.errors && r.errors.length ? ` [console-errors:${r.errors.length}]` : '';
         const dpx = r.diffPixels !== undefined ? ` diffPixels=${r.diffPixels}` : '';
         const note = r.note ? ` (${r.note})` : '';
-        const bad = r.status === 'DIFF' || r.status === 'SIZE-MISMATCH' || (r.errors && r.errors.length);
+        const bad = r.status === 'DIFF' || r.status === 'SIZE-MISMATCH' || r.status === 'MISSING-BASELINE'
+            || r.status === 'BASELINE-SET-MISMATCH' || (r.errors && r.errors.length);
         if (bad) fail++;
         console.log(`${bad ? 'FAIL' : r.status.toUpperCase()} | ${r.name}${dpx}${note}${errNote}`);
     }

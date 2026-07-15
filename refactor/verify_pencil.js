@@ -33,7 +33,7 @@ const path = require('path');
         const pcRel = app.relationships.find(x => x.id === 'pc');
         const pth = c.getRelationshipPath(dad, kid, pcRel, app.relationships);
         const anchor = c._editButtonAnchor(pth, 'family');
-        const oldMid = c.getPointInfoAtDistance(pth, c.getPathLength(pth) / 2).point; // 修正前行為
+        const cachedPath = c._familyRelationshipPaths.get(pcRel.id);
         // [Fix D] swap 鈕位置（point + n*54）是否命中；婚姻線是否不顯示 swap 鈕
         let nx = -anchor.tangent.y, ny = anchor.tangent.x;
         if (ny > 0) { nx = -nx; ny = -ny; } else if (Math.abs(ny) < 0.001) { if (nx < 0) { nx = -nx; ny = -ny; } }
@@ -41,13 +41,20 @@ const path = require('path');
         const swapHit = c.isPointOnSwapButton(swapX, swapY, pcRel, dad, kid, app.relationships);
         const marRel = app.relationships.find(x => x.id === 'mar');
         const marSwap = c.isPointOnSwapButton(swapX, swapY, marRel, dad, mom, app.relationships);
-        return { anchorX: anchor.point.x, childX: kid.x, oldX: oldMid.x, lastSeg: pth.slice(-2), swapHit, marSwap };
+        return {
+            anchorX: anchor.point.x,
+            childX: kid.x,
+            cachedMatch: JSON.stringify(pth) === JSON.stringify(cachedPath),
+            lastSeg: pth.slice(-2),
+            swapHit,
+            marSwap
+        };
     });
 
     const results = [];
     const check = (name, cond, detail) => results.push({ name, ok: !!cond, detail });
     check('鉛筆錨點 X = 子女 X（落在子女下行段上）', Math.abs(r.anchorX - r.childX) < 0.5, `anchor=${r.anchorX} child=${r.childX}`);
-    check('修正前弧長中點 X 偏離子女 X（證明原本浮在線外）', Math.abs(r.oldX - r.childX) > 5, `old=${r.oldX} child=${r.childX}`);
+    check('鉛筆命中路徑與畫面快取點序列完全一致', r.cachedMatch === true, `cachedMatch=${r.cachedMatch}`);
     check('最後一段為垂直子女下行（x 相同）', Math.abs(r.lastSeg[0].x - r.lastSeg[1].x) < 0.5, JSON.stringify(r.lastSeg));
     check('[D] 親子線顯示 ⇄ 鈕且命中', r.swapHit === true, 'swapHit=' + r.swapHit);
     check('[D] 婚姻線不顯示 ⇄ 鈕', r.marSwap === false, 'marSwap=' + r.marSwap);
