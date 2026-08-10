@@ -144,6 +144,8 @@ class GenogramApp {
      */
     init() {
         this.cacheElements();
+        this.modalManager = new ModalManager({ transitionMs: 300 });
+        this.setupModalManager();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
         this.renderRelationshipLegend();
@@ -215,6 +217,8 @@ class GenogramApp {
             cancelGender: document.getElementById('cancelGender'),
             relationshipModal: document.getElementById('relationshipModal'),
             cancelRelationship: document.getElementById('cancelRelationship'),
+            exportModal: document.getElementById('exportModal'),
+            cancelExport: document.getElementById('cancelExport'),
             helpModal: document.getElementById('helpModal'),
             helpBtn: document.getElementById('helpBtn'),
             closeHelpBtn: document.getElementById('closeHelp'),
@@ -235,6 +239,26 @@ class GenogramApp {
             diversitySection: document.getElementById('diversitySection'),
             basicGenderSection: document.querySelector('.gender-selection') // 捕捉原本的性別按鈕區
         };
+    }
+
+    setupModalManager() {
+        const registrations = [
+            [this.elements.genderModal, () => this.closeGenderModal(), '.gender-btn'],
+            [this.elements.relationshipModal, () => this.closeRelationshipModal(), '.rel-btn'],
+            [this.elements.childrenModal, () => this.closeChildrenModal(), '#skipChildren'],
+            [this.elements.helpModal, () => this.closeHelpModal(), '#closeHelp'],
+            [this.elements.exportModal, () => this.closeExportModal(), '.export-option-btn']
+        ];
+        registrations.forEach(([overlay, requestClose, initialFocus]) =>
+            this.modalManager.register(overlay, { requestClose, initialFocus }));
+    }
+
+    openHelpModal() {
+        this.modalManager.open(this.elements.helpModal);
+    }
+
+    closeHelpModal() {
+        this.modalManager.close(this.elements.helpModal);
     }
 
     setInspectorTab(tabName) {
@@ -457,17 +481,16 @@ class GenogramApp {
             this.elements.clearAllBtn.addEventListener('click', () => this.clearAll());
         }
 
-        if (this.elements.helpBtn) {
-            this.elements.helpBtn.addEventListener('click', () => {
-                this.elements.helpModal.classList.add('active');
+        this.elements.helpBtn?.addEventListener('click', () => this.openHelpModal());
+        this.elements.closeHelpBtn?.addEventListener('click', () => this.closeHelpModal());
+        this.elements.cancelExport?.addEventListener('click', () => this.closeExportModal());
+        document.querySelectorAll('.export-option-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const format = button.dataset.format;
+                this.closeExportModal();
+                this.handleExportFormat(format);
             });
-        }
-
-        if (this.elements.closeHelpBtn) {
-            this.elements.closeHelpBtn.addEventListener('click', () => {
-                this.elements.helpModal.classList.remove('active');
-            });
-        }
+        });
 
         if (this.elements.autoLayoutBtn) {
             this.elements.autoLayoutBtn.addEventListener('click', () => this.previewAutoLayout());
@@ -1664,6 +1687,7 @@ class GenogramApp {
      * 處理鍵盤快捷鍵
      */
     handleKeyDown(e) {
+        if (this.modalManager?.handleKeyDown(e)) return;
         // 如果正在輸入，忽略快捷鍵
         const activeElem = document.activeElement;
         const isTyping = e.target.tagName === 'INPUT' ||
@@ -2004,7 +2028,7 @@ class GenogramApp {
             ? '選擇' + label + '的性別'
             : '選擇 ' + label + ' 的性別';
         this.updateStatus(message, 'info');
-        this.elements.genderModal.classList.add('active');
+        this.modalManager.open(this.elements.genderModal);
     }
 
     /**
@@ -2013,7 +2037,7 @@ class GenogramApp {
     closeGenderModal() {
         this.pendingGeneration = null;
         this.quickAddContext = null;
-        this.elements.genderModal.classList.remove('active');
+        this.modalManager.close(this.elements.genderModal);
         this.updateStatus('就緒', null, {
             autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive
         });
@@ -2034,14 +2058,14 @@ class GenogramApp {
                 // 需要選擇性別
                 this.quickAddContext = { personId: basePerson.id, type: 'sibling' };
                 this.updateStatus('選擇手足的性別', 'info');
-                this.elements.genderModal.classList.add('active');
+                this.modalManager.open(this.elements.genderModal);
                 break;
 
             case 'partner':
                 // 需要選擇性別，預設同居關係
                 this.quickAddContext = { personId: basePerson.id, type: 'partner' };
                 this.updateStatus('選擇伴侶的性別', 'info');
-                this.elements.genderModal.classList.add('active');
+                this.modalManager.open(this.elements.genderModal);
                 break;
 
             case 'son':
@@ -2457,7 +2481,7 @@ class GenogramApp {
             return;
         }
 
-        this.elements.genderModal.classList.remove('active');
+        this.modalManager.close(this.elements.genderModal);
         this.quickAddContext = null;
         this.beginQuickRelativePlacement(basePerson, type, gender, { sexualOrientation, transgender,
             relationshipType: type === 'partner' ? 'married' : undefined });
@@ -3361,7 +3385,7 @@ class GenogramApp {
     showRelationshipModal() {
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
-        this.elements.relationshipModal.classList.add('active');
+        this.modalManager.open(this.elements.relationshipModal);
     }
 
     /**
@@ -3390,14 +3414,14 @@ class GenogramApp {
         }
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = ''; // 編輯模式才顯示對調方向
-        this.elements.relationshipModal.classList.add('active');
+        this.modalManager.open(this.elements.relationshipModal);
     }
 
     /**
      * 關閉關係選擇對話框
      */
     closeRelationshipModal() {
-        this.elements.relationshipModal.classList.remove('active');
+        this.modalManager.close(this.elements.relationshipModal);
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none';
 
@@ -3763,7 +3787,7 @@ class GenogramApp {
             });
         }
 
-        this.elements.childrenModal.classList.add('active');
+        this.modalManager.open(this.elements.childrenModal);
     }
 
     /**
@@ -3771,7 +3795,7 @@ class GenogramApp {
      */
     closeChildrenModal() {
         if (this.elements.childrenModal) {
-            this.elements.childrenModal.classList.remove('active');
+            this.modalManager.close(this.elements.childrenModal);
         }
         this.pendingParents = null;
         this.selectedChildrenIds = [];
@@ -5334,35 +5358,14 @@ class GenogramApp {
      * 顯示匯出格式選擇對話框
      */
     showExportModal() {
-        const modal = document.getElementById('exportModal');
-        if (modal) {
-            modal.classList.add('active');
-
-            // 綁定格式按鈕事件
-            modal.querySelectorAll('.export-option-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    const format = e.currentTarget.dataset.format;
-                    this.handleExportFormat(format);
-                    this.closeExportModal();
-                };
-            });
-
-            // 綁定取消按鈕
-            const cancelBtn = document.getElementById('cancelExport');
-            if (cancelBtn) {
-                cancelBtn.onclick = () => this.closeExportModal();
-            }
-        }
+        this.modalManager.open(this.elements.exportModal);
     }
 
     /**
      * 關閉匯出格式選擇對話框
      */
     closeExportModal() {
-        const modal = document.getElementById('exportModal');
-        if (modal) {
-            modal.classList.remove('active');
-        }
+        this.modalManager.close(this.elements.exportModal);
     }
 
     /**

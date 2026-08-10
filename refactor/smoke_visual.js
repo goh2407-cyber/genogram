@@ -43,10 +43,14 @@ const path = require('path');
     await page.screenshot({ path: path.join(__dirname, 'smoke_visual.png') });
 
     // 打開關係對話框截圖
-    await page.evaluate(() => document.getElementById('relationshipModal').classList.add('active'));
-    await page.waitForTimeout(300);
+    await page.evaluate(() => window.app.showRelationshipModal());
+    await page.waitForFunction(() => {
+        const overlay = document.getElementById('relationshipModal');
+        return overlay.classList.contains('active') && !overlay.hidden && !overlay.inert;
+    });
     await page.screenshot({ path: path.join(__dirname, 'smoke_modal.png') });
-    await page.evaluate(() => document.getElementById('relationshipModal').classList.remove('active'));
+    await page.evaluate(() => window.app.closeRelationshipModal());
+    await page.waitForFunction(() => document.getElementById('relationshipModal').hidden);
 
     await browser.close();
 

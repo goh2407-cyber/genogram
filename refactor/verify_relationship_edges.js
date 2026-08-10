@@ -21,7 +21,7 @@ const path = require('path');
     await page.evaluate(() => {
         window.__relationshipEdgeReset = ({ childRow = false, relationships = [] } = {}) => {
             const app = window.app;
-            app.elements.relationshipModal.classList.remove('active');
+            app.closeRelationshipModal();
             app.editingRelationshipId = null;
             app.connectingFrom = null;
             app.connectingTo = null;

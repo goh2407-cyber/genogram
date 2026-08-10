@@ -280,9 +280,10 @@
         </main>
 
         <!-- 性別選擇對話框 -->
-        <div class="modal-overlay" id="genderModal">
-            <div class="modal">
-                <h3 class="modal-title">選擇性別</h3>
+        <div class="modal-overlay" id="genderModal" hidden inert aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true"
+                aria-labelledby="genderModalTitle" tabindex="-1">
+                <h3 class="modal-title" id="genderModalTitle">選擇性別</h3>
                 <div class="modal-content">
                     <div class="gender-selection">
                         <button class="gender-btn" data-gender="male">
@@ -370,9 +371,10 @@
         </div>
 
         <!-- 關係選擇對話框 -->
-        <div class="modal-overlay" id="relationshipModal">
-            <div class="modal">
-                <h3 class="modal-title">選擇關係類型</h3>
+        <div class="modal-overlay" id="relationshipModal" hidden inert aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true"
+                aria-labelledby="relationshipModalTitle" tabindex="-1">
+                <h3 class="modal-title" id="relationshipModalTitle">選擇關係類型</h3>
                 <div class="modal-content">
                     <div class="relationship-type-group">
                         <h4>親屬/結構關係</h4>
@@ -472,9 +474,10 @@
         </div>
 
         <!-- 選擇子女對話框 -->
-        <div class="modal-overlay" id="childrenModal">
-            <div class="modal">
-                <h3 class="modal-title">選擇共同子女</h3>
+        <div class="modal-overlay" id="childrenModal" hidden inert aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true"
+                aria-labelledby="childrenModalTitle" tabindex="-1">
+                <h3 class="modal-title" id="childrenModalTitle">選擇共同子女</h3>
                 <div class="modal-content">
                     <p style="color: #666; margin-bottom: 1rem;">點選要設為這對父母的子女（可多選）</p>
                     <div id="childrenList" class="children-selection">
@@ -490,9 +493,10 @@
     </div>
 
     <!-- 使用說明對話框 -->
-    <div class="modal-overlay" id="helpModal">
-        <div class="modal" style="max-width: 650px;">
-            <h3 class="modal-title">勵馨家系圖生成器 - 使用說明</h3>
+    <div class="modal-overlay" id="helpModal" hidden inert aria-hidden="true">
+        <div class="modal" style="max-width: 650px;" role="dialog" aria-modal="true"
+            aria-labelledby="helpModalTitle" tabindex="-1">
+            <h3 class="modal-title" id="helpModalTitle">勵馨家系圖生成器 - 使用說明</h3>
             <div class="modal-content help-modal-content">
                 <div class="help-section">
                     <h4>如何啟動程式</h4>
@@ -540,9 +544,10 @@
     </div>
 
     <!-- 匯出格式選擇對話框 -->
-    <div class="modal-overlay" id="exportModal">
-        <div class="modal">
-            <h3 class="modal-title">選擇匯出格式</h3>
+    <div class="modal-overlay" id="exportModal" hidden inert aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true"
+            aria-labelledby="exportModalTitle" tabindex="-1">
+            <h3 class="modal-title" id="exportModalTitle">選擇匯出格式</h3>
             <div class="modal-content">
                 <div class="export-settings">
                     <label style="display: flex; align-items: center; cursor: pointer;">
@@ -647,6 +652,7 @@
     <script src="js/history.js"></script>
     <script src="js/canvas.js"></script>
     <script src="js/storage.js"></script>
+    <script src="js/ui/modal-manager.js"></script>
     <script src="js/app.js"></script>
 </body>
 
