@@ -3226,7 +3226,8 @@ class GenogramApp {
 
         // 年齡
         document.getElementById('personAge').addEventListener('input', (e) => {
-            person.age = e.target.value ? parseInt(e.target.value) : null;
+            const raw = e.target.value;
+            person.age = raw === '' ? null : Number(raw);
             this.render();
             this.autoSave();
         });

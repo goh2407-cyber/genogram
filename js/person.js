@@ -10,7 +10,7 @@ class Person {
         this.id = data.id || this.generateId();
         this.name = data.name || '';
         this.gender = data.gender || 'male'; // 'male', 'female', 'other'
-        this.age = data.age || null;
+        this.age = data.age ?? null;
         this.isDeceased = data.isDeceased || false;
         this.isIdentifiedPatient = data.isIdentifiedPatient || false;
 
@@ -32,8 +32,8 @@ class Person {
         // [NEW] 跨性別標記 ('ftm', 'mtf', 或 null)
         this.transgender = data.transgender || null;
 
-        this.x = data.x || 100;
-        this.y = data.y || 100;
+        this.x = data.x ?? 100;
+        this.y = data.y ?? 100;
         this.notes = data.notes || '';
         this.generation = data.generation || null; // 'grandparent', 'parent', 'child', 'grandchild'
         this.twinGroup = data.twinGroup || null; // 多胞胎群組ID，null表示非多胞胎
