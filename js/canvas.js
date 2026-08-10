@@ -1648,7 +1648,7 @@ class GenogramCanvas {
                             ...directCollisionRects.map(rect => rect.bottom)) + 14;
                     candidates = this._underMarriageCandidates(from, to,
                         underBarY, obstacles);
-                    if (routeMode === 'auto') {
+                    if (routeMode === 'auto' && !config.isArch) {
                         candidates.push({ name: 'direct', ...directGeometry });
                         const topY = Math.min(from.y, to.y) - this.personSize / 2
                             - 20 - 30 * Math.max(config.level || 0, 1);

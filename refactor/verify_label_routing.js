@@ -397,6 +397,22 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const clearAutoRoute = canvas.getMarriageRoute(
             clearLeft, clearRight, clearAutoRel, [clearAutoRel]);
 
+        const archAutoLeft = new Person({ id: 'arch-auto-left', x: 100, y: 1080,
+            gender: 'male', name: '' });
+        const archAutoBlocker = new Person({ id: 'arch-auto-blocker', x: 500, y: 1080,
+            gender: 'male', name: '' });
+        const archAutoRight = new Person({ id: 'arch-auto-right', x: 900, y: 1080,
+            gender: 'female', name: '' });
+        const archAutoRel = new Relationship({ id: 'arch-auto',
+            fromPersonId: archAutoLeft.id, toPersonId: archAutoRight.id,
+            type: 'married', routeMode: 'auto' });
+        const archAutoPersons = [archAutoLeft, archAutoBlocker, archAutoRight];
+        canvas.prepareDerivedGeometry(archAutoPersons, [archAutoRel], { force: true });
+        const archAutoConfig = canvas.getMarriageConfiguration(
+            archAutoLeft, archAutoRight, archAutoRel, [archAutoRel]);
+        const archAutoRoute = canvas.getMarriageRoute(
+            archAutoLeft, archAutoRight, archAutoRel, [archAutoRel]);
+
         const routingFixtureState = {
             persons: app.persons,
             relationships: app.relationships,
@@ -511,6 +527,12 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             occupiedCrossingRoute,
             occupiedDirectTextHits,
             clearAutoRoute,
+            archAuto: {
+                config: archAutoConfig,
+                route: archAutoRoute,
+                left: { x: archAutoLeft.x, y: archAutoLeft.y },
+                right: { x: archAutoRight.x, y: archAutoRight.y }
+            },
             warning: warningResult,
             warningExportDataUrl,
             hiddenWarningExportDataUrl,
@@ -704,6 +726,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('clear direct remains the lexicographic auto winner',
         result.clearAutoRoute.candidateName === 'direct',
         JSON.stringify(result.clearAutoRoute));
+    check('auto same-row obstacle remains an under arch candidate',
+        result.archAuto.config.isArch
+            && ['inner', 'outer-left', 'outer-right']
+                .includes(result.archAuto.route.candidateName),
+        JSON.stringify(result.archAuto));
+    check('auto arch candidate uses bottom cardinal ports',
+        result.archAuto.route.points[0].x === result.archAuto.left.x
+            && result.archAuto.route.points[0].y === result.archAuto.left.y + result.half
+            && result.archAuto.route.points.at(-1).x === result.archAuto.right.x
+            && result.archAuto.route.points.at(-1).y === result.archAuto.right.y + result.half,
+        JSON.stringify(result.archAuto.route));
     check('unsatisfied forced route exposes a non-export warning',
         result.warning.visible && result.warning.text.includes('文字與關係線'),
         JSON.stringify(result.warning));
