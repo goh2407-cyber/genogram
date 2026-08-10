@@ -1,6 +1,133 @@
 /**
  * GenogramApp - 主應用程式
  */
+const PROPERTY_PANEL_TEMPLATES = Object.freeze({
+    empty: '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>',
+    relationship: `
+        <div class="property-form">
+            <div class="form-group">
+                <label>關係類型</label>
+                <div style="padding: 8px; background: var(--bg-light); border-radius: 4px;">
+                    <strong id="relationshipTypeName"></strong>
+                </div>
+                <small id="relationshipEndpoints" style="color: var(--text-secondary); margin-top: 4px; display: block;"></small>
+            </div>
+            <div class="form-group">
+                <label for="relationshipDate">時間/說明 (顯示於線上)</label>
+                <textarea id="relationshipDate" rows="2" placeholder="例如：結婚 2010 (換行) 離婚 2020"></textarea>
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn-cancel" id="deleteRelationshipBtn" style="width: 100%;">刪除此關係</button>
+            </div>
+        </div>`,
+    household: `
+        <div class="property-form">
+            <div class="form-group">
+                <label id="householdMemberCount"></label>
+                <div id="householdMembers" style="padding: 8px 12px; background: var(--bg-light); border-radius: 4px; font-size: 13px; line-height: 1.6;"></div>
+            </div>
+            <div class="form-group">
+                <label for="householdNotes">備註</label>
+                <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明"></textarea>
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住框</button>
+            </div>
+        </div>`,
+    lifeCircle: `
+        <div class="property-form">
+            <div class="form-group">
+                <label for="lifeCircleLabel">生活圈名稱（顯示於圈上）</label>
+                <input type="text" id="lifeCircleLabel" placeholder="例如：學校、教會、社區據點">
+            </div>
+            <div class="form-group">
+                <label>顏色</label>
+                <div id="lifeCircleSwatches" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
+            </div>
+        </div>`,
+    person: `
+        <form class="property-form" id="personForm">
+            <div class="form-group">
+                <label for="personName">姓名/稱謂</label>
+                <input type="text" id="personName" placeholder="輸入姓名">
+            </div>
+            <div class="form-group-row">
+                <div class="form-group">
+                    <label for="personAge">年齡</label>
+                    <input type="number" id="personAge" min="0" max="150" placeholder="年齡">
+                </div>
+                <div class="form-group">
+                    <label for="personGender">性別</label>
+                    <select id="personGender">
+                        <option value="male">男性</option>
+                        <option value="female">女性</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="personDeceased">
+                    <label for="personDeceased">已過世</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="personLossType">生育結果</label>
+                <select id="personLossType">
+                    <option value="">正常</option>
+                    <option value="miscarriage">流產（自然）</option>
+                    <option value="abortion">人工流產</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="personIP">
+                    <label for="personIP">案主 / 關注對象</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="personNotes">備註</label>
+                <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
+            </div>
+            <div id="twinSettingsHost"></div>
+            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
+            <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
+            <div class="form-group">
+                <label for="medLeftHalf">生理/心理疾病 (左半部)</label>
+                <select id="medLeftHalf">
+                    <option value="none">無</option>
+                    <option value="striped">疑似 (斜線)</option>
+                    <option value="filled">嚴重/確診 (填滿)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="medBottomHalf">酒精/藥物濫用 (下半部)</label>
+                <select id="medBottomHalf">
+                    <option value="none">無</option>
+                    <option value="striped">疑似 (斜線)</option>
+                    <option value="filled">確診 (填滿)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="medSmoker">
+                    <label for="medSmoker">吸菸 (S)</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="medObese">
+                    <label for="medObese">肥胖 (O)</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="medLang">
+                    <label for="medLang">語言障礙 (L)</label>
+                </div>
+            </div>
+            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
+        </form>`
+});
+
 class GenogramApp {
     static STATUS_TIMEOUTS = Object.freeze({
         passive: 3500,
@@ -1640,7 +1767,12 @@ class GenogramApp {
 
         if (this.selectedPersonIds.length > 0) {
             const content = document.getElementById('propertyContent');
-            content.innerHTML = `<div class="panel-content"><p>已選取 ${this.selectedPersonIds.length} 位成員</p></div>`;
+            const panel = document.createElement('div');
+            panel.className = 'panel-content';
+            const message = document.createElement('p');
+            message.textContent = `已選取 ${this.selectedPersonIds.length} 位成員`;
+            panel.appendChild(message);
+            content.replaceChildren(panel);
             this.updateStatus(`已選取 ${this.selectedPersonIds.length} 位成員`, 'info');
         }
     }
@@ -2764,204 +2896,138 @@ class GenogramApp {
         });
     }
 
-    /**
-     * 生成多胞胎設定區塊的 HTML
-     * @param {Person} person 
-     * @returns {string}
-     */
-    generateTwinSettingsHTML(person) {
-        // [Fix F-2] 只列全同胞（父母完全相同）為雙胞胎候選，避免半同胞/別人的孩子被誤勾
+    createTwinSettingsElement(person) {
+        const section = document.createElement('div');
+        section.className = 'form-group twin-settings';
+        const heading = document.createElement('h4');
+        heading.textContent = '多胞胎設定';
+        section.appendChild(heading);
         const siblings = this.getFullSiblings(person);
-
-        // 總是顯示區塊，即使沒有兄弟姊妹（方便除錯）
-        let html = `
-            <div class="form-group" style="margin-top: 15px;">
-                <h4 style="margin-bottom: 8px; font-size: 14px; color: var(--text-color);">多胞胎設定</h4>
-        `;
-
-        if (siblings.length === 0) {
-            html += `<div style="font-size: 12px; color: #888;">（尚無同父母的兄弟姊妹）</div>`;
-            html += '</div>';
-            return html;
+        if (!siblings.length) {
+            const empty = document.createElement('div');
+            empty.className = 'property-help';
+            empty.textContent = '（尚無同父母的兄弟姊妹）';
+            section.appendChild(empty);
+            return section;
         }
-
-        const currentTwinGroupId = person.twinGroup;
-        html += `<div style="font-size: 12px; color: #666; margin-bottom: 8px;">勾選與此人是多胞胎的兄弟姊妹：</div>`;
-
+        const help = document.createElement('div');
+        help.className = 'property-help';
+        help.textContent = '勾選與此人是多胞胎的兄弟姊妹：';
+        section.appendChild(help);
         siblings.forEach(sibling => {
-            const isChecked = currentTwinGroupId && sibling.twinGroup === currentTwinGroupId;
-            const genderSymbol = sibling.gender === 'male' ? '□' : (sibling.gender === 'female' ? '○' : '◇');
-            html += `
-                <div class="checkbox-group">
-                    <input type="checkbox" 
-                           id="twin_${sibling.id}" 
-                           data-sibling-id="${sibling.id}" 
-                           class="twin-checkbox"
-                           ${isChecked ? 'checked' : ''}>
-                    <label for="twin_${sibling.id}">${genderSymbol} ${sibling.name || '(未命名)'}</label>
-                </div>
-            `;
+            const row = document.createElement('div');
+            row.className = 'checkbox-group';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = `twin_${sibling.id}`;
+            input.dataset.siblingId = sibling.id;
+            input.className = 'twin-checkbox';
+            input.checked = Boolean(person.twinGroup && sibling.twinGroup === person.twinGroup);
+            const label = document.createElement('label');
+            label.htmlFor = input.id;
+            const symbol = sibling.gender === 'male' ? '□' : sibling.gender === 'female' ? '○' : '◇';
+            label.textContent = `${symbol} ${sibling.name || '(未命名)'}`;
+            row.append(input, label);
+            section.appendChild(row);
         });
-
-        // [Phase 1] 同卵/異卵切換：僅在此人已組成多胞胎群組時顯示（合子性為群組層級屬性）
-        if (currentTwinGroupId) {
-            const isMono = person.zygosity === 'mono';
-            html += `
-                <div class="checkbox-group" style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
-                    <input type="checkbox" id="twin_zygosity_mono" class="twin-zygosity-checkbox" ${isMono ? 'checked' : ''}>
-                    <label for="twin_zygosity_mono">同卵雙胞胎（加畫連接橫桿）</label>
-                </div>
-            `;
+        if (person.twinGroup) {
+            const row = document.createElement('div');
+            row.className = 'checkbox-group twin-zygosity-row';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = 'twin_zygosity_mono';
+            input.className = 'twin-zygosity-checkbox';
+            input.checked = person.zygosity === 'mono';
+            const label = document.createElement('label');
+            label.htmlFor = input.id;
+            label.textContent = '同卵雙胞胎（加畫連接橫桿）';
+            row.append(input, label);
+            section.appendChild(row);
         }
+        return section;
+    }
 
-        html += '</div>';
-        return html;
+    setPropertyPanelTemplate(templateKey) {
+        const html = PROPERTY_PANEL_TEMPLATES[templateKey];
+        if (typeof html !== 'string') throw new Error(`Unknown property template: ${templateKey}`);
+        // Trusted static template: no case data.
+        this.elements.propertyContent.innerHTML = html;
+        return this.elements.propertyContent;
     }
 
     updatePropertyPanel() {
-        const content = this.elements.propertyContent;
-
-        // 如果選中關係線，顯示關係屬性
         if (this.selectedRelationshipId) {
             const relationship = this.relationships.find(r => r.id === this.selectedRelationshipId);
             if (!relationship) {
-                content.innerHTML = '<p class="empty-hint">點選成員或關係線以編輯屬性</p>';
+                this.setPropertyPanelTemplate('empty');
                 return;
             }
 
+            const root = this.setPropertyPanelTemplate('relationship');
             const fromPerson = this.personMap.get(relationship.fromPersonId);
             const toPerson = this.personMap.get(relationship.toPersonId);
-            const typeName = Relationship.getTypeName(relationship.type);
+            root.querySelector('#relationshipTypeName').textContent = Relationship.getTypeName(relationship.type);
+            root.querySelector('#relationshipEndpoints').textContent =
+                `${fromPerson?.name || '未命名'} ↔ ${toPerson?.name || '未命名'}`;
+            root.querySelector('#relationshipDate').value = relationship.date || '';
 
-            content.innerHTML = `
-                <div class="property-form">
-                    <div class="form-group">
-                        <label>關係類型</label>
-                        <div style="padding: 8px; background: var(--bg-light); border-radius: 4px;">
-                            <strong>${typeName}</strong>
-                        </div>
-                        <small style="color: var(--text-secondary); margin-top: 4px; display: block;">
-                            ${fromPerson ? fromPerson.name || '未命名' : '未知'} ↔ ${toPerson ? toPerson.name || '未命名' : '未知'}
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label>時間/說明 (顯示於線上)</label>
-                        <textarea id="relationshipDate" rows="2" placeholder="例如：結婚 2010 (換行) 離婚 2020">${relationship.date || ''}</textarea>
-                    </div>
-
-                    <div style="margin-top: 12px;">
-                        <button class="btn-cancel" id="deleteRelationshipBtn" style="width: 100%;">刪除此關係</button>
-                    </div>
-                </div>
-            `;
-
-            // 綁定事件
-            const dateInput = document.getElementById('relationshipDate');
-            if (dateInput) {
-                dateInput.addEventListener('input', (e) => {
-                    relationship.date = e.target.value;
-                    this.autoSave();
-                    this.render(); // 重新渲染以顯示時間
-                });
-            }
-
-            const notesInput = document.getElementById('relationshipNotes');
-            if (notesInput) {
-                notesInput.addEventListener('input', (e) => {
-                    relationship.notes = e.target.value;
-                    this.autoSave();
-                });
-            }
-
-            const deleteBtn = document.getElementById('deleteRelationshipBtn');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', () => {
-                    this.deleteSelected();
-                });
-            }
-
+            root.querySelector('#relationshipDate').addEventListener('input', (e) => {
+                relationship.date = e.target.value;
+                this.autoSave();
+                this.render();
+            });
+            root.querySelector('#deleteRelationshipBtn').addEventListener('click', () => this.deleteSelected());
             return;
         }
 
-        // [New] 同住框屬性：成員清單 + 備註（原本選中只有空白面板，notes 永遠無法編輯）
         if (this.selectedHouseholdId) {
             const household = this.households.find(h => h.id === this.selectedHouseholdId);
             if (household) {
+                const root = this.setPropertyPanelTemplate('household');
                 const memberNames = household.ids
                     .map(id => this.personMap.get(id))
                     .filter(p => p)
                     .map(p => p.name || '未命名')
                     .join('、');
-
-                content.innerHTML = `
-                    <div class="property-form">
-                        <div class="form-group">
-                            <label>同住家庭（${household.ids.length} 位成員）</label>
-                            <div style="padding: 8px 12px; background: var(--bg-light); border-radius: 4px; font-size: 13px; line-height: 1.6;">${memberNames || '（無成員）'}</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="householdNotes">備註</label>
-                            <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明">${household.notes || ''}</textarea>
-                        </div>
-                        <div style="margin-top: 12px;">
-                            <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住框</button>
-                        </div>
-                    </div>
-                `;
-
-                const notesInput = document.getElementById('householdNotes');
-                if (notesInput) {
-                    notesInput.addEventListener('input', (e) => {
-                        household.notes = e.target.value;
-                        this.autoSave();
-                    });
-                }
-                const delHouseholdBtn = document.getElementById('deleteHouseholdBtn');
-                if (delHouseholdBtn) {
-                    delHouseholdBtn.addEventListener('click', () => this.deleteSelected());
-                }
+                root.querySelector('#householdMemberCount').textContent = `同住家庭（${household.ids.length} 位成員）`;
+                root.querySelector('#householdMembers').textContent = memberNames || '（無成員）';
+                root.querySelector('#householdNotes').value = household.notes || '';
+                root.querySelector('#householdNotes').addEventListener('input', (e) => {
+                    household.notes = e.target.value;
+                    this.autoSave();
+                });
+                root.querySelector('#deleteHouseholdBtn').addEventListener('click', () => this.deleteSelected());
                 return;
             }
         }
 
-        // [New] 生活圈屬性：名稱 + 顏色色票（原本 label/color 終生不可改、也看不到）
         if (this.selectedLifeCircleId) {
             const lc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
             if (lc) {
-                const swatches = GenogramApp.LIFE_CIRCLE_COLORS.map(c => {
-                    const solid = c.replace(/,\s*[\d.]+\)/, ', 0.85)');
-                    const isActive = lc.color === c;
-                    return `<button type="button" class="lc-color-swatch" data-color="${c}"
-                        style="width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
-                               background: ${solid};
-                               border: 2px solid ${isActive ? 'var(--text-primary)' : 'var(--border-color)'};"></button>`;
-                }).join('');
-
-                content.innerHTML = `
-                    <div class="property-form">
-                        <div class="form-group">
-                            <label for="lifeCircleLabel">生活圈名稱（顯示於圈上）</label>
-                            <input type="text" id="lifeCircleLabel" value="${(lc.label || '').replace(/"/g, '&quot;')}" placeholder="例如：學校、教會、社區據點">
-                        </div>
-                        <div class="form-group">
-                            <label>顏色</label>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${swatches}</div>
-                        </div>
-                        <div style="margin-top: 12px;">
-                            <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
-                        </div>
-                    </div>
-                `;
-
-                const labelInput = document.getElementById('lifeCircleLabel');
-                if (labelInput) {
-                    labelInput.addEventListener('input', (e) => {
-                        lc.label = e.target.value;
-                        this.autoSave();
-                        this.render();
-                    });
-                }
-                content.querySelectorAll('.lc-color-swatch').forEach(btn => {
+                const root = this.setPropertyPanelTemplate('lifeCircle');
+                root.querySelector('#lifeCircleLabel').value = lc.label || '';
+                const swatchHost = root.querySelector('#lifeCircleSwatches');
+                GenogramApp.LIFE_CIRCLE_COLORS.forEach(color => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'lc-color-swatch';
+                    button.dataset.color = color;
+                    button.setAttribute('aria-label', `選擇生活圈顏色 ${color}`);
+                    button.style.width = '26px';
+                    button.style.height = '26px';
+                    button.style.borderRadius = '50%';
+                    button.style.cursor = 'pointer';
+                    button.style.background = color.replace(/,\s*[\d.]+\)/, ', 0.85)');
+                    button.style.border = `2px solid ${lc.color === color ? 'var(--text-primary)' : 'var(--border-color)'}`;
+                    button.classList.toggle('active', lc.color === color);
+                    swatchHost.appendChild(button);
+                });
+                root.querySelector('#lifeCircleLabel').addEventListener('input', (e) => {
+                    lc.label = e.target.value;
+                    this.autoSave();
+                    this.render();
+                });
+                root.querySelectorAll('.lc-color-swatch').forEach(btn => {
                     btn.addEventListener('click', () => {
                         lc.color = btn.dataset.color;
                         this.autoSave();
@@ -2969,115 +3035,55 @@ class GenogramApp {
                         this.render();
                     });
                 });
-                const delLcBtn = document.getElementById('deleteLifeCircleBtn');
-                if (delLcBtn) {
-                    delLcBtn.addEventListener('click', () => this.deleteSelected());
-                }
+                root.querySelector('#deleteLifeCircleBtn').addEventListener('click', () => this.deleteSelected());
                 return;
             }
         }
 
         if (!this.selectedPersonId) {
-            content.innerHTML = '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>';
+            this.setPropertyPanelTemplate('empty');
             return;
         }
 
         const person = this.personMap.get(this.selectedPersonId);
         if (!person) {
-            content.innerHTML = '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>';
+            this.setPropertyPanelTemplate('empty');
             return;
         }
 
-        content.innerHTML = `
-            <form class="property-form" id="personForm">
-                <div class="form-group">
-                    <label for="personName">姓名/稱謂</label>
-                    <input type="text" id="personName" value="${person.name}" placeholder="輸入姓名">
-                </div>
-                <div class="form-group-row">
-                    <div class="form-group">
-                        <label for="personAge">年齡</label>
-                        <input type="number" id="personAge" value="${person.age || ''}" min="0" max="150" placeholder="年齡">
-                    </div>
-                    <div class="form-group">
-                        <label for="personGender">性別</label>
-                        <select id="personGender">
-                            <option value="male" ${person.gender === 'male' ? 'selected' : ''}>男性</option>
-                            <option value="female" ${person.gender === 'female' ? 'selected' : ''}>女性</option>
-                            ${person.transgender !== 'mtf' ? `<option value="pregnancy" ${person.gender === 'pregnancy' ? 'selected' : ''}>懷孕 / 性別未定 (三角形)</option>` : ''}
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="personDeceased" ${person.isDeceased ? 'checked' : ''}>
-                        <label for="personDeceased">已過世</label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="personLossType">生育結果</label>
-                    <select id="personLossType">
-                        <option value="" ${!person.lossType ? 'selected' : ''}>正常</option>
-                        <option value="miscarriage" ${person.lossType === 'miscarriage' ? 'selected' : ''}>流產（自然）</option>
-                        <option value="abortion" ${person.lossType === 'abortion' ? 'selected' : ''}>人工流產</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="personIP" ${person.isIdentifiedPatient ? 'checked' : ''}>
-                        <label for="personIP">案主 / 關注對象</label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="personNotes">備註</label>
-                    <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)">${person.notes || ''}</textarea>
-                </div>
-                
-                <!-- 多胞胎設定區塊 -->
-                ${this.generateTwinSettingsHTML(person)}
-                
-            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
-            <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
-            
-            <div class="form-group">
-                <label for="medLeftHalf">生理/心理疾病 (左半部)</label>
-                <select id="medLeftHalf">
-                    <option value="none" ${(!person.medical || person.medical.leftHalf === 'none') ? 'selected' : ''}>無</option>
-                    <option value="striped" ${(person.medical && person.medical.leftHalf === 'striped') ? 'selected' : ''}>疑似 (斜線)</option>
-                    <option value="filled" ${(person.medical && person.medical.leftHalf === 'filled') ? 'selected' : ''}>嚴重/確診 (填滿)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="medBottomHalf">酒精/藥物濫用 (下半部)</label>
-                <select id="medBottomHalf">
-                    <option value="none" ${(!person.medical || person.medical.bottomHalf === 'none') ? 'selected' : ''}>無</option>
-                    <option value="striped" ${(person.medical && person.medical.bottomHalf === 'striped') ? 'selected' : ''}>疑似 (斜線)</option>
-                    <option value="filled" ${(person.medical && person.medical.bottomHalf === 'filled') ? 'selected' : ''}>確診 (填滿)</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medSmoker" ${(person.medical && person.medical.isSmoker) ? 'checked' : ''}>
-                    <label for="medSmoker">吸菸 (S)</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medObese" ${(person.medical && person.medical.isObese) ? 'checked' : ''}>
-                    <label for="medObese">肥胖 (O)</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medLang" ${(person.medical && person.medical.hasLanguageProblem) ? 'checked' : ''}>
-                    <label for="medLang">語言障礙 (L)</label>
-                </div>
-            </div>
-
-            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
-
-
-            </form>
-        `;
-
-        // 綁定表單事件
+        const root = this.setPropertyPanelTemplate('person');
+        const valueById = {
+            personName: person.name || '',
+            personAge: person.age ?? '',
+            personNotes: person.notes || '',
+            personGender: person.gender,
+            personLossType: person.lossType || '',
+            medLeftHalf: person.medical?.leftHalf || 'none',
+            medBottomHalf: person.medical?.bottomHalf || 'none'
+        };
+        Object.entries(valueById).forEach(([id, value]) => {
+            const field = root.querySelector(`#${id}`);
+            if (field) field.value = value;
+        });
+        const checkedById = {
+            personDeceased: Boolean(person.isDeceased),
+            personIP: Boolean(person.isIdentifiedPatient),
+            medSmoker: Boolean(person.medical?.isSmoker),
+            medObese: Boolean(person.medical?.isObese),
+            medLang: Boolean(person.medical?.hasLanguageProblem)
+        };
+        Object.entries(checkedById).forEach(([id, checked]) => {
+            const field = root.querySelector(`#${id}`);
+            if (field) field.checked = checked;
+        });
+        if (person.transgender !== 'mtf') {
+            const option = document.createElement('option');
+            option.value = 'pregnancy';
+            option.textContent = '懷孕 / 性別未定 (三角形)';
+            root.querySelector('#personGender').appendChild(option);
+            root.querySelector('#personGender').value = person.gender;
+        }
+        root.querySelector('#twinSettingsHost').appendChild(this.createTwinSettingsElement(person));
         this.setupPropertyFormEvents();
     }
 
@@ -3761,20 +3767,26 @@ class GenogramApp {
         if (!this.elements.childrenModal || !this.elements.childrenList) return;
 
         // 清空並填充子女列表
-        this.elements.childrenList.innerHTML = '';
+        this.elements.childrenList.replaceChildren();
         this.selectedChildrenIds = [];
 
         if (potentialChildren.length === 0) {
-            this.elements.childrenList.innerHTML = '<p class="no-children-hint">沒有可選的子女</p>';
+            const empty = document.createElement('p');
+            empty.className = 'no-children-hint';
+            empty.textContent = '沒有可選的子女';
+            this.elements.childrenList.replaceChildren(empty);
         } else {
             potentialChildren.forEach(child => {
                 const option = document.createElement('div');
                 option.className = 'child-option';
                 option.dataset.id = child.id;
-                option.innerHTML = `
-                    <span class="child-icon ${child.gender}"></span>
-                    <span>${child.name || (child.gender === 'male' ? '男性' : '女性')}</span>
-                `;
+                const icon = document.createElement('span');
+                const safeGender = ['male', 'female', 'pregnancy', 'same'].includes(child.gender)
+                    ? child.gender : 'same';
+                icon.className = `child-icon ${safeGender}`;
+                const label = document.createElement('span');
+                label.textContent = child.name || (child.gender === 'male' ? '男性' : '女性');
+                option.replaceChildren(icon, label);
                 option.addEventListener('click', () => {
                     option.classList.toggle('selected');
                     if (option.classList.contains('selected')) {
