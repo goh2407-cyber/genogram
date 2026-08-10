@@ -44,6 +44,27 @@ class FamilyRoutePlanner {
         return false;
     }
 
+    static segmentIntersectsRect(a, b, rect) {
+        const normalized = this._normalizeObstacles([rect]);
+        return normalized.length === 1 && this._segmentIntersectsRect(a, b, normalized[0]);
+    }
+
+    static pathIntersectionCount(points, obstacles = [], allowedSymbolOwnerIds = new Set()) {
+        if (!Array.isArray(points) || points.length < 2) return 0;
+        const ownerIds = allowedSymbolOwnerIds instanceof Set
+            ? allowedSymbolOwnerIds : new Set(allowedSymbolOwnerIds || []);
+        const allowed = new Set([...ownerIds].map(ownerId => String(ownerId)));
+        const rects = this._normalizeObstacles(obstacles);
+        let count = 0;
+        for (let index = 1; index < points.length; index++) {
+            for (const rect of rects) {
+                if (rect.kind === 'symbol' && allowed.has(String(rect.ownerId))) continue;
+                if (this._segmentIntersectsRect(points[index - 1], points[index], rect)) count++;
+            }
+        }
+        return count;
+    }
+
     static _planNormal(input) {
         const { parents, children, obstacles, personSize, margin } = input;
         const half = personSize / 2;

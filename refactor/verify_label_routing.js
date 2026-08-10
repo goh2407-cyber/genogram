@@ -132,9 +132,102 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             familyPaths: canvas._familyRelationshipPaths.size
         };
 
+        const primitiveChecks = {
+            exposed: typeof FamilyRoutePlanner.segmentIntersectsRect === 'function'
+                && typeof FamilyRoutePlanner.pathIntersectionCount === 'function',
+            boundaryClear: false,
+            interiorHit: false,
+            invalidRectClear: false,
+            numericAllowedCount: null,
+            stringAllowedCount: null
+        };
+        if (primitiveChecks.exposed) {
+            const rect = { ownerId: 77, kind: 'symbol',
+                left: 10, right: 20, top: 10, bottom: 20 };
+            primitiveChecks.boundaryClear = !FamilyRoutePlanner.segmentIntersectsRect(
+                { x: 10, y: 0 }, { x: 10, y: 30 }, rect);
+            primitiveChecks.interiorHit = FamilyRoutePlanner.segmentIntersectsRect(
+                { x: 15, y: 0 }, { x: 15, y: 30 }, rect);
+            primitiveChecks.invalidRectClear = !FamilyRoutePlanner.segmentIntersectsRect(
+                { x: 15, y: 0 }, { x: 15, y: 30 }, { ...rect, right: Infinity });
+            const obstaclesForCount = [
+                rect,
+                { ownerId: 77, kind: 'text', left: 10, right: 20, top: 10, bottom: 20 }
+            ];
+            primitiveChecks.numericAllowedCount = FamilyRoutePlanner.pathIntersectionCount(
+                [{ x: 15, y: 0 }, { x: 15, y: 30 }], obstaclesForCount, new Set([77]));
+            primitiveChecks.stringAllowedCount = FamilyRoutePlanner.pathIntersectionCount(
+                [{ x: 15, y: 0 }, { x: 15, y: 30 }], obstaclesForCount, new Set(['77']));
+        }
+
+        const lineA = new Person({ id: 'line-a', x: 300, y: 500, gender: 'male', name: 'A' });
+        const lineB = new Person({ id: 'line-b', x: 820, y: 680, gender: 'female', name: 'B' });
+        const crossed = new Person({ id: 'crossed', x: 560, y: 525, gender: 'male', name: '',
+            notes: '強制直線時整塊文字必須移位\n不能改變使用者指定的線' });
+        const straight = new Relationship({ id: 'straight', fromPersonId: lineA.id,
+            toPersonId: lineB.id, type: 'married', routeMode: 'straight' });
+        app.persons = [lineA, lineB, crossed];
+        app.relationships = [straight];
+        app._syncPersonMap();
+        const straightConfigBefore = canvas.getMarriageConfiguration(
+            lineA, lineB, straight, app.relationships);
+        const straightPathBefore = canvas.getMarriageGeometry(
+            lineA, lineB, straightConfigBefore).points;
+        const stateBefore = JSON.stringify(app.getState());
+        const placementSnapshots = [];
+        const hasDerivedPreparation = typeof canvas.prepareDerivedGeometry === 'function';
+        if (hasDerivedPreparation) {
+            for (let index = 0; index < 3; index++) {
+                canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
+                placementSnapshots.push(JSON.stringify(
+                    [...canvas.personLabelPlacements.entries()]
+                        .sort((a, b) => String(a[0]).localeCompare(String(b[0])))));
+            }
+        }
+        const stateAfter = JSON.stringify(app.getState());
+        const straightConfig = canvas.getMarriageConfiguration(
+            lineA, lineB, straight, app.relationships);
+        const straightPath = canvas.getMarriageGeometry(lineA, lineB, straightConfig).points;
+        const moved = canvas.getPersonLabelGeometry(crossed,
+            { showNames: true, showNotes: true });
+        const movedHitCount = primitiveChecks.exposed && moved.bounds
+            ? straightPath.slice(1).reduce((count, point, index) => count
+                + (FamilyRoutePlanner.segmentIntersectsRect(
+                    straightPath[index], point, moved.bounds) ? 1 : 0), 0)
+            : -1;
+
+        canvas.personMap = app.personMap;
+        canvas.invalidateDerivedGeometry();
+        canvas.render(app.persons, app.relationships);
+        const renderPreparedPlacement = canvas.getPersonLabelGeometry(crossed,
+            { showNames: true, showNotes: true }).placement;
+        canvas.invalidateDerivedGeometry();
+        const directBounds = canvas.getContentBounds(app.persons, app.relationships, [], [],
+            { showNames: true, showNotes: true });
+        const boundsPreparedGeometry = canvas.getPersonLabelGeometry(crossed,
+            { showNames: true, showNotes: true });
+        const directBoundsPrepared = ['left', 'right'].includes(
+            boundsPreparedGeometry.placement.side)
+            && directBounds.minX <= boundsPreparedGeometry.bounds.left
+            && directBounds.maxX >= boundsPreparedGeometry.bounds.right;
+
+        const warningPerson = new Person({ id: 700, x: 560, y: 525, gender: 'male', name: '',
+            notes: 'numeric warning block must retain its original id type\nsecond line widens the block' });
+        const leftBlocker = new Person({ id: 'left-blocker', x: 480, y: 580,
+            gender: 'male', name: 'L' });
+        const rightBlocker = new Person({ id: 'right-blocker', x: 640, y: 580,
+            gender: 'female', name: 'R' });
+        app.persons = [lineA, lineB, warningPerson, leftBlocker, rightBlocker];
+        app.relationships = [straight];
+        app._syncPersonMap();
+        if (hasDerivedPreparation) {
+            canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
+        }
+        const numericWarning = canvas.labelRoutingWarnings.find(warning => warning.personId === 700);
+
         return {
             full, hiddenName, bounds, longLabel, obstacleCount: obstacles.length,
-            symbolBottom: notesOnly.y + canvas.personSize / 2, invalidated,
+            symbolBottom: notesOnly.y + canvas.personSize / 2, invalidated, primitiveChecks,
             numericRouting: {
                 parentTextFound: Boolean(numericParentText),
                 sourcePrefix: numericSource.sourcePrefix,
@@ -143,7 +236,22 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 planSourcePath: numericPlan?.sourcePath || []
             },
             appIdComparisons,
-            adapterLayouts
+            adapterLayouts,
+            forcedStraight: {
+                hasDerivedPreparation,
+                straightPathBefore,
+                straightPath,
+                moved,
+                movedHitCount,
+                crossedJSON: crossed.toJSON(),
+                placementSnapshots,
+                stateBefore,
+                stateAfter,
+                renderPreparedPlacement,
+                directBoundsPrepared,
+                numericPlacementKey: canvas.personLabelPlacements.has('700'),
+                numericWarning: numericWarning || null
+            }
         };
     });
 
@@ -203,6 +311,53 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.invalidated.familyRoutePlans === 0
             && result.invalidated.familyPaths === 0,
         JSON.stringify(result.invalidated));
+    check('public route geometry primitives are exposed',
+        result.primitiveChecks.exposed, JSON.stringify(result.primitiveChecks));
+    check('public segment rectangle collision keeps boundary clear and detects interior',
+        result.primitiveChecks.boundaryClear && result.primitiveChecks.interiorHit
+            && result.primitiveChecks.invalidRectClear,
+        JSON.stringify(result.primitiveChecks));
+    check('path collision owner allowlist treats numeric and string ids consistently',
+        result.primitiveChecks.numericAllowedCount === 1
+            && result.primitiveChecks.stringAllowedCount === 1,
+        JSON.stringify(result.primitiveChecks));
+    check('forced straight keeps its existing path shape',
+        result.forcedStraight.straightPath.length === 4
+            && JSON.stringify(result.forcedStraight.straightPath)
+                === JSON.stringify(result.forcedStraight.straightPathBefore),
+        JSON.stringify(result.forcedStraight.straightPath));
+    check('colliding notes move as one block',
+        ['left', 'right'].includes(result.forcedStraight.moved.placement.side)
+            && result.forcedStraight.moved.rows.length === 2
+            && result.forcedStraight.moved.rows.every(row =>
+                row.x === result.forcedStraight.moved.rows[0].x),
+        JSON.stringify(result.forcedStraight.moved));
+    check('moved label no longer intersects forced straight route',
+        result.forcedStraight.movedHitCount === 0,
+        `hits=${result.forcedStraight.movedHitCount}`);
+    check('derived placement never mutates Person JSON',
+        result.forcedStraight.crossedJSON.x === 560
+            && result.forcedStraight.crossedJSON.y === 525
+            && !Object.hasOwn(result.forcedStraight.crossedJSON, 'labelPlacement'),
+        JSON.stringify(result.forcedStraight.crossedJSON));
+    check('forced label placement is deterministic across forced recomputation',
+        result.forcedStraight.placementSnapshots.length === 3
+            && new Set(result.forcedStraight.placementSnapshots).size === 1,
+        JSON.stringify(result.forcedStraight.placementSnapshots));
+    check('derived preparation leaves persisted app state byte-for-byte unchanged',
+        result.forcedStraight.stateBefore === result.forcedStraight.stateAfter,
+        `${result.forcedStraight.stateBefore} !== ${result.forcedStraight.stateAfter}`);
+    check('screen render prepares forced-straight label placement',
+        ['left', 'right'].includes(result.forcedStraight.renderPreparedPlacement.side),
+        JSON.stringify(result.forcedStraight.renderPreparedPlacement));
+    check('direct content bounds prepares and includes moved label geometry',
+        result.forcedStraight.directBoundsPrepared,
+        JSON.stringify(result.forcedStraight));
+    check('numeric label placement uses string map keys but warnings retain person id type',
+        result.forcedStraight.numericPlacementKey
+            && result.forcedStraight.numericWarning?.personId === 700
+            && result.forcedStraight.numericWarning.collisions > 0,
+        JSON.stringify(result.forcedStraight.numericWarning));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {

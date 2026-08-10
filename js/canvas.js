@@ -276,6 +276,7 @@ class GenogramCanvas {
         if (!this.personMap) {
             this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
         }
+        this.prepareDerivedGeometry(this.lastPersons, this.lastRelationships);
         const view = this.normalizeViewOptions(this.viewOptions);
 
         this.clear();
@@ -2912,6 +2913,7 @@ class GenogramCanvas {
      */
     _calculateContentBounds(persons, relationships, households, lifeCircles,
         viewOptions = {}, allRelationships = relationships) {
+        this.prepareDerivedGeometry(persons, allRelationships);
         const view = this.normalizeViewOptions(viewOptions);
         // [Fix] 不再因 persons 為空提前 return：
         // 純生活圈/同住框的畫布也要能匯出（最後以 Infinity 檢查是否真的全空）
@@ -3547,11 +3549,108 @@ class GenogramCanvas {
         return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
     }
 
-    getPersonRouteObstacles(persons) {
+    prepareDerivedGeometry(persons, relationships, { force = false } = {}) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = Array.isArray(relationships) ? relationships : [];
+        const signature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        if (!(this.personMap instanceof Map)
+            || allPersons.some(person => this.personMap.get(person.id) !== person)) {
+            this.personMap = new Map(allPersons.map(person => [person.id, person]));
+        }
+        if (!force && signature === this._derivedGeometrySignature) return;
+        this._derivedGeometrySignature = signature;
+        this.personLabelPlacements = new Map();
+        this.marriageRouteCache = new Map();
+        this.labelRoutingWarnings = [];
+        this._placeLabelsForForcedStraight(allPersons, allRelationships);
+    }
+
+    _pathHitsRect(points, rect) {
+        if (!rect || typeof FamilyRoutePlanner === 'undefined') return false;
+        return (Array.isArray(points) ? points : []).slice(1).some((point, index) =>
+            FamilyRoutePlanner.segmentIntersectsRect(points[index], point, rect));
+    }
+
+    _rectsOverlap(a, b) {
+        return Boolean(a && b
+            && a.left < b.right && a.right > b.left
+            && a.top < b.bottom && a.bottom > b.top);
+    }
+
+    _labelPlacementCandidates(person) {
+        return [{ side: 'left' }, { side: 'right' }].map(placement => ({
+            placement,
+            geometry: this.getPersonLabelGeometry(person,
+                { showNames: true, showNotes: true }, placement)
+        }));
+    }
+
+    _placeLabelsForForcedStraight(persons, relationships) {
+        if (typeof FamilyRoutePlanner === 'undefined') return;
+        const sortedPeople = [...persons]
+            .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+        const defaultBounds = new Map(sortedPeople.map(person => [String(person.id),
+            this.getPersonLabelGeometry(person,
+                { showNames: true, showNotes: true }, { side: 'below' }).bounds]));
+        const straightRoutes = relationships
+            .filter(rel => Relationship.getCategory(rel.type) === 'marriage'
+                && (rel.routeMode || 'auto') === 'straight')
+            .map(rel => {
+                const from = this.personMap.get(rel.fromPersonId);
+                const to = this.personMap.get(rel.toPersonId);
+                if (!from || !to) return null;
+                const config = this.getMarriageConfiguration(from, to, rel, relationships);
+                return { rel, points: this.getMarriageGeometry(from, to, config).points };
+            }).filter(Boolean);
+        if (straightRoutes.length === 0) return;
+
+        const symbolObstacles = this.getSymbolRouteObstacles(sortedPeople);
+        const placedBounds = new Map();
+        sortedPeople.forEach(person => {
+            const personKey = String(person.id);
+            const below = this.getPersonLabelGeometry(person,
+                { showNames: true, showNotes: true }, { side: 'below' });
+            if (!below.bounds
+                || !straightRoutes.some(route => this._pathHitsRect(route.points, below.bounds))) {
+                if (below.bounds) placedBounds.set(personKey, below.bounds);
+                return;
+            }
+            const otherLabelObstacles = sortedPeople
+                .filter(other => String(other.id) !== personKey)
+                .map(other => {
+                    const bounds = placedBounds.get(String(other.id))
+                        || defaultBounds.get(String(other.id));
+                    return bounds ? { ownerId: other.id, ...bounds } : null;
+                })
+                .filter(Boolean);
+            const candidates = this._labelPlacementCandidates(person).map((candidate, order) => {
+                const rect = candidate.geometry.bounds;
+                const routeHits = straightRoutes.reduce((sum, route) =>
+                    sum + (this._pathHitsRect(route.points, rect) ? 1 : 0), 0);
+                const obstacleHits = [...symbolObstacles, ...otherLabelObstacles]
+                    .reduce((sum, obstacle) => sum
+                        + (String(obstacle.ownerId) !== personKey
+                            && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
+                return { ...candidate, order, collisions: routeHits + obstacleHits };
+            }).sort((a, b) => a.collisions - b.collisions || a.order - b.order);
+            const winner = candidates[0];
+            if (!winner) return;
+            this.personLabelPlacements.set(personKey, winner.placement);
+            placedBounds.set(personKey, winner.geometry.bounds);
+            if (winner.collisions > 0) {
+                this.labelRoutingWarnings.push({
+                    personId: person.id,
+                    reason: 'forced-straight-label-collision',
+                    collisions: winner.collisions
+                });
+            }
+        });
+    }
+
+    getSymbolRouteObstacles(persons) {
         const obstacles = [];
         const half = this.personSize / 2;
         const symbolMargin = 10;
-
         (Array.isArray(persons) ? persons : []).forEach(person => {
             if (!person || !Number.isFinite(person.x) || !Number.isFinite(person.y)) return;
             obstacles.push({
@@ -3562,7 +3661,15 @@ class GenogramCanvas {
                 top: person.y - half - symbolMargin,
                 bottom: person.y + half + symbolMargin
             });
+        });
+        return obstacles;
+    }
 
+    getPersonRouteObstacles(persons) {
+        const obstacles = this.getSymbolRouteObstacles(persons);
+
+        (Array.isArray(persons) ? persons : []).forEach(person => {
+            if (!person || !Number.isFinite(person.x) || !Number.isFinite(person.y)) return;
             const label = this.getPersonLabelGeometry(person,
                 { showNames: true, showNotes: true });
             label.rows.forEach(row => {
