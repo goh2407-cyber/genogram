@@ -82,6 +82,7 @@ class GenogramCanvas {
         this._familyRelationshipPaths = new Map();
         this._familyRouteSignature = null;
         this._familyPlanCache = new Map();
+        this.invalidateDerivedGeometry();
 
         // 初始化
         this.resize();
@@ -714,52 +715,120 @@ class GenogramCanvas {
         same:      '#f4effb',  // 淡紫（同性別圓頂方底）
     };
 
+    static LABEL_SAFE_MARGIN = 7;
+    static LABEL_SIDE_GAP = 12;
+
     normalizeViewOptions(options = {}) {
         return Object.fromEntries(Object.keys(GenogramCanvas.DEFAULT_VIEW_OPTIONS)
             .map(key => [key, options[key] !== false]));
     }
 
-    getPersonTextLayout(person, options = {}) {
+    invalidateDerivedGeometry() {
+        this._derivedGeometrySignature = null;
+        this.personLabelPlacements = new Map();
+        this.marriageRouteCache = new Map();
+        this.labelRoutingWarnings = [];
+        this._familyRouteSignature = null;
+        this._familyPlanCache = new Map();
+        this._familyRoutePlans = [];
+        this._familyRelationshipPaths = new Map();
+    }
+
+    getPersonLabelGeometry(person, options = {}, placement = undefined) {
         const view = this.normalizeViewOptions(options);
-        const nameY = person.y + this.personSize / 2 + 8;
-        const name = view.showNames ? (person.name || '') : '';
+        const resolved = placement === undefined
+            ? (this.personLabelPlacements?.get(String(person.id)) || { side: 'below' })
+            : placement;
+        const name = view.showNames ? String(person.name || '') : '';
         const noteLines = view.showNotes && person.notes
-            ? person.notes.split('\n').filter(Boolean).slice(0, 2)
+            ? String(person.notes).split('\n').filter(Boolean).slice(0, 2)
             : [];
+        const specs = [];
+        if (name) {
+            specs.push({ kind: 'name', text: name, fontSize: this.fontSize,
+                font: `${this.fontSize}px ${this.fontFamily}`, lineHeight: this.fontSize + 4 });
+        }
+        noteLines.forEach(text => {
+            const fontSize = this.fontSize * 0.8;
+            specs.push({ kind: 'note', text, fontSize,
+                font: `${fontSize}px ${this.fontFamily}`, lineHeight: fontSize + 2 });
+        });
+
+        this.ctx.save();
+        const measured = specs.map(spec => {
+            this.ctx.font = spec.font;
+            const width = this.ctx.measureText(spec.text).width;
+            return { ...spec, width: Number.isFinite(width) ? width : 0 };
+        });
+        this.ctx.restore();
+
+        const blockWidth = measured.reduce((max, row) => Math.max(max, row.width), 0);
+        const half = this.personSize / 2;
+        const side = ['below', 'left', 'right'].includes(resolved?.side)
+            ? resolved.side : 'below';
+        let centerX = person.x;
+        if (side === 'left') {
+            centerX = person.x - half - GenogramCanvas.LABEL_SIDE_GAP - blockWidth / 2;
+        } else if (side === 'right') {
+            centerX = person.x + half + GenogramCanvas.LABEL_SIDE_GAP + blockWidth / 2;
+        }
+        const offsetX = Number.isFinite(resolved?.offsetX) ? resolved.offsetX : 0;
+        const offsetY = Number.isFinite(resolved?.offsetY) ? resolved.offsetY : 0;
+        centerX += offsetX;
+        let cursorY = person.y + half + 8 + offsetY;
+        const rows = measured.map(row => {
+            const y = cursorY;
+            const bounds = {
+                left: centerX - row.width / 2,
+                right: centerX + row.width / 2,
+                top: y,
+                bottom: y + row.fontSize
+            };
+            cursorY += row.lineHeight;
+            return { ...row, x: centerX, y, height: row.fontSize,
+                baseline: 'top', bounds };
+        });
+        const bounds = rows.length ? {
+            left: Math.min(...rows.map(row => row.bounds.left)),
+            right: Math.max(...rows.map(row => row.bounds.right)),
+            top: Math.min(...rows.map(row => row.bounds.top)),
+            bottom: Math.max(...rows.map(row => row.bounds.bottom))
+        } : null;
         return {
-            name,
-            noteLines,
-            nameY,
-            noteStartY: nameY + (name ? this.fontSize + 4 : 0)
+            rows,
+            bounds,
+            anchor: { x: person.x, y: person.y + half + 8 },
+            placement: { side, x: centerX, offsetX, offsetY }
+        };
+    }
+
+    getPersonTextLayout(person, options = {}) {
+        const geometry = this.getPersonLabelGeometry(person, options);
+        const nameRow = geometry.rows.find(row => row.kind === 'name');
+        const noteRows = geometry.rows.filter(row => row.kind === 'note');
+        return {
+            name: nameRow?.text || '',
+            noteLines: noteRows.map(row => row.text),
+            nameY: geometry.rows[0]?.y ?? (person.y + this.personSize / 2 + 8),
+            noteStartY: noteRows[0]?.y ?? (geometry.rows[0]?.y ?? person.y)
         };
     }
 
     drawPersonText(person, options = {}) {
-        const text = this.getPersonTextLayout(person, options);
+        const geometry = this.getPersonLabelGeometry(person, options);
         const S = GenogramCanvas.DRAW_PERSON_STYLES;
         this.ctx.shadowBlur = 0;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
-        if (text.name) {
-            this.ctx.font = this.fontSize + 'px ' + this.fontFamily;
-            this.ctx.fillStyle = '#333';
-            this.ctx.lineWidth = S.nameHalo.lineWidth;
-            this.ctx.strokeStyle = S.nameHalo.color;
-            this.ctx.strokeText(text.name, person.x, text.nameY);
-            this.ctx.fillText(text.name, person.x, text.nameY);
-        }
-        if (text.noteLines.length) {
-            this.ctx.font = (this.fontSize * .8) + 'px ' + this.fontFamily;
-            this.ctx.fillStyle = '#666';
-            const lineHeight = this.fontSize * .8 + 2;
-            text.noteLines.forEach((line, index) => {
-                const y = text.noteStartY + index * lineHeight;
-                this.ctx.lineWidth = S.notesHalo.lineWidth;
-                this.ctx.strokeStyle = S.notesHalo.color;
-                this.ctx.strokeText(line, person.x, y);
-                this.ctx.fillText(line, person.x, y);
-            });
-        }
+        geometry.rows.forEach(row => {
+            const halo = row.kind === 'name' ? S.nameHalo : S.notesHalo;
+            this.ctx.font = row.font;
+            this.ctx.fillStyle = row.kind === 'name' ? '#333' : '#666';
+            this.ctx.lineWidth = halo.lineWidth;
+            this.ctx.strokeStyle = halo.color;
+            this.ctx.strokeText(row.text, row.x, row.y);
+            this.ctx.fillText(row.text, row.x, row.y);
+        });
     }
 
     /**
@@ -1284,12 +1353,9 @@ class GenogramCanvas {
      * 用於 ㄩ 下折橫桿避開被夾成員的姓名文字（與 drawPerson 的 y+half+8 起繪、字高 fontSize 一致）。
      */
     _labelBottomY(p) {
-        let b = p.y + this.personSize / 2;
-        if (p && p.name) {
-            b += 8 + this.fontSize;                              // 姓名行
-            if (p.notes) b += 4 + 2 * (this.fontSize * 0.8 + 2); // 備註最多 2 行
-        }
-        return b;
+        const geometry = this.getPersonLabelGeometry(p,
+            { showNames: true, showNotes: true });
+        return geometry.bounds?.bottom ?? (p.y + this.personSize / 2);
     }
 
     /**
@@ -2857,10 +2923,13 @@ class GenogramCanvas {
             minY = Math.min(minY, p.y - halfSize);
             maxX = Math.max(maxX, p.x + halfSize);
             maxY = Math.max(maxY, p.y + halfSize);
-            const text = this.getPersonTextLayout(p, view);
-            const textHeight = (text.name ? this.fontSize + 4 : 0)
-                + text.noteLines.length * (this.fontSize * .8 + 2);
-            if (textHeight > 0) maxY = Math.max(maxY, text.nameY + textHeight);
+            const label = this.getPersonLabelGeometry(p, view);
+            if (label.bounds) {
+                minX = Math.min(minX, label.bounds.left);
+                minY = Math.min(minY, label.bounds.top);
+                maxX = Math.max(maxX, label.bounds.right);
+                maxY = Math.max(maxY, label.bounds.bottom);
+            }
         });
 
         // 2. 同住家庭
@@ -3481,8 +3550,6 @@ class GenogramCanvas {
         const obstacles = [];
         const half = this.personSize / 2;
         const symbolMargin = 10;
-        const textMargin = 4;
-        this.ctx.save();
 
         (Array.isArray(persons) ? persons : []).forEach(person => {
             if (!person || !Number.isFinite(person.x) || !Number.isFinite(person.y)) return;
@@ -3495,39 +3562,20 @@ class GenogramCanvas {
                 bottom: person.y + half + symbolMargin
             });
 
-            if (!person.name) return;
-            const nameTop = person.y + half + 8;
-            this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-            const nameWidth = this.ctx.measureText(person.name).width;
-            obstacles.push({
-                ownerId: person.id,
-                kind: 'text',
-                left: person.x - nameWidth / 2 - textMargin,
-                right: person.x + nameWidth / 2 + textMargin,
-                top: nameTop - textMargin,
-                bottom: nameTop + this.fontSize + textMargin
-            });
-
-            if (!person.notes) return;
-            const noteLines = person.notes.split('\n').filter(line => line.length > 0).slice(0, 2);
-            const noteFontSize = this.fontSize * 0.8;
-            const noteLineHeight = noteFontSize + 2;
-            this.ctx.font = `${noteFontSize}px ${this.fontFamily}`;
-            noteLines.forEach((line, index) => {
-                const lineTop = nameTop + this.fontSize + 4 + index * noteLineHeight;
-                const width = this.ctx.measureText(line).width;
+            const label = this.getPersonLabelGeometry(person,
+                { showNames: true, showNotes: true });
+            label.rows.forEach(row => {
                 obstacles.push({
-                    ownerId: person.id,
+                    ownerId: String(person.id),
                     kind: 'text',
-                    left: person.x - width / 2 - textMargin,
-                    right: person.x + width / 2 + textMargin,
-                    top: lineTop - textMargin,
-                    bottom: lineTop + noteFontSize + textMargin
+                    left: row.bounds.left - GenogramCanvas.LABEL_SAFE_MARGIN,
+                    right: row.bounds.right + GenogramCanvas.LABEL_SAFE_MARGIN,
+                    top: row.bounds.top - GenogramCanvas.LABEL_SAFE_MARGIN,
+                    bottom: row.bounds.bottom + GenogramCanvas.LABEL_SAFE_MARGIN
                 });
             });
         });
 
-        this.ctx.restore();
         return obstacles;
     }
 
@@ -4191,19 +4239,7 @@ class GenogramCanvas {
                 const p = parentObjs[0];
                 sourceX = p.x;
                 sourceAnchorX = sourceX;
-                // 計算備註高度偏移
-                let notesOffset = 0;
-                if (p.name) {
-                    notesOffset += this.fontSize + 8; // 姓名高度
-                    if (p.notes) {
-                        // [Fix] 支援多行備註：使用實際行數計算
-                        const lines = p.notes.split('\n');
-                        const actualLines = lines.filter(l => l.length > 0).length || 1;
-                        const noteLineHeight = this.fontSize * 0.8 + 2;
-                        notesOffset += actualLines * noteLineHeight + 4;
-                    }
-                }
-                sourceY = p.y + this.personSize / 2 + notesOffset;
+                sourceY = this._labelBottomY(p);
             }
 
             if (sourceAnchorX === null) {
@@ -4215,17 +4251,7 @@ class GenogramCanvas {
             const originalSourceY = sourceY;
 
             parentObjs.forEach(p => {
-                let parentBottom = p.y + this.personSize / 2;
-                if (p.name) {
-                    parentBottom += this.fontSize + 8; // 姓名高度
-                    if (p.notes) {
-                        // [Fix] 支援多行備註：使用實際行數計算
-                        const lines = p.notes.split('\n');
-                        const actualLines = lines.filter(l => l.length > 0).length || 1;
-                        const noteLineHeight = this.fontSize * 0.8 + 2;
-                        parentBottom += actualLines * noteLineHeight + 4;
-                    }
-                }
+                const parentBottom = this._labelBottomY(p);
                 if (sourceY < parentBottom) {
                     sourceY = parentBottom;
                 }
@@ -4694,30 +4720,19 @@ class GenogramCanvas {
                 }
             }
 
-            // [Fix] 文字感知：量測姓名與備註的實際寬度/行數，
-            // 補上文字區塊的包絡點，避免長名或多行備註戳出框外
-            if (m.name) {
-                this.ctx.save();
-                this.ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-                let textW = this.ctx.measureText(m.name).width;
-                let blockH = this.fontSize + 8; // 姓名行高（同 drawPerson 的 y+half+8 起繪）
-                if (m.notes) {
-                    this.ctx.font = `${this.fontSize * 0.8}px ${this.fontFamily}`;
-                    const noteLines = m.notes.split('\n').filter(l => l.length > 0).slice(0, 2);
-                    noteLines.forEach(l => {
-                        textW = Math.max(textW, this.ctx.measureText(l).width);
-                    });
-                    blockH += 4 + noteLines.length * (this.fontSize * 0.8 + 2);
-                }
-                this.ctx.restore();
-
-                const halfW = textW / 2 + 12;
+            // [Fix] 人物文字與畫面、走線及匯出共用同一份量測幾何。
+            const label = this.getPersonLabelGeometry(m,
+                { showNames: true, showNotes: true });
+            if (label.bounds) {
                 const topY = m.y + personRadius;            // 文字起點（符號下緣）
-                const botY = m.y + personRadius + blockH + 14;
-                points.push({ x: m.x - halfW, y: topY });
-                points.push({ x: m.x + halfW, y: topY });
-                points.push({ x: m.x - halfW, y: botY });
-                points.push({ x: m.x + halfW, y: botY });
+                const lastRow = label.rows[label.rows.length - 1];
+                const botY = label.bounds.bottom + (lastRow.kind === 'note' ? 16 : 14);
+                const left = label.bounds.left - 12;
+                const right = label.bounds.right + 12;
+                points.push({ x: left, y: topY });
+                points.push({ x: right, y: topY });
+                points.push({ x: left, y: botY });
+                points.push({ x: right, y: botY });
                 points.push({ x: m.x, y: botY + 4 });
             }
         });
@@ -5220,31 +5235,12 @@ class GenogramCanvas {
             } else {
                 const p = parentObjs[0];
                 sourceX = p.x;
-                let notesOffset = 0;
-                if (p.name) {
-                    notesOffset += this.fontSize + 8;
-                    if (p.notes) {
-                        const lines = p.notes.split('\n');
-                        const actualLines = lines.filter(l => l.length > 0).length || 1;
-                        const noteLineHeight = this.fontSize * 0.8 + 2;
-                        notesOffset += actualLines * noteLineHeight + 4;
-                    }
-                }
-                sourceY = p.y + this.personSize / 2 + notesOffset;
+                sourceY = this._labelBottomY(p);
             }
 
             // 與 drawFamilies 一樣，避免線條穿過父母文字備註
             parentObjs.forEach(p => {
-                let parentBottom = p.y + this.personSize / 2;
-                if (p.name) {
-                    parentBottom += this.fontSize + 8;
-                    if (p.notes) {
-                        const lines = p.notes.split('\n');
-                        const actualLines = lines.filter(l => l.length > 0).length || 1;
-                        const noteLineHeight = this.fontSize * 0.8 + 2;
-                        parentBottom += actualLines * noteLineHeight + 4;
-                    }
-                }
+                const parentBottom = this._labelBottomY(p);
                 if (sourceY < parentBottom) {
                     sourceY = parentBottom;
                 }

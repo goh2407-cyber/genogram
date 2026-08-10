@@ -4640,7 +4640,10 @@ class GenogramApp {
             document.fonts.load('14px "Noto Sans TC"', text),
             document.fonts.load('bold 14px "Noto Sans TC"', text)
         ]).then(() => {
-            if (repaint && signature === this._canvasFontSignature) this.render();
+            if (signature === this._canvasFontSignature) {
+                this.canvas?.invalidateDerivedGeometry?.();
+                if (repaint) this.render();
+            }
         }).catch(() => undefined);
         return this.canvasFontReady;
     }
