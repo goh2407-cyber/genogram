@@ -54,9 +54,36 @@
 - 大型 JSON 載入後自動符合全圖；自動儲存恢復保留原縮放與位移。
 - `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
+## I. Release-Hardening Gate
+
+下列四項為發行前永久守門。每一項都必須在具備可用 Playwright runtime
+與瀏覽器的環境中重新執行；缺少 runtime、瀏覽器或相依套件時，結果是
+**blocked gate**，不是 PASS，必須補齊環境後重跑。
+
+```powershell
+node refactor/verify_modal_flow.js
+# ALL MODAL FLOW CHECKS PASSED
+
+node refactor/verify_dom_security.js
+# ALL DOM SECURITY CHECKS PASSED
+
+node refactor/verify_zero_roundtrip.js
+# ALL ZERO ROUNDTRIP CHECKS PASSED
+
+node refactor/verify_modal_keyboard_history.js
+# ALL MODAL KEYBOARD AND HISTORY CHECKS PASSED
+```
+
+- Modal flow：隱藏 modal 關閉時立即 `pointer-events: none`，轉場結束後為
+  `hidden`；五種 modal 都有 ARIA、焦點圈限、Escape 與焦點還原。
+- DOM security：執行期個案資料僅可經安全的文字／value property 進入 DOM。
+- Zero roundtrip：`age: 0`、`x: 0`、`y: 0` 必須通過所有持久化路徑。
+- Modal keyboard/history：文字欄位聚焦時 Ctrl/Cmd+Z 維持原生操作；一次完成
+  的欄位編輯只建立一筆 App Undo。
+
 ## 驗收記錄
-- 測試日期：2026-07-15
-- 測試版本：`codex/desktop-rwd-line-legend-polish`
+- 測試日期：2026-08-10
+- 測試版本：`codex/genogram-hardening`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：22 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。
+- 備註：26 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。
