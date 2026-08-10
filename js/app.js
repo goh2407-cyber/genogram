@@ -125,6 +125,9 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 </div>
             </div>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
+            <div style="margin-top: 12px;">
+                <button type="button" class="btn-cancel" id="deletePersonBtn" style="width: 100%;">刪除此成員</button>
+            </div>
         </form>`
 });
 
@@ -2948,8 +2951,10 @@ class GenogramApp {
     }
 
     setPropertyPanelTemplate(templateKey) {
+        if (!Object.prototype.hasOwnProperty.call(PROPERTY_PANEL_TEMPLATES, templateKey)) {
+            throw new Error(`Unknown property template: ${templateKey}`);
+        }
         const html = PROPERTY_PANEL_TEMPLATES[templateKey];
-        if (typeof html !== 'string') throw new Error(`Unknown property template: ${templateKey}`);
         // Trusted static template: no case data.
         this.elements.propertyContent.innerHTML = html;
         return this.elements.propertyContent;
@@ -2968,7 +2973,7 @@ class GenogramApp {
             const toPerson = this.personMap.get(relationship.toPersonId);
             root.querySelector('#relationshipTypeName').textContent = Relationship.getTypeName(relationship.type);
             root.querySelector('#relationshipEndpoints').textContent =
-                `${fromPerson?.name || '未命名'} ↔ ${toPerson?.name || '未命名'}`;
+                `${fromPerson ? fromPerson.name || '未命名' : '未知'} ↔ ${toPerson ? toPerson.name || '未命名' : '未知'}`;
             root.querySelector('#relationshipDate').value = relationship.date || '';
 
             root.querySelector('#relationshipDate').addEventListener('input', (e) => {
@@ -3370,6 +3375,9 @@ class GenogramApp {
                 this.render();
             });
         }
+
+        const deletePersonBtn = document.getElementById('deletePersonBtn');
+        if (deletePersonBtn) deletePersonBtn.addEventListener('click', () => this.deleteSelected());
     }
 
     /**

@@ -7,6 +7,15 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     const result = await page.evaluate(payload => {
         window.__domXss = 0;
         const app = window.app;
+        let inheritedTemplateRejected = false;
+        Object.prototype.inheritedPanel = '<p id="inherited-panel">prototype pollution</p>';
+        try {
+            app.setPropertyPanelTemplate('inheritedPanel');
+        } catch (error) {
+            inheritedTemplateRejected = true;
+        } finally {
+            delete Object.prototype.inheritedPanel;
+        }
         app.loadData({
             persons: [
                 { id: 'x-a', x: 300, y: 240, name: payload, notes: payload, gender: 'male' },
@@ -16,6 +25,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             ],
             relationships: [
                 { id: 'x-rel', fromPersonId: 'x-a', toPersonId: 'x-b', type: 'married', date: payload },
+                { id: 'x-missing-endpoint', fromPersonId: 'x-missing', toPersonId: 'x-a', type: 'married' },
                 { id: 'x-parent-a-child-a', fromPersonId: 'x-parent-a', toPersonId: 'x-a', type: 'parent-child' },
                 { id: 'x-parent-b-child-a', fromPersonId: 'x-parent-b', toPersonId: 'x-a', type: 'parent-child' },
                 { id: 'x-parent-a-child-b', fromPersonId: 'x-parent-a', toPersonId: 'x-b', type: 'parent-child' },
@@ -36,6 +46,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         });
         app.selectPerson(a.id); const person = inspect();
         app.selectRelationship('x-rel'); const relationship = inspect();
+        app.selectRelationship('x-missing-endpoint');
+        const missingEndpoints = app.elements.propertyContent.querySelector('#relationshipEndpoints').textContent;
         app.selectedRelationshipId = null; app.selectedHouseholdId = 'x-house';
         app.updatePropertyPanel(); const household = inspect();
         app.selectedHouseholdId = null; app.selectedLifeCircleId = 'x-circle';
@@ -57,13 +69,20 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             state.relationships[0].date, state.households[0].notes,
             state.lifeCircles[0].label
         ];
+        const deletePersonButton = app.elements.propertyContent.querySelector('#deletePersonBtn');
+        const deletePersonButtonPresent = Boolean(deletePersonButton);
+        deletePersonButton?.click();
+        const personWasDeleted = !app.personMap.has(a.id);
         return { person, relationship, household, circle, twin, children,
             circleSwatches, allowedColors: GenogramApp.LIFE_CIRCLE_COLORS,
-            persisted, executed: window.__domXss };
+            persisted, inheritedTemplateRejected, missingEndpoints,
+            deletePersonButtonPresent, personWasDeleted, executed: window.__domXss };
     }, payload);
 
     for (const [name, view] of Object.entries(result)) {
-        if (name === 'executed' || name === 'persisted' || name === 'circleSwatches' || name === 'allowedColors') continue;
+        if (name === 'executed' || name === 'persisted' || name === 'circleSwatches' || name === 'allowedColors' ||
+            name === 'inheritedTemplateRejected' || name === 'missingEndpoints' || name === 'deletePersonButtonPresent' ||
+            name === 'personWasDeleted') continue;
         check(`${name} renders payload as literal text/value`,
             view.injected === 0 && (view.text.includes(payload) || view.values?.includes(payload)),
             JSON.stringify(view));
@@ -75,6 +94,13 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         JSON.stringify(result.circleSwatches));
     check('untrusted child gender falls back to the allowlisted same class',
         result.children.classes.includes('child-icon same'), JSON.stringify(result.children.classes));
+    check('prototype-inherited template key is rejected', result.inheritedTemplateRejected,
+        String(result.inheritedTemplateRejected));
+    check('missing relationship endpoints retain the unknown-person fallback',
+        result.missingEndpoints === `未知 ↔ ${payload}`, JSON.stringify(result.missingEndpoints));
+    check('person delete button exists and deletes the selected person',
+        result.deletePersonButtonPresent && result.personWasDeleted,
+        JSON.stringify({ present: result.deletePersonButtonPresent, deleted: result.personWasDeleted }));
     check('no injected event handler executes', result.executed === 0, String(result.executed));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL DOM SECURITY CHECKS PASSED');
