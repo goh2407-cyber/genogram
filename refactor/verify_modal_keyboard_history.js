@@ -95,6 +95,67 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         window.app.undo();
     });
 
+    await page.evaluate(() => {
+        const app = window.app;
+        const person = app.personMap.get('edit');
+        person.medical.leftHalf = 'none';
+        app.history.clear();
+        app.selectPerson('edit');
+    });
+    await page.selectOption('#medLeftHalf', 'filled');
+    const medicalSelectChange = await page.evaluate(() => ({
+        value: window.app.personMap.get('edit').medical.leftHalf,
+        undo: window.app.history.getUndoCount()
+    }));
+    check('a medical select change commits exactly one App history entry',
+        medicalSelectChange.value === 'filled' && medicalSelectChange.undo === 1,
+        JSON.stringify(medicalSelectChange));
+    await page.evaluate(() => window.app.undo());
+    check('one App Undo restores the original medical select value',
+        await page.evaluate(() => window.app.personMap.get('edit').medical.leftHalf === 'none'));
+
+    await page.evaluate(() => {
+        const app = window.app;
+        const person = app.personMap.get('edit');
+        person.medical.isSmoker = false;
+        app.history.clear();
+        app.selectPerson('edit');
+    });
+    await page.click('#medSmoker');
+    const medicalCheckboxChange = await page.evaluate(() => ({
+        checked: window.app.personMap.get('edit').medical.isSmoker,
+        undo: window.app.history.getUndoCount()
+    }));
+    check('a medical checkbox change commits exactly one App history entry',
+        medicalCheckboxChange.checked && medicalCheckboxChange.undo === 1,
+        JSON.stringify(medicalCheckboxChange));
+    await page.evaluate(() => window.app.undo());
+    check('one App Undo restores the original medical checkbox value',
+        await page.evaluate(() => window.app.personMap.get('edit').medical.isSmoker === false));
+
+    const medicalSnapshotDetached = await page.evaluate(() => {
+        const medical = { leftHalf: 'none', isSmoker: false };
+        const person = new Person({ id: 'detached-medical', medical });
+        const serialized = person.toJSON();
+        const restored = Person.fromJSON(serialized);
+        const clone = restored.clone();
+        clone.medical.isSmoker = true;
+        medical.leftHalf = 'filled';
+        return {
+            detached: serialized.medical !== medical && serialized.medical.leftHalf === 'none',
+            flat: Object.values(person.medical).every(value => value === null || typeof value !== 'object'),
+            roundTrip: restored.medical.leftHalf === 'none',
+            cloneDetached: clone.medical !== restored.medical
+                && clone.medical.isSmoker === true && restored.medical.isSmoker === false
+        };
+    });
+    check('Person serialization detaches the flat medical object',
+        medicalSnapshotDetached.detached && medicalSnapshotDetached.flat,
+        JSON.stringify(medicalSnapshotDetached));
+    check('medical round-trip stays value-correct and clone stays detached',
+        medicalSnapshotDetached.roundTrip && medicalSnapshotDetached.cloneDetached,
+        JSON.stringify(medicalSnapshotDetached));
+
     await page.click('#helpBtn');
     await page.keyboard.press('Delete');
     check('background delete shortcut is blocked while modal is open',

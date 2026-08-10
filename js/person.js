@@ -124,7 +124,7 @@ class Person {
             age: this.age,
             isDeceased: this.isDeceased,
             isIdentifiedPatient: this.isIdentifiedPatient,
-            medical: this.medical,
+            medical: { ...this.medical },
             sexualOrientation: this.sexualOrientation,
             transgender: this.transgender,
             x: this.x,
