@@ -39,8 +39,10 @@ const path = require('path');
         const relC2 = new Relationship({ id: 'rC2', fromPersonId: 'cW2', toPersonId: 'cM', type: 'divorced', date: '2000-01-01' });
 
         // D：同列婚姻、中間夾 1 人 → ㄩ 下折越障（底部中心連接、barY 在下方）
-        const dH = new Person({ id: 'dH', x: 300, y: 480, gender: 'male', name: '夫3' });
-        const dMid = new Person({ id: 'dMid', x: 500, y: 480, gender: 'female', name: '夾' });
+        const dH = new Person({ id: 'dH', x: 300, y: 480, gender: 'male', name: '', age: 62,
+            notes: '雙相情緒障礙症\n（精神中度障礙）' });
+        const dMid = new Person({ id: 'dMid', x: 500, y: 480, gender: 'female', name: '',
+            notes: '中間人物文字也必須避開\n第二行備註' });
         const dW = new Person({ id: 'dW', x: 700, y: 480, gender: 'female', name: '妻3' });
         const relD = new Relationship({ id: 'rD', fromPersonId: 'dH', toPersonId: 'dW', type: 'married' });
 
@@ -49,7 +51,6 @@ const path = require('path');
         app.relationships = [relA, relB, relC1, relC2, relD];
         app.render();
         const allRels = app.relationships;
-        const half = c.personSize / 2;
 
         const cfgA = c.getMarriageConfiguration(a1, a2, relA, allRels);
         const geomA = c.getMarriageGeometry(a1, a2, cfgA);
@@ -71,26 +72,44 @@ const path = require('path');
 
         // D：arch
         const cfgD = c.getMarriageConfiguration(dH, dW, relD, allRels);
-        const geomD = c.getMarriageGeometry(dH, dW, cfgD);
+        const geomD = c.getMarriageRoute(dH, dW, relD, allRels);
         const pathD = c.getRelationshipPath(dH, dW, relD, allRels);
-        const archBarY = geomD.points[1].y;
-        const archMidX = (geomD.points[1].x + geomD.points[2].x) / 2;
+        const textObstacles = c.getPersonRouteObstacles(app.persons)
+            .filter(rect => rect.kind === 'text');
+        const rawCandidate = c._underMarriageCandidates(
+            dH, dW, cfgD.archBarY, c.getPersonRouteObstacles(app.persons))
+            .find(candidate => candidate.name === geomD.candidateName);
+        const attachment = geomD.attachmentSegment;
+        const archBarY = attachment.start.y;
+        const archMidX = (attachment.start.x + attachment.end.x) / 2;
         const hitArchBar = c.isPointOnRelationship(archMidX, archBarY, dH, dW, relD, 10, allRels);
         const onMidNode = c.isPointOnRelationship(500, 480, dH, dW, relD, 10, allRels); // 夾者中心不該命中
+        const labelBottoms = [dH, dMid, dW].map(person =>
+            c.getPersonLabelGeometry(person, { showNames: true, showNotes: true }).bounds.bottom);
+        const textHits = FamilyRoutePlanner.pathIntersectionCount(geomD.points, textObstacles);
+        const dHBottom = dH.getConnectionPoint('bottom');
+        const dWBottom = dW.getConnectionPoint('bottom');
 
         // 確定性
-        const det1 = JSON.stringify(c.getMarriageGeometry(dH, dW, cfgD));
-        const det2 = JSON.stringify(c.getMarriageGeometry(dH, dW, cfgD));
-        const det3 = JSON.stringify(c.getMarriageGeometry(dH, dW, cfgD));
+        const snapshots = [];
+        for (let index = 0; index < 3; index++) {
+            c.prepareDerivedGeometry(app.persons, allRels, { force: true });
+            snapshots.push(JSON.stringify(c.getMarriageRoute(dH, dW, relD, allRels)));
+        }
 
         return {
             geomA, pathA, geomB, pathB, geomC2, pathC2, geomD, pathD,
             cfgC2_isBridge: cfgC2.isBridge, cfgC1_isBridge: cfgC1.isBridge,
-            cfgD_isArch: cfgD.isArch, cfgD_archBarY: cfgD.archBarY,
+            cfgD_isArch: cfgD.isArch,
             hitStraightMid, hitBridge, hitArchBar, onMidNode,
             bridgeFromX: geomC2.points[0].x, bridgeToX: geomC2.points[3].x, cW2x: cW2.x, cMx: cM.x,
-            archFromX: geomD.points[0].x, dHx: dH.x, dRowBottom: 480 + half, archBarY,
-            detEqual: (det1 === det2 && det2 === det3),
+            rawPointCount: rawCandidate?.rawPoints?.length || 0,
+            textHits,
+            maxLabelBottom: Math.max(...labelBottoms),
+            attachment,
+            dHBottom,
+            dWBottom,
+            detEqual: new Set(snapshots).size === 1,
         };
     });
 
@@ -113,14 +132,25 @@ const path = require('path');
     check('C 天橋橫段中點可命中', r.hitBridge === true, `hit=${r.hitBridge}`);
 
     check('D [2A.1] 夾人 → isArch=true', r.cfgD_isArch === true, `isArch=${r.cfgD_isArch}`);
-    check('D arch 主線 4 點', r.geomD.points.length === 4, `points=${r.geomD.points.length}`);
-    check('D arch 橫桿在「列下方」(barY > 列底緣)', r.archBarY > r.dRowBottom, `barY=${r.archBarY} rowBottom=${r.dRowBottom}`);
-    check('D arch 垂直腿 X = 正下方中心（= 節點 x）', r.archFromX === r.dHx, `archFromX=${r.archFromX} dHx=${r.dHx}`);
+    check('D under candidate has at least eight raw points before cleanPath',
+        r.rawPointCount >= 8, `rawPoints=${r.rawPointCount}`);
+    check('D cleaned under route keeps at least six points',
+        r.geomD.points.length >= 6, `points=${r.geomD.points.length}`);
+    check('D route retains cardinal bottom endpoints',
+        eq(r.geomD.points[0], r.dHBottom)
+            && eq(r.geomD.points.at(-1), r.dWBottom),
+        JSON.stringify(r.geomD.points));
+    check('D attachment bar is horizontal and below every label',
+        r.attachment.start.y === r.attachment.end.y
+            && r.attachment.start.y > r.maxLabelBottom,
+        JSON.stringify({ attachment: r.attachment, maxLabelBottom: r.maxLabelBottom }));
+    check('D under route has zero text intersections', r.textHits === 0,
+        `hits=${r.textHits}`);
     check('D hit-test == 主線幾何', eq(r.pathD, r.geomD.points), '');
     check('D arch 橫桿可命中', r.hitArchBar === true, `hit=${r.hitArchBar}`);
     check('D 夾者中心不再命中婚姻線（線已離開符號）', r.onMidNode === false, `onMid=${r.onMidNode}`);
 
-    check('確定性：getMarriageGeometry 連算 3 次相同', r.detEqual === true, `detEqual=${r.detEqual}`);
+    check('確定性：canonical route 強制重算 3 次相同', r.detEqual === true, `detEqual=${r.detEqual}`);
 
     await browser.close();
     const failed = results.filter(x => !x.ok);

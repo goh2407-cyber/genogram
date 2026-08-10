@@ -100,12 +100,43 @@ function isCleanOrthogonalPath(path) {
             app.render();
             FamilyRoutePlanner.planFamily = originalPlanFamily;
 
+            const emotional = new Relationship({
+                id: 'route-emotional', type: 'conflict',
+                fromPersonId: dad.id, toPersonId: blocker.id
+            });
+            app.relationships.push(emotional);
+            app.render();
+            const originalPrepareMarriageRoutes = app.canvas._prepareMarriageRoutes;
+            let hiddenMarriagePrepareCalls = 0;
+            app.canvas._prepareMarriageRoutes = function(...args) {
+                hiddenMarriagePrepareCalls++;
+                return originalPrepareMarriageRoutes.apply(this, args);
+            };
+            const originalViewOptions = app.viewOptions;
+            app.viewOptions = { ...app.viewOptions, showEmotionalRelationships: false };
+            app.render();
+            app.render();
+            app.viewOptions = originalViewOptions;
+            app.canvas._prepareMarriageRoutes = originalPrepareMarriageRoutes;
+            app.relationships.pop();
+            app.render();
+
             const route = app.canvas.getRelationshipPath(dad, kid, dadEdge, app.relationships);
             const cached = app.canvas._familyRelationshipPaths &&
                 app.canvas._familyRelationshipPaths.get(dadEdge.id);
             const obstacles = app.canvas.getPersonRouteObstacles(app.persons)
                 .filter(rect => rect.ownerId === blocker.id);
             const plan = app.canvas._familyRoutePlans && app.canvas._familyRoutePlans[0];
+            const allObstacles = app.canvas.getPersonRouteObstacles(app.persons);
+            const otherRels = app.relationships.filter(rel => rel.getCategory() !== 'family');
+            const marriageRoute = app.canvas.getMarriageRoute(
+                dad, mom, marriage, otherRels);
+            const familySource = app.canvas._getFamilySource(
+                [dad, mom], [kid], otherRels, allObstacles).source;
+            const attachmentMinX = Math.min(marriageRoute.attachmentSegment.start.x,
+                marriageRoute.attachmentSegment.end.x);
+            const attachmentMaxX = Math.max(marriageRoute.attachmentSegment.start.x,
+                marriageRoute.attachmentSegment.end.x);
             const beforeColors = {
                 familyStroke: '#333',
                 married: marriage.getLineStyle().color,
@@ -139,7 +170,14 @@ function isCleanOrthogonalPath(path) {
                 mode: plan && plan.mode,
                 safe: plan && plan.safe,
                 repeatedRenderPlanCalls,
+                hiddenMarriagePrepareCalls,
                 maxPlannerObstacleCount,
+                marriageRoute,
+                familySource,
+                sourceOnMarriageAttachment:
+                    familySource.y === marriageRoute.attachmentSegment.start.y
+                    && familySource.x >= attachmentMinX
+                    && familySource.x <= attachmentMaxX,
                 colors: beforeColors,
                 exportOk,
                 exportPathMatches: exportPaths.length > 0
@@ -156,9 +194,16 @@ function isCleanOrthogonalPath(path) {
         check('unchanged consecutive renders reuse the family route cache',
             data.repeatedRenderPlanCalls === 0,
             `planFamily calls=${data.repeatedRenderPlanCalls}`);
+        check('hidden emotional relationships do not reprepare marriage routes per render',
+            data.hiddenMarriagePrepareCalls === 0,
+            `prepareMarriageRoutes calls=${data.hiddenMarriagePrepareCalls}`);
         check('far-away people are pruned from a normal family obstacle set',
             data.maxPlannerObstacleCount < 20,
             `planner obstacles=${data.maxPlannerObstacleCount}`);
+        check('two-parent source lies on the canonical marriage attachment segment',
+            data.sourceOnMarriageAttachment,
+            JSON.stringify({ source: data.familySource,
+                attachment: data.marriageRoute.attachmentSegment }));
         check('family route contains only finite points',
             data.route.length >= 2 && data.route.every(point => Number.isFinite(point.x) && Number.isFinite(point.y)));
         check('family route removes redundant points and remains orthogonal',

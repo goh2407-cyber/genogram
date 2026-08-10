@@ -65,6 +65,37 @@ class FamilyRoutePlanner {
         return count;
     }
 
+    static pathLength(points) {
+        return (points || []).slice(1).reduce((total, point, index) =>
+            total + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+    }
+
+    static pathBendCount(points) {
+        let bends = 0;
+        for (let index = 2; index < (points || []).length; index++) {
+            const a = points[index - 2], b = points[index - 1], c = points[index];
+            const firstHorizontal = Math.abs(a.y - b.y) <= 1e-9;
+            const secondHorizontal = Math.abs(b.y - c.y) <= 1e-9;
+            if (firstHorizontal !== secondHorizontal) bends++;
+        }
+        return bends;
+    }
+
+    static polylineCrossingCount(points, occupiedSegments = []) {
+        let count = 0;
+        const samePoint = (a, b) => Math.abs(a.x - b.x) <= 1e-9
+            && Math.abs(a.y - b.y) <= 1e-9;
+        for (let index = 1; index < (points || []).length; index++) {
+            const a = points[index - 1], b = points[index];
+            occupiedSegments.forEach(segment => {
+                if (samePoint(a, segment.start) || samePoint(a, segment.end)
+                    || samePoint(b, segment.start) || samePoint(b, segment.end)) return;
+                if (this._segmentsIntersect(a, b, segment.start, segment.end)) count++;
+            });
+        }
+        return count;
+    }
+
     static _planNormal(input) {
         const { parents, children, obstacles, personSize, margin } = input;
         const half = personSize / 2;

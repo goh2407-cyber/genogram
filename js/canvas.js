@@ -42,6 +42,14 @@ const GRID_STYLE = {
     fineMinScale: 0.6,         // 低於此縮放比例時不畫細格
 };
 
+const compareRouteScoreTuples = (a, b) => {
+    for (let index = 0; index < a.length; index++) {
+        if (a[index] < b[index]) return -1;
+        if (a[index] > b[index]) return 1;
+    }
+    return 0;
+};
+
 /**
  * GenogramCanvas 類別 - 管理畫布繪製
  */
@@ -1131,7 +1139,7 @@ class GenogramCanvas {
             return cat !== 'family';
         });
 
-        compareRels.sort((a, b) => a.id.localeCompare(b.id));
+        compareRels.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
         const index = compareRels.findIndex(r => r.id === relationship.id);
         const total = compareRels.length;
@@ -1152,21 +1160,23 @@ class GenogramCanvas {
         // 計算線條角度
         let angle = Math.atan2(dy, dx);
 
-        // [Fix] 檢查是否為天橋模式
-        const config = this.getMarriageConfiguration(fromPerson, toPerson, relationship, relationships);
-
         let finalX, finalY;
-
-        if (config.isBridge) {
-            // 天橋模式(ㄇ)：文字顯示在天橋水平段中央（橋的上方）
-            finalX = (fromPerson.x + toPerson.x) / 2;
-            finalY = config.bridgeY;
-            angle = 0; // 強制水平
-        } else if (config.isArch) {
-            // [Fix] ㄩ 下折：文字跟著線到下折橫桿（放橫桿下方，避免被列上符號/姓名擋住）
-            finalX = (fromPerson.x + toPerson.x) / 2;
-            finalY = config.archBarY;
-            angle = 0; // 強制水平
+        const category = typeof relationship.getCategory === 'function'
+            ? relationship.getCategory() : Relationship.getCategory(relationship.type);
+        let marriageRoute = null;
+        if (category === 'marriage') {
+            marriageRoute = this.getMarriageRoute(
+                fromPerson, toPerson, relationship, relationships);
+            finalX = marriageRoute.decoration.x;
+            finalY = marriageRoute.decoration.y;
+            const decorationSegment = marriageRoute.points.slice(1)
+                .map((point, index) => [marriageRoute.points[index], point])
+                .find(([start, end]) => this.distanceToLineSegment(
+                    finalX, finalY, start.x, start.y, end.x, end.y) <= 1e-7);
+            angle = decorationSegment
+                ? Math.atan2(decorationSegment[1].y - decorationSegment[0].y,
+                    decorationSegment[1].x - decorationSegment[0].x)
+                : 0;
         } else {
             // 一般模式
             // 單位法向量 (normal vector)
@@ -1223,7 +1233,8 @@ class GenogramCanvas {
         }
 
         // [Fix] ㄩ 下折：文字改放橫桿「下方」（正向 offset），不放線上方以免卡進姓名區
-        if (config.isArch) {
+        if (marriageRoute && marriageRoute.attachmentSegment.start.y
+            > Math.max(fromPerson.y, toPerson.y) + this.personSize / 2) {
             textOffsetY = totalHeight + 8;
         }
 
@@ -1487,27 +1498,201 @@ class GenogramCanvas {
                     { x: toB.x, y: barY },
                     { x: toB.x, y: toB.y }
                 ],
-                decoration: { x: (fromB.x + toB.x) / 2, y: barY }
+                decoration: { x: (fromB.x + toB.x) / 2, y: barY },
+                attachmentSegment: {
+                    start: { x: fromB.x, y: barY },
+                    end: { x: toB.x, y: barY }
+                }
             };
         }
         if (Math.abs(fromPt.y - toPt.y) <= 1) {
             // 同列淨空：直線（一）→ 保護既有 golden，pixel 完全不變
             return {
                 points: [{ x: fromPt.x, y: fromPt.y }, { x: toPt.x, y: toPt.y }],
-                decoration: { x: centerX, y: centerY }
+                decoration: { x: centerX, y: centerY },
+                attachmentSegment: {
+                    start: { x: fromPt.x, y: fromPt.y },
+                    end: { x: toPt.x, y: toPt.y }
+                }
             };
         }
         // 跨列：正交三折（水平出 → 垂直段在 centerX → 水平入）。
         // 裝飾落在 (centerX, centerY)，恰為垂直段中點。
-        return {
-            points: [
+        const points = [
                 { x: fromPt.x, y: fromPt.y },
                 { x: centerX, y: fromPt.y },
                 { x: centerX, y: toPt.y },
                 { x: toPt.x, y: toPt.y }
-            ],
-            decoration: { x: centerX, y: centerY }
+            ];
+        const firstLength = Math.abs(points[1].x - points[0].x);
+        const lastLength = Math.abs(points[3].x - points[2].x);
+        const attachmentPoints = lastLength > firstLength
+            ? [points[2], points[3]] : [points[0], points[1]];
+        return {
+            points,
+            decoration: { x: centerX, y: centerY },
+            attachmentSegment: {
+                start: { ...attachmentPoints[0] },
+                end: { ...attachmentPoints[1] }
+            }
         };
+    }
+
+    getMarriageRoute(fromPerson, toPerson, relationship, allRelationships = []) {
+        let cached = this.marriageRouteCache?.get(String(relationship.id));
+        if (cached) return cached;
+        const persons = this.lastPersons?.length
+            ? this.lastPersons : Array.from(this.personMap?.values?.() || []);
+        if (persons.length && allRelationships.length) {
+            this.prepareDerivedGeometry(persons, allRelationships);
+            cached = this.marriageRouteCache?.get(String(relationship.id));
+            if (cached) return cached;
+        }
+        const config = this.getMarriageConfiguration(fromPerson, toPerson,
+            relationship, allRelationships);
+        const geometry = this.getMarriageGeometry(fromPerson, toPerson, config);
+        return { config, ...geometry, candidateName: 'uncached' };
+    }
+
+    _underMarriageCandidates(fromPerson, toPerson, barY, textObstacles) {
+        const fromBottom = fromPerson.getConnectionPoint('bottom');
+        const toBottom = toPerson.getConnectionPoint('bottom');
+        const fromLabel = this.getPersonLabelGeometry(fromPerson,
+            { showNames: true, showNotes: true }).bounds;
+        const toLabel = this.getPersonLabelGeometry(toPerson,
+            { showNames: true, showNotes: true }).bounds;
+        const margin = GenogramCanvas.LABEL_SAFE_MARGIN;
+        const obstacleLefts = textObstacles.map(rect => rect.left);
+        const obstacleRights = textObstacles.map(rect => rect.right);
+        const allLeft = Math.min(...obstacleLefts, fromPerson.x, toPerson.x) - margin;
+        const allRight = Math.max(...obstacleRights, fromPerson.x, toPerson.x) + margin;
+        const fromToward = fromPerson.x <= toPerson.x
+            ? (fromLabel?.right ?? fromPerson.x) + margin
+            : (fromLabel?.left ?? fromPerson.x) - margin;
+        const toToward = fromPerson.x <= toPerson.x
+            ? (toLabel?.left ?? toPerson.x) - margin
+            : (toLabel?.right ?? toPerson.x) + margin;
+        const pairs = [
+            ['inner', fromToward, toToward],
+            ['outer-left', allLeft, toToward],
+            ['outer-right', fromToward, allRight]
+        ];
+        return pairs.map(([name, fromLaneX, toLaneX]) => {
+            const fromEscapeY = fromBottom.y + 1;
+            const toEscapeY = toBottom.y + 1;
+            const rawPoints = [
+                fromBottom,
+                { x: fromBottom.x, y: fromEscapeY },
+                { x: fromLaneX, y: fromEscapeY },
+                { x: fromLaneX, y: barY },
+                { x: toLaneX, y: barY },
+                { x: toLaneX, y: toEscapeY },
+                { x: toBottom.x, y: toEscapeY },
+                toBottom
+            ];
+            const points = FamilyRoutePlanner.cleanPath(rawPoints);
+            return {
+                name,
+                rawPoints,
+                points,
+                decoration: { x: (fromLaneX + toLaneX) / 2, y: barY },
+                attachmentSegment: {
+                    start: { x: fromLaneX, y: barY },
+                    end: { x: toLaneX, y: barY }
+                }
+            };
+        });
+    }
+
+    _marriageCandidateScore(candidate, obstacles, occupiedSegments, fromPerson, toPerson) {
+        return [
+            FamilyRoutePlanner.pathIntersectionCount(candidate.points, obstacles,
+                new Set([String(fromPerson.id), String(toPerson.id)])),
+            FamilyRoutePlanner.polylineCrossingCount(candidate.points, occupiedSegments),
+            FamilyRoutePlanner.pathBendCount(candidate.points),
+            FamilyRoutePlanner.pathLength(candidate.points),
+            candidate.name
+        ];
+    }
+
+    _prepareMarriageRoutes(persons, relationships) {
+        const occupiedSegments = [];
+        const obstacles = this.getPersonRouteObstacles(persons);
+        relationships
+            .filter(rel => Relationship.getCategory(rel.type) === 'marriage')
+            .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+            .forEach(rel => {
+                const from = this.personMap.get(rel.fromPersonId);
+                const to = this.personMap.get(rel.toPersonId);
+                if (!from || !to) return;
+                const config = this.getMarriageConfiguration(from, to, rel, relationships);
+                let geometry;
+                let candidateName = 'direct';
+                const routeMode = rel.routeMode || 'auto';
+                const directGeometry = config.isArch
+                    ? null : this.getMarriageGeometry(from, to, config);
+                const directHits = directGeometry
+                    ? FamilyRoutePlanner.pathIntersectionCount(directGeometry.points,
+                        obstacles, new Set([String(from.id), String(to.id)]))
+                    : Number.POSITIVE_INFINITY;
+                if (config.isArch || (routeMode === 'auto' && directHits > 0)) {
+                    const endpointIds = new Set([String(from.id), String(to.id)]);
+                    const directCollisionRects = directGeometry
+                        ? obstacles.filter(rect => rect.kind === 'text'
+                            && (endpointIds.has(String(rect.ownerId))
+                                || this._pathHitsRect(directGeometry.points, rect)))
+                        : [];
+                    const fallbackBottom = Math.max(from.y, to.y) + this.personSize / 2;
+                    const underBarY = Number.isFinite(config.archBarY)
+                        ? config.archBarY
+                        : Math.max(fallbackBottom,
+                            ...directCollisionRects.map(rect => rect.bottom)) + 14;
+                    const candidates = this._underMarriageCandidates(from, to,
+                        underBarY, obstacles);
+                    if (!config.isArch && routeMode === 'auto') {
+                        const topY = Math.min(from.y, to.y) - this.personSize / 2
+                            - 20 - 30 * Math.max(config.level || 0, 1);
+                        const overConfig = {
+                            ...config, isArch: false, isBridge: true,
+                            bridgeY: topY, archBarY: null
+                        };
+                        const overGeometry = this.getMarriageGeometry(from, to, overConfig);
+                        candidates.push({ name: 'auto-over', ...overGeometry });
+                    }
+                    candidates.sort((a, b) => compareRouteScoreTuples(
+                        this._marriageCandidateScore(
+                            a, obstacles, occupiedSegments, from, to),
+                        this._marriageCandidateScore(
+                            b, obstacles, occupiedSegments, from, to)));
+                    geometry = candidates[0];
+                    candidateName = geometry.name;
+                    const selectedScore = this._marriageCandidateScore(
+                        geometry, obstacles, occupiedSegments, from, to);
+                    if (selectedScore[0] > 0) {
+                        this.labelRoutingWarnings.push({
+                            relationshipId: rel.id,
+                            reason: 'marriage-route-collision',
+                            collisions: selectedScore[0],
+                            candidateName
+                        });
+                    }
+                } else {
+                    geometry = directGeometry;
+                }
+                const route = {
+                    config,
+                    points: geometry.points,
+                    decoration: geometry.decoration,
+                    attachmentSegment: geometry.attachmentSegment,
+                    candidateName
+                };
+                this.marriageRouteCache.set(String(rel.id), route);
+                route.points.slice(1).forEach((point, index) => occupiedSegments.push({
+                    relationshipId: String(rel.id),
+                    start: route.points[index],
+                    end: point
+                }));
+            });
     }
 
     /**
@@ -1524,7 +1709,11 @@ class GenogramCanvas {
                 { x: toPt.x, y: bridgeY },
                 { x: toPt.x, y: toPt.y }
             ],
-            decoration: { x: (fromPt.x + toPt.x) / 2, y: bridgeY }
+            decoration: { x: (fromPt.x + toPt.x) / 2, y: bridgeY },
+            attachmentSegment: {
+                start: { x: fromPt.x, y: bridgeY },
+                end: { x: toPt.x, y: bridgeY }
+            }
         };
     }
 
@@ -1548,7 +1737,8 @@ class GenogramCanvas {
             p.x > loX + pad && p.x < hiX - pad &&   // 嚴格夾在 X 之間
             Math.abs(p.y - rowY) < 60               // 大致同列才算擋路（子女/父母在別列不算）
         );
-        obstacles.sort((a, b) => (a.x - b.x) || a.id.localeCompare(b.id));
+        obstacles.sort((a, b) => (a.x - b.x)
+            || String(a.id).localeCompare(String(b.id)));
         return obstacles;
     }
 
@@ -1632,13 +1822,13 @@ class GenogramCanvas {
     drawRelationship(fromPerson, toPerson, relationship, isSelected = false, persons = [], allRelationships = []) {
         const style = relationship.getLineStyle();
         const category = relationship.getCategory();
-
-        // 1. 取得天橋配置 (僅針對 Marriage)
-        const config = this.getMarriageConfiguration(fromPerson, toPerson, relationship, allRelationships);
+        const marriageRoute = category === 'marriage'
+            ? this.getMarriageRoute(fromPerson, toPerson, relationship, allRelationships)
+            : null;
 
         // [New] 計算多重關係位移 (Parallel Lines) - 僅用於非天橋模式的情感關係
         let offset = 0;
-        if (!config.isBridge && allRelationships.length > 0) {
+        if (category === 'emotional' && allRelationships.length > 0) {
             const samePairRels = allRelationships.filter(r =>
                 (r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id) ||
                 (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)
@@ -1667,15 +1857,11 @@ class GenogramCanvas {
             this.ctx.strokeStyle = '#4a90d9';
 
             if (category === 'marriage') {
-                // [Phase 2A.0] 婚姻高亮：與主線共用 getMarriageGeometry（含天橋/同列/跨列正交），
-                // 修正舊 Level-0 高亮永遠畫直線、與跨列正交主線不符的 bug。
+                // 婚姻高亮與主線共用完全相同的 canonical route。
                 this.ctx.lineWidth = style.width + 8;
                 this.ctx.globalAlpha = 0.6;
-                const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
-                this.ctx.beginPath();
-                this.ctx.moveTo(geom.points[0].x, geom.points[0].y);
-                for (let i = 1; i < geom.points.length; i++) this.ctx.lineTo(geom.points[i].x, geom.points[i].y);
-                this.ctx.stroke();
+                this.drawMarriagePath(marriageRoute.points, marriageRoute.decoration,
+                    { ...style, pattern: 'solid', decoration: null });
 
             } else if (category === 'family') {
                 // 親子關係高亮：from=parent → to=child 方向由資料決定（不看 Y 座標）
@@ -1724,9 +1910,8 @@ class GenogramCanvas {
         this.ctx.lineWidth = style.width;
 
         if (category === 'marriage') {
-            // [Phase 2A.0] 婚姻主線：天橋 / 同列直線 / 跨列正交三折，全部走唯一幾何來源
-            const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
-            this.drawMarriagePath(geom.points, geom.decoration, style);
+            this.drawMarriagePath(
+                marriageRoute.points, marriageRoute.decoration, style);
 
         } else if (category === 'family') {
             // 親子關係：from=parent → to=child 方向由資料決定（不看 Y 座標）。
@@ -3549,10 +3734,30 @@ class GenogramCanvas {
         return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
     }
 
+    _getDerivedGeometrySignature(persons, relationships) {
+        const personData = (Array.isArray(persons) ? persons : [])
+            .map(person => [
+                String(person.id), person.x, person.y,
+                person.name || '', person.notes || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        const marriageData = (Array.isArray(relationships) ? relationships : [])
+            .filter(rel => Relationship.getCategory(rel.type) === 'marriage')
+            .map(rel => [
+                String(rel.id), rel.type, rel.fromPersonId, rel.toPersonId,
+                rel.routeMode || ''
+            ])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        return JSON.stringify([
+            this.personSize, this.fontSize, this.fontFamily,
+            personData, marriageData
+        ]);
+    }
+
     prepareDerivedGeometry(persons, relationships, { force = false } = {}) {
         const allPersons = Array.isArray(persons) ? persons : [];
         const allRelationships = Array.isArray(relationships) ? relationships : [];
-        const signature = this._getFamilyRouteSignature(allPersons, allRelationships);
+        const signature = this._getDerivedGeometrySignature(allPersons, allRelationships);
         if (!(this.personMap instanceof Map)
             || allPersons.some(person => this.personMap.get(person.id) !== person)) {
             this.personMap = new Map(allPersons.map(person => [person.id, person]));
@@ -3563,6 +3768,7 @@ class GenogramCanvas {
         this.marriageRouteCache = new Map();
         this.labelRoutingWarnings = [];
         this._placeLabelsForForcedStraight(allPersons, allRelationships);
+        this._prepareMarriageRoutes(allPersons, allRelationships);
     }
 
     _pathHitsRect(points, rect) {
@@ -3751,29 +3957,12 @@ class GenogramCanvas {
             });
 
             if (marriageRel) {
-                const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
-                let minX;
-                let maxX;
-                let y;
-                if (config.isBridge) {
-                    const top1 = p1.getConnectionPoint('top');
-                    const top2 = p2.getConnectionPoint('top');
-                    minX = Math.min(top1.x, top2.x);
-                    maxX = Math.max(top1.x, top2.x);
-                    y = config.bridgeY;
-                } else if (config.isArch) {
-                    minX = Math.min(p1.x, p2.x);
-                    maxX = Math.max(p1.x, p2.x);
-                    y = config.archBarY;
-                } else {
-                    const leftParent = p1.x <= p2.x ? p1 : p2;
-                    const rightParent = p1.x <= p2.x ? p2 : p1;
-                    const leftPort = leftParent.getConnectionPoint('right');
-                    const rightPort = rightParent.getConnectionPoint('left');
-                    minX = Math.min(leftPort.x, rightPort.x);
-                    maxX = Math.max(leftPort.x, rightPort.x);
-                    y = (p1.y + p2.y) / 2;
-                }
+                const route = this.getMarriageRoute(p1, p2, marriageRel, otherRels);
+                const minX = Math.min(route.attachmentSegment.start.x,
+                    route.attachmentSegment.end.x);
+                const maxX = Math.max(route.attachmentSegment.start.x,
+                    route.attachmentSegment.end.x);
+                const y = route.attachmentSegment.start.y;
                 const desiredX = childObjs.length === 1 ? childObjs[0].x : childCenterX;
                 return {
                     source: { x: Math.max(minX, Math.min(maxX, desiredX)), y },
@@ -3889,6 +4078,7 @@ class GenogramCanvas {
         const allPersons = Array.isArray(persons) ? persons : [];
         const allRelationships = [...(familyRels || []), ...(otherRels || [])];
         if (typeof FamilyRoutePlanner === 'undefined') return [];
+        this.prepareDerivedGeometry(allPersons, allRelationships);
         const signature = this._getFamilyRouteSignature(allPersons, allRelationships);
         if (signature === this._familyRouteSignature && Array.isArray(this._familyRoutePlans)) {
             return this._familyRoutePlans;
@@ -4271,6 +4461,7 @@ class GenogramCanvas {
 
             let sourceX, sourceY;
             let sourceAnchorX = null; // 父母關係線上的實際掛接點 X
+            let hasMarriageSource = false;
 
             if (parentObjs.length >= 2) {
                 // 雙親：尋找婚姻關係以確定起點
@@ -4284,42 +4475,18 @@ class GenogramCanvas {
                 );
 
                 if (marriageRel) {
-                    // [New] 根據天橋配置決定起點
-                    const config = this.getMarriageConfiguration(p1, p2, marriageRel, otherRels);
+                    const route = this.getMarriageRoute(p1, p2, marriageRel, otherRels);
                     const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
-                    // 單一子女時，主幹直接對齊該子女，確保連線垂直
                     const desiredSourceX = childObjs.length === 1 ? childObjs[0].x : childrenCenterX;
-
-                    if (config.isBridge) {
-                        // [Fix] 天橋模式：sourceX 使用子女中心，但限制在天橋「實際水平段」範圍
-                        const top1 = p1.getConnectionPoint('top');
-                        const top2 = p2.getConnectionPoint('top');
-                        const minMarriageX = Math.min(top1.x, top2.x);
-                        const maxMarriageX = Math.max(top1.x, top2.x);
-                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = sourceAnchorX;
-                        sourceY = config.bridgeY;
-                    } else if (config.isArch) {
-                        // [Phase 2A.1] ㄩ 下折越障：婚姻線在 archBarY（列下方），子女掛在下折橫桿上，
-                        // 與 getMarriageGeometry 共用 config.archBarY → 子女線連到實際婚姻線、不浮空。
-                        // 跨距用「正下方中心」連接點 X（= 父母 x，與 arch 垂直腿同 X）。
-                        const minMarriageX = Math.min(p1.x, p2.x);
-                        const maxMarriageX = Math.max(p1.x, p2.x);
-                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = sourceAnchorX;
-                        sourceY = config.archBarY;
-                    } else {
-                        // [Fix] 一般婚姻：限制在婚姻線「可見端點」(右側連接點 ~ 左側連接點) 之間
-                        const leftParent = p1.x <= p2.x ? p1 : p2;
-                        const rightParent = p1.x <= p2.x ? p2 : p1;
-                        const marriageStartX = leftParent.getConnectionPoint('right').x;
-                        const marriageEndX = rightParent.getConnectionPoint('left').x;
-                        const minMarriageX = Math.min(marriageStartX, marriageEndX);
-                        const maxMarriageX = Math.max(marriageStartX, marriageEndX);
-                        sourceAnchorX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceX = sourceAnchorX;
-                        sourceY = (p1.y + p2.y) / 2;
-                    }
+                    const minMarriageX = Math.min(route.attachmentSegment.start.x,
+                        route.attachmentSegment.end.x);
+                    const maxMarriageX = Math.max(route.attachmentSegment.start.x,
+                        route.attachmentSegment.end.x);
+                    sourceAnchorX = Math.max(minMarriageX,
+                        Math.min(maxMarriageX, desiredSourceX));
+                    sourceX = sourceAnchorX;
+                    sourceY = route.attachmentSegment.start.y;
+                    hasMarriageSource = true;
 
                 } else {
                     // 無婚姻線，假定為共同父母
@@ -4358,12 +4525,12 @@ class GenogramCanvas {
             // 先記錄原始連接點 (婚姻線中心或人物底部)
             const originalSourceY = sourceY;
 
-            parentObjs.forEach(p => {
-                const parentBottom = this._labelBottomY(p);
-                if (sourceY < parentBottom) {
-                    sourceY = parentBottom;
-                }
-            });
+            if (!hasMarriageSource) {
+                parentObjs.forEach(p => {
+                    const parentBottom = this._labelBottomY(p);
+                    if (sourceY < parentBottom) sourceY = parentBottom;
+                });
+            }
 
             // 計算孩子的高度 (Bar Y position)
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
@@ -5299,6 +5466,7 @@ class GenogramCanvas {
 
             // 計算 sourceX/sourceY（與 drawFamilies 同步）
             let sourceX, sourceY;
+            let hasMarriageSource = false;
             if (parentObjs.length >= 2) {
                 const p1 = parentObjs[0];
                 const p2 = parentObjs[1];
@@ -5315,27 +5483,17 @@ class GenogramCanvas {
                 });
 
                 if (marriageRel) {
-                    const config = this.getMarriageConfiguration(p1, p2, marriageRel, allRelationships);
+                    const route = this.getMarriageRoute(
+                        p1, p2, marriageRel, allRelationships);
                     const childrenCenterX = childObjs.reduce((sum, c) => sum + c.x, 0) / childObjs.length;
                     const desiredSourceX = childObjs.length === 1 ? childObjs[0].x : childrenCenterX;
-
-                    if (config.isBridge) {
-                        const top1 = p1.getConnectionPoint('top');
-                        const top2 = p2.getConnectionPoint('top');
-                        const minMarriageX = Math.min(top1.x, top2.x);
-                        const maxMarriageX = Math.max(top1.x, top2.x);
-                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceY = config.bridgeY;
-                    } else {
-                        const leftParent = p1.x <= p2.x ? p1 : p2;
-                        const rightParent = p1.x <= p2.x ? p2 : p1;
-                        const marriageStartX = leftParent.getConnectionPoint('right').x;
-                        const marriageEndX = rightParent.getConnectionPoint('left').x;
-                        const minMarriageX = Math.min(marriageStartX, marriageEndX);
-                        const maxMarriageX = Math.max(marriageStartX, marriageEndX);
-                        sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
-                        sourceY = (p1.y + p2.y) / 2;
-                    }
+                    const minMarriageX = Math.min(route.attachmentSegment.start.x,
+                        route.attachmentSegment.end.x);
+                    const maxMarriageX = Math.max(route.attachmentSegment.start.x,
+                        route.attachmentSegment.end.x);
+                    sourceX = Math.max(minMarriageX, Math.min(maxMarriageX, desiredSourceX));
+                    sourceY = route.attachmentSegment.start.y;
+                    hasMarriageSource = true;
                 } else {
                     sourceX = (p1.x + p2.x) / 2;
                     sourceY = (p1.y + p2.y) / 2;
@@ -5347,12 +5505,12 @@ class GenogramCanvas {
             }
 
             // 與 drawFamilies 一樣，避免線條穿過父母文字備註
-            parentObjs.forEach(p => {
-                const parentBottom = this._labelBottomY(p);
-                if (sourceY < parentBottom) {
-                    sourceY = parentBottom;
-                }
-            });
+            if (!hasMarriageSource) {
+                parentObjs.forEach(p => {
+                    const parentBottom = this._labelBottomY(p);
+                    if (sourceY < parentBottom) sourceY = parentBottom;
+                });
+            }
 
             const childrenMinY = Math.min(...childObjs.map(c => c.y));
             let barY = (sourceY + (childrenMinY - this.personSize / 2)) / 2;
@@ -5376,13 +5534,8 @@ class GenogramCanvas {
                 points.push({ x: selectedChild.x, y: childTop });
             }
         } else if (category === 'marriage') {
-            // [Phase 2A.0] 婚姻 hit-test：與主線/高亮共用 getMarriageGeometry。
-            // 修正舊版兩處與主線不符、點不準的 bug：
-            //   (1) 天橋用「側邊」連接點、主線用「頂端」→ 垂直腿差半個節點寬；
-            //   (2) Level-0 跨列婚姻主線是正交三折，hit-test 卻當直線。
-            const config = this.getMarriageConfiguration(fromPerson, toPerson, relationship, allRelationships);
-            const geom = this.getMarriageGeometry(fromPerson, toPerson, config);
-            for (const pt of geom.points) points.push({ x: pt.x, y: pt.y });
+            return this.getMarriageRoute(
+                fromPerson, toPerson, relationship, allRelationships).points;
         } else {
             // 情感關係：直線路徑
             const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);

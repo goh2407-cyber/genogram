@@ -135,11 +135,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const primitiveChecks = {
             exposed: typeof FamilyRoutePlanner.segmentIntersectsRect === 'function'
                 && typeof FamilyRoutePlanner.pathIntersectionCount === 'function',
+            metricsExposed: typeof FamilyRoutePlanner.pathLength === 'function'
+                && typeof FamilyRoutePlanner.pathBendCount === 'function'
+                && typeof FamilyRoutePlanner.polylineCrossingCount === 'function',
             boundaryClear: false,
             interiorHit: false,
             invalidRectClear: false,
             numericAllowedCount: null,
-            stringAllowedCount: null
+            stringAllowedCount: null,
+            pathLength: null,
+            bendCount: null,
+            crossingCount: null
         };
         if (primitiveChecks.exposed) {
             const rect = { ownerId: 77, kind: 'symbol',
@@ -158,6 +164,15 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 [{ x: 15, y: 0 }, { x: 15, y: 30 }], obstaclesForCount, new Set([77]));
             primitiveChecks.stringAllowedCount = FamilyRoutePlanner.pathIntersectionCount(
                 [{ x: 15, y: 0 }, { x: 15, y: 30 }], obstaclesForCount, new Set(['77']));
+            const metricPath = [
+                { x: 0, y: 0 }, { x: 10, y: 0 },
+                { x: 10, y: 10 }, { x: 20, y: 10 }
+            ];
+            primitiveChecks.pathLength = FamilyRoutePlanner.pathLength(metricPath);
+            primitiveChecks.bendCount = FamilyRoutePlanner.pathBendCount(metricPath);
+            primitiveChecks.crossingCount = FamilyRoutePlanner.polylineCrossingCount(
+                metricPath,
+                [{ start: { x: 5, y: -5 }, end: { x: 5, y: 5 } }]);
         }
 
         const lineA = new Person({ id: 'line-a', x: 300, y: 500, gender: 'male', name: 'A' });
@@ -225,6 +240,101 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         }
         const numericWarning = canvas.labelRoutingWarnings.find(warning => warning.personId === 700);
 
+        const hub = new Person({ id: 'hub-62', x: 600, y: 240, gender: 'male', name: '', age: 62,
+            notes: '雙相情緒障礙症\n（精神中度障礙）' });
+        const left = new Person({ id: 'spouse-left', x: 350, y: 240,
+            gender: 'female', name: '左側伴侶' });
+        const rightNear = new Person({ id: 'spouse-right-near', x: 820, y: 240,
+            gender: 'female', name: '右側伴侶一' });
+        const rightFar = new Person({ id: 'spouse-right-far', x: 1040, y: 240,
+            gender: 'female', name: '右側伴侶二' });
+        const relAuto = new Relationship({ id: 'route-auto', fromPersonId: left.id,
+            toPersonId: hub.id, type: 'married', routeMode: 'auto' });
+        const relOver = new Relationship({ id: 'route-over', fromPersonId: hub.id,
+            toPersonId: rightFar.id, type: 'divorced', routeMode: 'over' });
+        const relUnder = new Relationship({ id: 'route-under', fromPersonId: hub.id,
+            toPersonId: rightNear.id, type: 'cohabiting', routeMode: 'under' });
+        const autoA = new Person({ id: 'auto-a', x: 300, y: 780,
+            gender: 'male', name: 'AUTO A' });
+        const autoB = new Person({ id: 'auto-b', x: 820, y: 960,
+            gender: 'female', name: 'AUTO B' });
+        const autoCrossed = new Person({ id: 'auto-crossed', x: 560, y: 805,
+            gender: 'male', name: '',
+            notes: '自動模式必須選擇安全候選\n不得穿過這兩行文字' });
+        const autoCrossingRel = new Relationship({ id: 'route-auto-crossing',
+            fromPersonId: autoA.id, toPersonId: autoB.id,
+            type: 'married', routeMode: 'auto' });
+        app.persons.push(hub, left, rightNear, rightFar, autoA, autoB, autoCrossed);
+        app.relationships.push(relAuto, relOver, relUnder, autoCrossingRel);
+        app._syncPersonMap();
+        canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
+        const underRoute = canvas.getMarriageRoute(hub, rightNear, relUnder, app.relationships);
+        const autoSafeRoute = canvas.getMarriageRoute(autoA, autoB,
+            autoCrossingRel, app.relationships);
+        const allTextObstacles = canvas.getPersonRouteObstacles(app.persons)
+            .filter(rect => rect.kind === 'text');
+        const underTextHits = FamilyRoutePlanner.pathIntersectionCount(
+            underRoute.points, allTextObstacles);
+        const autoTextHits = FamilyRoutePlanner.pathIntersectionCount(
+            autoSafeRoute.points, allTextObstacles);
+        const relationshipPath = canvas.getRelationshipPath(
+            hub, rightNear, relUnder, app.relationships);
+        const attachmentMid = {
+            x: (underRoute.attachmentSegment.start.x
+                + underRoute.attachmentSegment.end.x) / 2,
+            y: underRoute.attachmentSegment.start.y
+        };
+        const attachmentHit = canvas.isPointOnRelationship(
+            attachmentMid.x, attachmentMid.y,
+            hub, rightNear, relUnder, 10, app.relationships);
+        const drawnPaths = [];
+        const originalDrawMarriagePath = canvas.drawMarriagePath;
+        canvas.drawMarriagePath = function(points, decoration, style) {
+            drawnPaths.push(points.map(point => ({ ...point })));
+            return originalDrawMarriagePath.call(this, points, decoration, style);
+        };
+        canvas.drawRelationship(hub, rightNear, relUnder, true,
+            app.persons, app.relationships);
+        canvas.drawMarriagePath = originalDrawMarriagePath;
+        const routeBeforeExport = JSON.stringify(underRoute.points);
+        const exportDataUrl = canvas.exportToPNG(app.persons, app.relationships,
+            [], [], true, false, 1, app.viewOptions);
+        const routeAfterExport = JSON.stringify(
+            canvas.getMarriageRoute(hub, rightNear, relUnder, app.relationships).points);
+        const fullViewRoute = routeAfterExport;
+        app.viewOptions = { ...app.viewOptions, showNames: false, showNotes: false };
+        app.render();
+        const hiddenViewRoute = JSON.stringify(
+            canvas.getMarriageRoute(hub, rightNear, relUnder, app.relationships).points);
+        const safeMarriageWarnings = canvas.labelRoutingWarnings
+            .filter(warning => warning.reason === 'marriage-route-collision');
+
+        const unresolvedA = new Person({ id: 'unresolved-a', x: 100, y: 1200,
+            gender: 'male', name: 'A' });
+        const unresolvedB = new Person({ id: 'unresolved-b', x: 500, y: 1200,
+            gender: 'female', name: 'B' });
+        const unresolvedRel = new Relationship({ id: 900,
+            fromPersonId: unresolvedA.id, toPersonId: unresolvedB.id,
+            type: 'married', routeMode: 'auto' });
+        const originalGetPersonRouteObstacles = canvas.getPersonRouteObstacles;
+        canvas.getPersonRouteObstacles = () => [{
+            ownerId: 'synthetic-wall', kind: 'text',
+            left: -1000, right: 2000, top: -1000, bottom: 2000
+        }];
+        const unresolvedWarningSnapshots = [];
+        const unresolvedRouteSnapshots = [];
+        for (let index = 0; index < 3; index++) {
+            canvas.prepareDerivedGeometry(
+                [unresolvedA, unresolvedB], [unresolvedRel], { force: true });
+            unresolvedWarningSnapshots.push(JSON.stringify(canvas.labelRoutingWarnings));
+            unresolvedRouteSnapshots.push(JSON.stringify(
+                canvas.getMarriageRoute(
+                    unresolvedA, unresolvedB, unresolvedRel, [unresolvedRel])));
+        }
+        canvas.getPersonRouteObstacles = originalGetPersonRouteObstacles;
+        canvas.personMap = app.personMap;
+        canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
+
         return {
             full, hiddenName, bounds, longLabel, obstacleCount: obstacles.length,
             symbolBottom: notesOnly.y + canvas.personSize / 2, invalidated, primitiveChecks,
@@ -237,6 +347,26 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             },
             appIdComparisons,
             adapterLayouts,
+            underRoute,
+            autoSafeRoute,
+            underTextHits,
+            autoTextHits,
+            hub: { x: hub.x, y: hub.y },
+            rightNear: { x: rightNear.x, y: rightNear.y },
+            half: canvas.personSize / 2,
+            hubLabelBottom: canvas.getPersonLabelGeometry(hub,
+                { showNames: true, showNotes: true }).bounds.bottom,
+            relationshipPath,
+            attachmentHit,
+            drawnPaths,
+            routeBeforeExport,
+            routeAfterExport,
+            exportPrefix: exportDataUrl.slice(0, 22),
+            fullViewRoute,
+            hiddenViewRoute,
+            safeMarriageWarnings,
+            unresolvedWarningSnapshots,
+            unresolvedRouteSnapshots,
             forcedStraight: {
                 hasDerivedPreparation,
                 straightPathBefore,
@@ -312,7 +442,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.invalidated.familyPaths === 0,
         JSON.stringify(result.invalidated));
     check('public route geometry primitives are exposed',
-        result.primitiveChecks.exposed, JSON.stringify(result.primitiveChecks));
+        result.primitiveChecks.exposed && result.primitiveChecks.metricsExposed,
+        JSON.stringify(result.primitiveChecks));
     check('public segment rectangle collision keeps boundary clear and detects interior',
         result.primitiveChecks.boundaryClear && result.primitiveChecks.interiorHit
             && result.primitiveChecks.invalidRectClear,
@@ -320,6 +451,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('path collision owner allowlist treats numeric and string ids consistently',
         result.primitiveChecks.numericAllowedCount === 1
             && result.primitiveChecks.stringAllowedCount === 1,
+        JSON.stringify(result.primitiveChecks));
+    check('route metric primitives return exact deterministic values',
+        result.primitiveChecks.pathLength === 30
+            && result.primitiveChecks.bendCount === 2
+            && result.primitiveChecks.crossingCount === 1,
         JSON.stringify(result.primitiveChecks));
     check('forced straight keeps its existing path shape',
         result.forcedStraight.straightPath.length === 4
@@ -358,6 +494,51 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.forcedStraight.numericWarning?.personId === 700
             && result.forcedStraight.numericWarning.collisions > 0,
         JSON.stringify(result.forcedStraight.numericWarning));
+    check('under route starts and ends at cardinal bottom ports',
+        result.underRoute.points[0].x === result.hub.x
+            && result.underRoute.points[0].y === result.hub.y + result.half
+            && result.underRoute.points.at(-1).x === result.rightNear.x
+            && result.underRoute.points.at(-1).y === result.rightNear.y + result.half,
+        JSON.stringify(result.underRoute.points));
+    check('under route adds side doglegs instead of label-crossing center legs',
+        result.underRoute.points.length >= 8,
+        JSON.stringify(result.underRoute.points));
+    check('safe under route has zero text intersections', result.underTextHits === 0,
+        `hits=${result.underTextHits}`);
+    check('attachment segment is the actual under-route bar',
+        result.underRoute.attachmentSegment.start.y
+            === result.underRoute.attachmentSegment.end.y
+            && result.underRoute.attachmentSegment.start.y > result.hubLabelBottom,
+        JSON.stringify(result.underRoute.attachmentSegment));
+    check('auto route replaces a colliding direct candidate with a safe candidate',
+        result.autoTextHits === 0 && result.autoSafeRoute.candidateName !== 'direct',
+        JSON.stringify(result.autoSafeRoute));
+    check('draw, selected highlight and hit path share canonical points',
+        JSON.stringify(result.relationshipPath) === JSON.stringify(result.underRoute.points)
+            && result.drawnPaths.length >= 2
+            && result.drawnPaths.every(points => JSON.stringify(points)
+                === JSON.stringify(result.underRoute.points))
+            && result.attachmentHit,
+        JSON.stringify(result.drawnPaths));
+    check('export reuses the same canonical route',
+        result.exportPrefix === 'data:image/png;base64,'
+            && result.routeBeforeExport === result.routeAfterExport,
+        `${result.routeBeforeExport} != ${result.routeAfterExport}`);
+    check('view-option toggles do not make routes jump',
+        result.fullViewRoute === result.hiddenViewRoute,
+        `${result.fullViewRoute} != ${result.hiddenViewRoute}`);
+    check('safe candidates do not emit unresolved marriage warnings',
+        result.safeMarriageWarnings.length === 0,
+        JSON.stringify(result.safeMarriageWarnings));
+    check('all-colliding candidates emit one deterministic unresolved warning',
+        new Set(result.unresolvedWarningSnapshots).size === 1
+            && JSON.parse(result.unresolvedWarningSnapshots[0]).length === 1
+            && JSON.parse(result.unresolvedWarningSnapshots[0])[0].relationshipId === 900
+            && JSON.parse(result.unresolvedWarningSnapshots[0])[0].reason
+                === 'marriage-route-collision'
+            && new Set(result.unresolvedRouteSnapshots).size === 1,
+        JSON.stringify({ warnings: result.unresolvedWarningSnapshots,
+            routes: result.unresolvedRouteSnapshots }));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {
