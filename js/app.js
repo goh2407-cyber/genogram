@@ -5153,13 +5153,27 @@ class GenogramApp {
     updateRoutingWarning() {
         const node = this.elements.routingWarning;
         if (!node) return;
-        const labelWarnings = this.canvas.labelRoutingWarnings || [];
-        const marriageWarnings = this.canvas.marriageRoutingWarnings || [];
-        const count = labelWarnings.length + marriageWarnings.length;
+        const sources = [
+            this.canvas.labelRoutingWarnings,
+            this.canvas.marriageRoutingWarnings
+        ];
+        const seenWarnings = new Set();
+        const count = sources.flatMap(warnings => Array.isArray(warnings) ? warnings : [])
+            .filter((warning, index) => {
+                const entityKind = Object.hasOwn(warning, 'personId')
+                    ? 'person' : Object.hasOwn(warning, 'relationshipId')
+                        ? 'relationship' : 'unknown';
+                const entityId = entityKind === 'person' ? warning.personId
+                    : entityKind === 'relationship' ? warning.relationshipId : index;
+                const key = `${entityKind}:${typeof entityId}:${String(entityId)}:${warning.reason || ''}`;
+                if (seenWarnings.has(key)) return false;
+                seenWarnings.add(key);
+                return true;
+            }).length;
         node.hidden = count === 0;
         node.textContent = count === 0
             ? ''
-            : `${count} 位成員的文字與關係線空間不足，請移動人物或改用自動繞線。`;
+            : `${count} 項文字與關係線空間不足，請移動人物或改用自動繞線。`;
     }
 
     resetTransientStateForHistory() {

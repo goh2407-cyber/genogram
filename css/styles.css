@@ -1686,6 +1686,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
         overflow-y: auto;
         box-shadow: -12px 0 32px rgba(23, 33, 43, .16);
     }
+    body.inspector-compact.inspector-overlay-open .routing-warning {
+        right: calc(296px + 24px);
+    }
     body.inspector-compact.inspector-overlay-open .inspector-toggle svg { transform: rotate(180deg); }
 }
 

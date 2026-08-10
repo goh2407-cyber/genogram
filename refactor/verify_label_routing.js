@@ -429,6 +429,37 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         } : { visible: false, text: '', count: app.canvas.labelRoutingWarnings.length };
         const warningExportDataUrl = app.canvas.exportToPNG(app.persons, app.relationships,
             [], [], true, false, 1, app.viewOptions);
+        const warningWasHidden = warning?.hidden;
+        if (warning) warning.hidden = true;
+        const hiddenWarningExportDataUrl = app.canvas.exportToPNG(app.persons, app.relationships,
+            [], [], true, false, 1, app.viewOptions);
+        if (warning) warning.hidden = warningWasHidden;
+
+        const originalLabelWarnings = canvas.labelRoutingWarnings;
+        const originalMarriageWarnings = canvas.marriageRoutingWarnings;
+        const hadMarriageWarnings = Object.hasOwn(canvas, 'marriageRoutingWarnings');
+        const sharedRelationshipWarning = {
+            relationshipId: 9,
+            reason: 'marriage-route-collision'
+        };
+        canvas.labelRoutingWarnings = [
+            { personId: 7, reason: 'forced-straight-label-collision' },
+            { relationshipId: 7, reason: 'marriage-route-collision' },
+            sharedRelationshipWarning
+        ];
+        canvas.marriageRoutingWarnings = [
+            sharedRelationshipWarning,
+            { relationshipId: 9, reason: 'marriage-route-collision' }
+        ];
+        app.updateRoutingWarning();
+        const mixedWarningResult = {
+            visible: !warning.hidden,
+            text: warning.textContent
+        };
+        canvas.labelRoutingWarnings = originalLabelWarnings;
+        if (hadMarriageWarnings) canvas.marriageRoutingWarnings = originalMarriageWarnings;
+        else delete canvas.marriageRoutingWarnings;
+
         forced.routeMode = 'auto';
         app.canvas.invalidateDerivedGeometry();
         app.render();
@@ -482,6 +513,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             clearAutoRoute,
             warning: warningResult,
             warningExportDataUrl,
+            hiddenWarningExportDataUrl,
+            mixedWarning: mixedWarningResult,
             warningHiddenAfterAuto,
             forcedStraight: {
                 hasDerivedPreparation,
@@ -677,6 +710,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('warning is absent from exported canvas data',
         result.warningExportDataUrl.startsWith('data:image/png;base64,'),
         result.warningExportDataUrl.slice(0, 30));
+    check('visible warning does not alter exported PNG pixels',
+        result.warningExportDataUrl === result.hiddenWarningExportDataUrl,
+        `${result.warningExportDataUrl.length} !== ${result.hiddenWarningExportDataUrl.length}`);
+    check('routing warning dedupes typed entity warnings with neutral item wording',
+        result.mixedWarning.visible
+            && result.mixedWarning.text.includes('3 項文字與關係線')
+            && !result.mixedWarning.text.includes('位成員'),
+        JSON.stringify(result.mixedWarning));
     check('auto route deterministically clears the editor warning',
         result.warningHiddenAfterAuto, `hidden=${result.warningHiddenAfterAuto}`);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
