@@ -140,11 +140,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const restored = Person.fromJSON(serialized);
         const clone = restored.clone();
         clone.medical.isSmoker = true;
+        restored.medical.leftHalf = 'striped';
         medical.leftHalf = 'filled';
         return {
             detached: serialized.medical !== medical && serialized.medical.leftHalf === 'none',
             flat: Object.values(person.medical).every(value => value === null || typeof value !== 'object'),
-            roundTrip: restored.medical.leftHalf === 'none',
+            roundTrip: restored.medical.leftHalf === 'striped',
+            sourceDetached: restored.medical !== serialized.medical
+                && serialized.medical.leftHalf === 'none',
             cloneDetached: clone.medical !== restored.medical
                 && clone.medical.isSmoker === true && restored.medical.isSmoker === false
         };
@@ -155,6 +158,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('medical round-trip stays value-correct and clone stays detached',
         medicalSnapshotDetached.roundTrip && medicalSnapshotDetached.cloneDetached,
         JSON.stringify(medicalSnapshotDetached));
+    check('mutating a restored Person cannot mutate its serialized source',
+        medicalSnapshotDetached.sourceDetached, JSON.stringify(medicalSnapshotDetached));
 
     await page.click('#helpBtn');
     await page.keyboard.press('Delete');
@@ -393,6 +398,52 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         swapPropertyUndo.date === '舊日期' && swapPropertyUndo.from === 'ra' && swapPropertyUndo.to === 'rb',
         JSON.stringify(swapPropertyUndo));
 
+    const multiSelectionHistory = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.persons = [new Person({ id: 'current-only', x: 500, y: 260, name: 'Current' })];
+        app._syncPersonMap();
+        app.relationships = []; app.households = []; app.lifeCircles = [];
+        app.selectedPersonId = null;
+        app.selectedRelationshipId = null;
+        app.selectedHouseholdId = null;
+        app.selectedLifeCircleId = null;
+        app.selectedPersonIds = ['prior-only', 'current-only'];
+        app.history.pushState({
+            persons: [new Person({ id: 'prior-only', x: 300, y: 260, name: 'Prior' }).toJSON()],
+            relationships: [], households: [], lifeCircles: []
+        });
+        app.undo();
+        const afterUndo = {
+            persons: app.persons.map(person => person.id),
+            selected: [...app.selectedPersonIds],
+            valid: app.selectedPersonIds.every(id => app.personMap.has(id))
+        };
+        app.redo();
+        const afterRedo = {
+            persons: app.persons.map(person => person.id),
+            selected: [...app.selectedPersonIds],
+            valid: app.selectedPersonIds.every(id => app.personMap.has(id)),
+            bounds: app.getMultiSelectionBounds()
+        };
+        app.deleteSelected();
+        return {
+            afterUndo,
+            afterRedo,
+            afterDelete: app.persons.map(person => person.id)
+        };
+    });
+    check('Undo filters multi-selection IDs against the restored personMap',
+        multiSelectionHistory.afterUndo.valid
+            && JSON.stringify(multiSelectionHistory.afterUndo.selected) === JSON.stringify(['prior-only']),
+        JSON.stringify(multiSelectionHistory));
+    check('Redo removes stale multi-selection IDs and ghost follow-up actions are inert',
+        multiSelectionHistory.afterRedo.valid
+            && multiSelectionHistory.afterRedo.selected.length === 0
+            && multiSelectionHistory.afterRedo.bounds === null
+            && JSON.stringify(multiSelectionHistory.afterDelete) === JSON.stringify(['current-only']),
+        JSON.stringify(multiSelectionHistory));
+
     const dragStart = await page.evaluate(() => {
         const app = window.app;
         app.history.clear();
@@ -453,6 +504,67 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         afterStalePointerUp.undo === 0 && afterStalePointerUp.redo === 1
             && afterStalePointerUp.x === 300,
         JSON.stringify(afterStalePointerUp));
+
+    const afterMidDragRedo = await page.evaluate(() => {
+        const app = window.app;
+        app.redo();
+        return {
+            x: app.personMap.get('drag-edit').x,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    check('Redo after a cancelled mid-drag restores the committed pre-drag state, never partial coordinates',
+        afterMidDragRedo.x === 400 && afterMidDragRedo.undo === 1 && afterMidDragRedo.redo === 0,
+        JSON.stringify(afterMidDragRedo));
+
+    const emptyHistoryDragStart = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        const person = app.personMap.get('drag-edit');
+        person.x = 400;
+        person.y = 260;
+        app.selectPerson('drag-edit');
+        app.render();
+        const rect = app.canvas.canvas.getBoundingClientRect();
+        return {
+            x: person.x * app.canvas.scale + app.canvas.offsetX + rect.left,
+            y: person.y * app.canvas.scale + app.canvas.offsetY + rect.top
+        };
+    });
+    await page.mouse.move(emptyHistoryDragStart.x, emptyHistoryDragStart.y);
+    await page.mouse.down();
+    await page.mouse.move(emptyHistoryDragStart.x + 80, emptyHistoryDragStart.y + 20, { steps: 5 });
+    const emptyHistoryMidDragUndo = await page.evaluate(() => {
+        const app = window.app;
+        const partialX = app.personMap.get('drag-edit').x;
+        app.undo();
+        return {
+            partialX,
+            x: app.personMap.get('drag-edit').x,
+            dragging: app.canvas.isDragging,
+            pointerId: app.activePointerId,
+            dragStartSnapshot: app.dragStartSnapshot,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    await page.mouse.up();
+    const emptyHistoryAfterPointerUp = await page.evaluate(() => ({
+        x: window.app.personMap.get('drag-edit').x,
+        undo: window.app.history.getUndoCount(),
+        redo: window.app.history.getRedoCount()
+    }));
+    check('empty-history Undo cancels a real drag back to its committed coordinates without history',
+        emptyHistoryMidDragUndo.partialX !== 400
+            && emptyHistoryMidDragUndo.x === 400
+            && !emptyHistoryMidDragUndo.dragging
+            && emptyHistoryMidDragUndo.pointerId === null
+            && emptyHistoryMidDragUndo.dragStartSnapshot === null
+            && emptyHistoryMidDragUndo.undo === 0 && emptyHistoryMidDragUndo.redo === 0
+            && emptyHistoryAfterPointerUp.x === 400
+            && emptyHistoryAfterPointerUp.undo === 0 && emptyHistoryAfterPointerUp.redo === 0,
+        JSON.stringify({ emptyHistoryMidDragUndo, emptyHistoryAfterPointerUp }));
 
     const emptyUndoCleanup = await page.evaluate(() => {
         const app = window.app;

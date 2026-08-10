@@ -5125,6 +5125,19 @@ class GenogramApp {
     }
 
     resetTransientStateForHistory() {
+        const dragStartSnapshot = this.dragStartSnapshot;
+        if (dragStartSnapshot) {
+            this.persons = dragStartSnapshot.persons.map(p => Person.fromJSON(p));
+            this._syncPersonMap();
+            this.relationships = dragStartSnapshot.relationships.map(r => Relationship.fromJSON(r));
+            this.households = (dragStartSnapshot.households || []).map(h => ({
+                ...h, ids: [...(h.ids || [])]
+            }));
+            this.lifeCircles = (dragStartSnapshot.lifeCircles || []).map(lc => ({
+                ...lc,
+                points: (lc.points || []).map(p => ({ x: p.x, y: p.y }))
+            }));
+        }
         if (this.canvas && this.activePointerId !== null &&
             this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
             this.canvas.canvas.releasePointerCapture(this.activePointerId);
@@ -5185,6 +5198,7 @@ class GenogramApp {
         if (prevState) {
             this.persons = prevState.persons.map(p => Person.fromJSON(p));
             this._syncPersonMap();
+            this.selectedPersonIds = this.selectedPersonIds.filter(id => this.personMap.has(id));
             this.relationships = prevState.relationships.map(r => Relationship.fromJSON(r));
             this.households = prevState.households || [];
             this.lifeCircles = prevState.lifeCircles || [];
@@ -5224,6 +5238,7 @@ class GenogramApp {
         if (nextState) {
             this.persons = nextState.persons.map(p => Person.fromJSON(p));
             this._syncPersonMap();
+            this.selectedPersonIds = this.selectedPersonIds.filter(id => this.personMap.has(id));
             this.relationships = nextState.relationships.map(r => Relationship.fromJSON(r));
             this.households = nextState.households || [];
             this.lifeCircles = nextState.lifeCircles || [];

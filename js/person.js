@@ -15,7 +15,7 @@ class Person {
         this.isIdentifiedPatient = data.isIdentifiedPatient || false;
 
         // 醫學/狀態標記
-        this.medical = data.medical || {
+        this.medical = data.medical ? { ...data.medical } : {
             topLeft: 'none',      // none, striped, filled
             topRight: 'none',
             bottomLeft: 'none',
