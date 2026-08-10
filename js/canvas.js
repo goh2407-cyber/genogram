@@ -1629,27 +1629,27 @@ class GenogramCanvas {
                 let geometry;
                 let candidateName = 'direct';
                 const routeMode = rel.routeMode || 'auto';
-                const directGeometry = config.isArch
-                    ? null : this.getMarriageGeometry(from, to, config);
-                const directHits = directGeometry
-                    ? FamilyRoutePlanner.pathIntersectionCount(directGeometry.points,
-                        obstacles, new Set([String(from.id), String(to.id)]))
-                    : Number.POSITIVE_INFINITY;
-                if (config.isArch || (routeMode === 'auto' && directHits > 0)) {
+                let candidates = null;
+                if (routeMode === 'auto' || config.isArch) {
+                    const directConfig = {
+                        ...config, isArch: false, isBridge: false, archBarY: null
+                    };
+                    const directGeometry = this.getMarriageGeometry(
+                        from, to, directConfig);
                     const endpointIds = new Set([String(from.id), String(to.id)]);
-                    const directCollisionRects = directGeometry
-                        ? obstacles.filter(rect => rect.kind === 'text'
-                            && (endpointIds.has(String(rect.ownerId))
-                                || this._pathHitsRect(directGeometry.points, rect)))
-                        : [];
+                    const directCollisionRects = obstacles.filter(rect =>
+                        rect.kind === 'text'
+                        && (endpointIds.has(String(rect.ownerId))
+                            || this._pathHitsRect(directGeometry.points, rect)));
                     const fallbackBottom = Math.max(from.y, to.y) + this.personSize / 2;
                     const underBarY = Number.isFinite(config.archBarY)
                         ? config.archBarY
                         : Math.max(fallbackBottom,
                             ...directCollisionRects.map(rect => rect.bottom)) + 14;
-                    const candidates = this._underMarriageCandidates(from, to,
+                    candidates = this._underMarriageCandidates(from, to,
                         underBarY, obstacles);
-                    if (!config.isArch && routeMode === 'auto') {
+                    if (routeMode === 'auto') {
+                        candidates.push({ name: 'direct', ...directGeometry });
                         const topY = Math.min(from.y, to.y) - this.personSize / 2
                             - 20 - 30 * Math.max(config.level || 0, 1);
                         const overConfig = {
@@ -1659,6 +1659,8 @@ class GenogramCanvas {
                         const overGeometry = this.getMarriageGeometry(from, to, overConfig);
                         candidates.push({ name: 'auto-over', ...overGeometry });
                     }
+                }
+                if (candidates) {
                     candidates.sort((a, b) => compareRouteScoreTuples(
                         this._marriageCandidateScore(
                             a, obstacles, occupiedSegments, from, to),
@@ -1677,7 +1679,7 @@ class GenogramCanvas {
                         });
                     }
                 } else {
-                    geometry = directGeometry;
+                    geometry = this.getMarriageGeometry(from, to, config);
                 }
                 const route = {
                     config,
@@ -3183,6 +3185,53 @@ class GenogramCanvas {
         return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
     }
 
+    _captureExportDerivedState() {
+        const familyPlans = new Set(this._familyRoutePlans || []);
+        for (const cached of this._familyPlanCache?.values?.() || []) {
+            if (cached?.plan) familyPlans.add(cached.plan);
+        }
+        return {
+            ctx: this.ctx,
+            viewOptions: this.viewOptions,
+            personMap: this.personMap,
+            lastPersons: this.lastPersons,
+            lastRelationships: this.lastRelationships,
+            derivedGeometrySignature: this._derivedGeometrySignature,
+            personLabelPlacements: this.personLabelPlacements,
+            marriageRouteCache: this.marriageRouteCache,
+            labelRoutingWarnings: this.labelRoutingWarnings,
+            familyRouteSignature: this._familyRouteSignature,
+            familyPlanCache: this._familyPlanCache,
+            familyRoutePlans: this._familyRoutePlans,
+            familyRelationshipPaths: this._familyRelationshipPaths,
+            familyPlanState: Array.from(familyPlans, plan => ({
+                plan,
+                hasFamily: Object.prototype.hasOwnProperty.call(plan, 'family'),
+                family: plan.family
+            }))
+        };
+    }
+
+    _restoreExportDerivedState(state) {
+        state.familyPlanState.forEach(entry => {
+            if (entry.hasFamily) entry.plan.family = entry.family;
+            else delete entry.plan.family;
+        });
+        this.ctx = state.ctx;
+        this.viewOptions = state.viewOptions;
+        this.personMap = state.personMap;
+        this.lastPersons = state.lastPersons;
+        this.lastRelationships = state.lastRelationships;
+        this._derivedGeometrySignature = state.derivedGeometrySignature;
+        this.personLabelPlacements = state.personLabelPlacements;
+        this.marriageRouteCache = state.marriageRouteCache;
+        this.labelRoutingWarnings = state.labelRoutingWarnings;
+        this._familyRouteSignature = state.familyRouteSignature;
+        this._familyPlanCache = state.familyPlanCache;
+        this._familyRoutePlans = state.familyRoutePlans;
+        this._familyRelationshipPaths = state.familyRelationshipPaths;
+    }
+
     /**
      * 匯出為 PNG 圖片（含關係圖例）
      * @param {Array} persons - 人物陣列
@@ -3195,6 +3244,8 @@ class GenogramCanvas {
      */
     exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true,
         showLegend = true, scale = 3, viewOptions = {}) {
+        const exportState = this._captureExportDerivedState();
+        try {
         const visible = this.getVisibleExportData(
             persons, relationships, households, lifeCircles, viewOptions);
         const effectiveView = {
@@ -3232,7 +3283,6 @@ class GenogramCanvas {
         exportCtx.fillRect(0, 0, totalWidth, totalHeight);
 
         // 暫時切換 context
-        const originalCtx = this.ctx;
         this.ctx = exportCtx;
 
         // 平移到內容區域
@@ -3289,10 +3339,10 @@ class GenogramCanvas {
             this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
-        // 還原 context
-        this.ctx = originalCtx;
-
         return exportCanvas.toDataURL('image/png');
+        } finally {
+            this._restoreExportDerivedState(exportState);
+        }
     }
 
     /**
@@ -3309,6 +3359,8 @@ class GenogramCanvas {
      */
     exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92,
         showNotes = true, showLegend = true, scale = 3, viewOptions = {}) {
+        const exportState = this._captureExportDerivedState();
+        try {
         const visible = this.getVisibleExportData(
             persons, relationships, households, lifeCircles, viewOptions);
         const effectiveView = {
@@ -3341,7 +3393,6 @@ class GenogramCanvas {
         exportCtx.fillStyle = '#ffffff';
         exportCtx.fillRect(0, 0, totalWidth, totalHeight);
 
-        const originalCtx = this.ctx;
         this.ctx = exportCtx;
 
         this.ctx.save();
@@ -3393,9 +3444,10 @@ class GenogramCanvas {
             this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
 
-        this.ctx = originalCtx;
-
         return exportCanvas.toDataURL('image/jpeg', quality);
+        } finally {
+            this._restoreExportDerivedState(exportState);
+        }
     }
 
     getLegendRenderItem(entry) {

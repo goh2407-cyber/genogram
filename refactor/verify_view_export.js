@@ -71,6 +71,145 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('filtered export still produces PNG', result.pngOk);
     check('export never mutates Person data', result.unchanged);
 
+    const cacheRestoration = await page.evaluate(() => {
+        const app = window.app;
+        const canvas = app.canvas;
+        app.persons = [
+            new Person({ id: 'parent-a', x: 200, y: 200, name: '父' }),
+            new Person({ id: 'parent-b', x: 460, y: 200, gender: 'female', name: '母' }),
+            new Person({ id: 'child', x: 330, y: 420, name: '子' })
+        ];
+        app.relationships = [
+            new Relationship({ id: 'marriage', fromPersonId: 'parent-a',
+                toPersonId: 'parent-b', type: 'married' }),
+            new Relationship({ id: 'family-a', fromPersonId: 'parent-a',
+                toPersonId: 'child', type: 'parent-child' }),
+            new Relationship({ id: 'family-b', fromPersonId: 'parent-b',
+                toPersonId: 'child', type: 'parent-child' }),
+            new Relationship({ id: 'emotion', fromPersonId: 'parent-a',
+                toPersonId: 'parent-b', type: 'conflict' })
+        ];
+        app._syncPersonMap();
+        app.viewOptions = {
+            ...app.viewOptions,
+            showEmotionalRelationships: true
+        };
+        app.render();
+        const hiddenExportView = {
+            ...app.viewOptions,
+            showEmotionalRelationships: false
+        };
+        const capture = () => {
+            const familyPlans = new Set(canvas._familyRoutePlans || []);
+            for (const cached of canvas._familyPlanCache?.values?.() || []) {
+                if (cached?.plan) familyPlans.add(cached.plan);
+            }
+            return {
+            ctx: canvas.ctx,
+            viewOptions: canvas.viewOptions,
+            personMap: canvas.personMap,
+            lastPersons: canvas.lastPersons,
+            lastRelationships: canvas.lastRelationships,
+            derivedSignature: canvas._derivedGeometrySignature,
+            personLabelPlacements: canvas.personLabelPlacements,
+            marriageRouteCache: canvas.marriageRouteCache,
+            labelRoutingWarnings: canvas.labelRoutingWarnings,
+            familySignature: canvas._familyRouteSignature,
+            familyPlanCache: canvas._familyPlanCache,
+            familyRoutePlans: canvas._familyRoutePlans,
+            familyRelationshipPaths: canvas._familyRelationshipPaths,
+            familyPlanState: Array.from(familyPlans, plan => ({
+                plan,
+                hasFamily: Object.prototype.hasOwnProperty.call(plan, 'family'),
+                family: plan.family
+            }))
+            };
+        };
+        const same = (before) => {
+            const topLevelRestored = Object.entries(before)
+                .filter(([key]) => key !== 'familyPlanState')
+                .every(([key, value]) => {
+                const current = {
+                    ctx: canvas.ctx,
+                    viewOptions: canvas.viewOptions,
+                    personMap: canvas.personMap,
+                    lastPersons: canvas.lastPersons,
+                    lastRelationships: canvas.lastRelationships,
+                    derivedSignature: canvas._derivedGeometrySignature,
+                    personLabelPlacements: canvas.personLabelPlacements,
+                    marriageRouteCache: canvas.marriageRouteCache,
+                    labelRoutingWarnings: canvas.labelRoutingWarnings,
+                    familySignature: canvas._familyRouteSignature,
+                    familyPlanCache: canvas._familyPlanCache,
+                    familyRoutePlans: canvas._familyRoutePlans,
+                    familyRelationshipPaths: canvas._familyRelationshipPaths
+                }[key];
+                return current === value;
+            });
+            return topLevelRestored && before.familyPlanState.every(entry =>
+                Object.prototype.hasOwnProperty.call(entry.plan, 'family') === entry.hasFamily
+                    && entry.plan.family === entry.family);
+        };
+        const restore = (snapshot) => {
+            snapshot.familyPlanState.forEach(entry => {
+                if (entry.hasFamily) entry.plan.family = entry.family;
+                else delete entry.plan.family;
+            });
+            canvas.ctx = snapshot.ctx;
+            canvas.viewOptions = snapshot.viewOptions;
+            canvas.personMap = snapshot.personMap;
+            canvas.lastPersons = snapshot.lastPersons;
+            canvas.lastRelationships = snapshot.lastRelationships;
+            canvas._derivedGeometrySignature = snapshot.derivedSignature;
+            canvas.personLabelPlacements = snapshot.personLabelPlacements;
+            canvas.marriageRouteCache = snapshot.marriageRouteCache;
+            canvas.labelRoutingWarnings = snapshot.labelRoutingWarnings;
+            canvas._familyRouteSignature = snapshot.familySignature;
+            canvas._familyPlanCache = snapshot.familyPlanCache;
+            canvas._familyRoutePlans = snapshot.familyRoutePlans;
+            canvas._familyRelationshipPaths = snapshot.familyRelationshipPaths;
+        };
+
+        const pngBefore = capture();
+        canvas.exportToPNG(app.persons, app.relationships, app.households,
+            app.lifeCircles, true, false, 1, hiddenExportView);
+        const pngRestored = same(pngBefore);
+        if (!pngRestored) restore(pngBefore);
+
+        app.render();
+        const jpegBefore = capture();
+        canvas.exportToJPEG(app.persons, app.relationships, app.households,
+            app.lifeCircles, 0.92, true, false, 1, hiddenExportView);
+        const jpegRestored = same(jpegBefore);
+        if (!jpegRestored) restore(jpegBefore);
+
+        app.render();
+        const throwBefore = capture();
+        const originalDrawRelationship = canvas.drawRelationship;
+        let exportThrew = false;
+        canvas.drawRelationship = () => {
+            throw new Error('forced-export-failure');
+        };
+        try {
+            canvas.exportToPNG(app.persons, app.relationships, app.households,
+                app.lifeCircles, true, false, 1, hiddenExportView);
+        } catch (error) {
+            exportThrew = error.message === 'forced-export-failure';
+        } finally {
+            canvas.drawRelationship = originalDrawRelationship;
+        }
+        const throwRestored = same(throwBefore);
+        if (!throwRestored) restore(throwBefore);
+        return { pngRestored, jpegRestored, exportThrew, throwRestored };
+    });
+    check('PNG export restores exact screen derived-cache identities',
+        cacheRestoration.pngRestored, JSON.stringify(cacheRestoration));
+    check('JPEG export restores exact screen derived-cache identities',
+        cacheRestoration.jpegRestored, JSON.stringify(cacheRestoration));
+    check('throwing export restores ctx, view state, and every derived cache',
+        cacheRestoration.exportThrew && cacheRestoration.throwRestored,
+        JSON.stringify(cacheRestoration));
+
     const threaded = await page.evaluate(async () => {
         const app = window.app;
         const canvas = app.canvas;

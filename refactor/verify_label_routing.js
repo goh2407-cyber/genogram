@@ -323,15 +323,80 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         }];
         const unresolvedWarningSnapshots = [];
         const unresolvedRouteSnapshots = [];
+        let unresolvedDirectScore = null;
+        let unresolvedSelectedScore = null;
         for (let index = 0; index < 3; index++) {
             canvas.prepareDerivedGeometry(
                 [unresolvedA, unresolvedB], [unresolvedRel], { force: true });
             unresolvedWarningSnapshots.push(JSON.stringify(canvas.labelRoutingWarnings));
-            unresolvedRouteSnapshots.push(JSON.stringify(
-                canvas.getMarriageRoute(
-                    unresolvedA, unresolvedB, unresolvedRel, [unresolvedRel])));
+            const unresolvedRoute = canvas.getMarriageRoute(
+                unresolvedA, unresolvedB, unresolvedRel, [unresolvedRel]);
+            unresolvedRouteSnapshots.push(JSON.stringify(unresolvedRoute));
+            if (index === 0) {
+                const unresolvedConfig = canvas.getMarriageConfiguration(
+                    unresolvedA, unresolvedB, unresolvedRel, [unresolvedRel]);
+                const unresolvedDirect = {
+                    name: 'direct',
+                    ...canvas.getMarriageGeometry(unresolvedA, unresolvedB,
+                        { ...unresolvedConfig, isArch: false, isBridge: false,
+                            archBarY: null })
+                };
+                unresolvedDirectScore = canvas._marriageCandidateScore(
+                    unresolvedDirect, canvas.getPersonRouteObstacles(), [],
+                    unresolvedA, unresolvedB);
+                unresolvedSelectedScore = canvas._marriageCandidateScore(
+                    { name: unresolvedRoute.candidateName,
+                        points: unresolvedRoute.points },
+                    canvas.getPersonRouteObstacles(), [], unresolvedA, unresolvedB);
+            }
         }
         canvas.getPersonRouteObstacles = originalGetPersonRouteObstacles;
+
+        const occupiedLeft = new Person({ id: 'occupied-left', x: 100, y: 600,
+            gender: 'male', name: '' });
+        const occupiedRight = new Person({ id: 'occupied-right', x: 900, y: 600,
+            gender: 'female', name: '' });
+        const crossingLeft = new Person({ id: 'crossing-left', x: 300, y: 600,
+            gender: 'male', name: '' });
+        const crossingRight = new Person({ id: 'crossing-right', x: 700, y: 600,
+            gender: 'female', name: '' });
+        const occupiedRel = new Relationship({ id: 'a-occupied',
+            fromPersonId: occupiedLeft.id, toPersonId: occupiedRight.id,
+            type: 'married', routeMode: 'straight' });
+        const crossingAutoRel = new Relationship({ id: 'b-auto-crossing',
+            fromPersonId: crossingLeft.id, toPersonId: crossingRight.id,
+            type: 'married', routeMode: 'auto' });
+        const occupiedFixturePersons = [
+            occupiedLeft, occupiedRight, crossingLeft, crossingRight
+        ];
+        const occupiedFixtureRels = [occupiedRel, crossingAutoRel];
+        canvas.prepareDerivedGeometry(
+            occupiedFixturePersons, occupiedFixtureRels, { force: true });
+        const occupiedCrossingRoute = canvas.getMarriageRoute(
+            crossingLeft, crossingRight, crossingAutoRel, occupiedFixtureRels);
+        const occupiedDirectConfig = canvas.getMarriageConfiguration(
+            crossingLeft, crossingRight, crossingAutoRel, occupiedFixtureRels);
+        const occupiedDirectGeometry = canvas.getMarriageGeometry(
+            crossingLeft, crossingRight,
+            { ...occupiedDirectConfig, isArch: false, isBridge: false,
+                archBarY: null });
+        const occupiedDirectTextHits = FamilyRoutePlanner.pathIntersectionCount(
+            occupiedDirectGeometry.points,
+            canvas.getPersonRouteObstacles(occupiedFixturePersons),
+            new Set([String(crossingLeft.id), String(crossingRight.id)]));
+
+        const clearLeft = new Person({ id: 'clear-left', x: 300, y: 900,
+            gender: 'male', name: '' });
+        const clearRight = new Person({ id: 'clear-right', x: 700, y: 900,
+            gender: 'female', name: '' });
+        const clearAutoRel = new Relationship({ id: 'clear-auto',
+            fromPersonId: clearLeft.id, toPersonId: clearRight.id,
+            type: 'married', routeMode: 'auto' });
+        canvas.prepareDerivedGeometry(
+            [clearLeft, clearRight], [clearAutoRel], { force: true });
+        const clearAutoRoute = canvas.getMarriageRoute(
+            clearLeft, clearRight, clearAutoRel, [clearAutoRel]);
+
         canvas.personMap = app.personMap;
         canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
 
@@ -367,6 +432,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             safeMarriageWarnings,
             unresolvedWarningSnapshots,
             unresolvedRouteSnapshots,
+            unresolvedDirectScore,
+            unresolvedSelectedScore,
+            occupiedCrossingRoute,
+            occupiedDirectTextHits,
+            clearAutoRoute,
             forcedStraight: {
                 hasDerivedPreparation,
                 straightPathBefore,
@@ -539,6 +609,22 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && new Set(result.unresolvedRouteSnapshots).size === 1,
         JSON.stringify({ warnings: result.unresolvedWarningSnapshots,
             routes: result.unresolvedRouteSnapshots }));
+    check('all-colliding auto routes let lower-scored direct compete',
+        result.unresolvedDirectScore[0] === 1
+            && JSON.parse(result.unresolvedRouteSnapshots[0]).candidateName === 'direct'
+            && JSON.stringify(result.unresolvedDirectScore)
+                === JSON.stringify(result.unresolvedSelectedScore),
+        JSON.stringify({ direct: result.unresolvedDirectScore,
+            selected: result.unresolvedSelectedScore,
+            route: JSON.parse(result.unresolvedRouteSnapshots[0]) }));
+    check('safe direct can lose when it crosses an occupied marriage path',
+        result.occupiedDirectTextHits === 0
+            && result.occupiedCrossingRoute.candidateName !== 'direct',
+        JSON.stringify({ hits: result.occupiedDirectTextHits,
+            route: result.occupiedCrossingRoute }));
+    check('clear direct remains the lexicographic auto winner',
+        result.clearAutoRoute.candidateName === 'direct',
+        JSON.stringify(result.clearAutoRoute));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {
