@@ -444,6 +444,154 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && JSON.stringify(multiSelectionHistory.afterDelete) === JSON.stringify(['current-only']),
         JSON.stringify(multiSelectionHistory));
 
+    const setupEmptySpaceGroupDrag = async historyPositions => page.evaluate(positions => {
+        const app = window.app;
+        app.history.clear();
+        app.setTool('select');
+        app.persons = [
+            new Person({ id: 'group-a', x: 300, y: 260, name: 'Group A' }),
+            new Person({ id: 'group-b', x: 420, y: 260, name: 'Group B' })
+        ];
+        app._syncPersonMap();
+        app.relationships = []; app.households = []; app.lifeCircles = [];
+        app.selectedPersonId = null;
+        app.selectedRelationshipId = null;
+        app.selectedHouseholdId = null;
+        app.selectedLifeCircleId = null;
+        app.selectedPersonIds = ['group-a', 'group-b'];
+        if (positions) {
+            app.history.pushState({
+                persons: positions.map((x, index) => new Person({
+                    id: index === 0 ? 'group-a' : 'group-b',
+                    x, y: 260, name: index === 0 ? 'Group A' : 'Group B'
+                }).toJSON()),
+                relationships: [], households: [], lifeCircles: []
+            });
+        }
+        app.updatePropertyPanel();
+        app.render();
+        const bounds = app.getMultiSelectionBounds();
+        const point = { x: (bounds.x1 + bounds.x2) / 2, y: (bounds.y1 + bounds.y2) / 2 };
+        const rect = app.canvas.canvas.getBoundingClientRect();
+        return {
+            x: point.x * app.canvas.scale + app.canvas.offsetX + rect.left,
+            y: point.y * app.canvas.scale + app.canvas.offsetY + rect.top,
+            emptySpace: app.getPersonAt(point.x, point.y) === null
+                && app.isPointInsideMultiSelection(point.x, point.y)
+        };
+    }, historyPositions);
+    const getGroupPositions = () => page.evaluate(() => ['group-a', 'group-b'].map(id => {
+        const person = window.app.personMap.get(id);
+        return person ? { id, x: person.x, y: person.y } : null;
+    }));
+
+    const historyGroupStart = await setupEmptySpaceGroupDrag([180, 300]);
+    check('group-drag fixture targets empty space inside the multi-selection bounds',
+        historyGroupStart.emptySpace, JSON.stringify(historyGroupStart));
+    await page.mouse.move(historyGroupStart.x, historyGroupStart.y);
+    await page.mouse.down();
+    await page.mouse.move(historyGroupStart.x + 80, historyGroupStart.y + 20, { steps: 5 });
+    const historyGroupPartial = await getGroupPositions();
+    const historyGroupUndo = await page.evaluate(() => {
+        const app = window.app;
+        app.undo();
+        return {
+            positions: ['group-a', 'group-b'].map(id => {
+                const person = app.personMap.get(id);
+                return person ? { id, x: person.x, y: person.y } : null;
+            }),
+            dragging: app.canvas.isDragging,
+            pointerId: app.activePointerId,
+            snapshot: app.dragStartSnapshot,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    await page.mouse.up();
+    const historyGroupRedo = await page.evaluate(() => {
+        const app = window.app;
+        app.redo();
+        return {
+            positions: ['group-a', 'group-b'].map(id => {
+                const person = app.personMap.get(id);
+                return person ? { id, x: person.x, y: person.y } : null;
+            }),
+            dragging: app.canvas.isDragging,
+            pointerId: app.activePointerId,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    check('mid-group-drag Undo and Redo restore committed states, never partial positions',
+        historyGroupPartial.some((person, index) => person.x !== [300, 420][index])
+            && JSON.stringify(historyGroupUndo.positions.map(person => person.x)) === JSON.stringify([180, 300])
+            && !historyGroupUndo.dragging && historyGroupUndo.pointerId === null
+            && historyGroupUndo.snapshot === null
+            && JSON.stringify(historyGroupRedo.positions.map(person => person.x)) === JSON.stringify([300, 420])
+            && !historyGroupRedo.dragging && historyGroupRedo.pointerId === null,
+        JSON.stringify({ historyGroupPartial, historyGroupUndo, historyGroupRedo }));
+
+    const emptyGroupStart = await setupEmptySpaceGroupDrag(null);
+    await page.mouse.move(emptyGroupStart.x, emptyGroupStart.y);
+    await page.mouse.down();
+    await page.mouse.move(emptyGroupStart.x + 80, emptyGroupStart.y + 20, { steps: 5 });
+    const emptyGroupPartial = await getGroupPositions();
+    const emptyGroupUndo = await page.evaluate(() => {
+        const app = window.app;
+        app.undo();
+        return {
+            positions: ['group-a', 'group-b'].map(id => {
+                const person = app.personMap.get(id);
+                return person ? { id, x: person.x, y: person.y } : null;
+            }),
+            dragging: app.canvas.isDragging,
+            pointerId: app.activePointerId,
+            snapshot: app.dragStartSnapshot,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    await page.mouse.up();
+    const emptyGroupAfterPointerUp = await page.evaluate(() => ({
+        positions: ['group-a', 'group-b'].map(id => window.app.personMap.get(id).x),
+        undo: window.app.history.getUndoCount(),
+        redo: window.app.history.getRedoCount()
+    }));
+    check('empty-history mid-group-drag Undo restores every member without creating history',
+        emptyGroupPartial.some((person, index) => person.x !== [300, 420][index])
+            && JSON.stringify(emptyGroupUndo.positions.map(person => person.x)) === JSON.stringify([300, 420])
+            && !emptyGroupUndo.dragging && emptyGroupUndo.pointerId === null
+            && emptyGroupUndo.snapshot === null
+            && emptyGroupUndo.undo === 0 && emptyGroupUndo.redo === 0
+            && JSON.stringify(emptyGroupAfterPointerUp.positions) === JSON.stringify([300, 420])
+            && emptyGroupAfterPointerUp.undo === 0 && emptyGroupAfterPointerUp.redo === 0,
+        JSON.stringify({ emptyGroupPartial, emptyGroupUndo, emptyGroupAfterPointerUp }));
+
+    const completedGroupStart = await setupEmptySpaceGroupDrag(null);
+    await page.mouse.move(completedGroupStart.x, completedGroupStart.y);
+    await page.mouse.down();
+    await page.mouse.move(completedGroupStart.x + 80, completedGroupStart.y + 20, { steps: 5 });
+    await page.mouse.up();
+    const completedGroup = await page.evaluate(() => ({
+        positions: ['group-a', 'group-b'].map(id => window.app.personMap.get(id).x),
+        undo: window.app.history.getUndoCount(),
+        redo: window.app.history.getRedoCount(),
+        snapshot: window.app.dragStartSnapshot
+    }));
+    await page.evaluate(() => window.app.undo());
+    const completedGroupUndo = await page.evaluate(() => ({
+        positions: ['group-a', 'group-b'].map(id => window.app.personMap.get(id).x),
+        undo: window.app.history.getUndoCount(),
+        redo: window.app.history.getRedoCount()
+    }));
+    check('a completed empty-space group drag creates one transaction and one Undo restores every member',
+        completedGroup.positions.some((x, index) => x !== [300, 420][index])
+            && completedGroup.undo === 1 && completedGroup.redo === 0
+            && completedGroup.snapshot === null
+            && JSON.stringify(completedGroupUndo.positions) === JSON.stringify([300, 420])
+            && completedGroupUndo.undo === 0 && completedGroupUndo.redo === 1,
+        JSON.stringify({ completedGroup, completedGroupUndo }));
+
     const dragStart = await page.evaluate(() => {
         const app = window.app;
         app.history.clear();

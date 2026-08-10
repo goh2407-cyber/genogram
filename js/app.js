@@ -1285,6 +1285,7 @@ class GenogramApp {
             } else {
                 // 檢查是否在多選範圍內，如果是，則開始拖曳整組
                 if (this.selectedPersonIds.length > 1 && this.isPointInsideMultiSelection(point.x, point.y)) {
+                    this.dragStartSnapshot = this.getState();
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedPerson = this.personMap.get(this.selectedPersonIds[0]);
