@@ -802,15 +802,16 @@ class GenogramCanvas {
         };
     }
 
-    getPersonTextLayout(person, options = {}) {
-        const geometry = this.getPersonLabelGeometry(person, options);
+    getPersonTextLayout(person, options = {}, placement = undefined) {
+        const geometry = this.getPersonLabelGeometry(person, options, placement);
         const nameRow = geometry.rows.find(row => row.kind === 'name');
         const noteRows = geometry.rows.filter(row => row.kind === 'note');
+        const nameY = person.y + this.personSize / 2 + 8;
         return {
             name: nameRow?.text || '',
             noteLines: noteRows.map(row => row.text),
-            nameY: geometry.rows[0]?.y ?? (person.y + this.personSize / 2 + 8),
-            noteStartY: noteRows[0]?.y ?? (geometry.rows[0]?.y ?? person.y)
+            nameY,
+            noteStartY: nameY + (nameRow ? this.fontSize + 4 : 0)
         };
     }
 
@@ -3566,7 +3567,7 @@ class GenogramCanvas {
                 { showNames: true, showNotes: true });
             label.rows.forEach(row => {
                 obstacles.push({
-                    ownerId: String(person.id),
+                    ownerId: person.id,
                     kind: 'text',
                     left: row.bounds.left - GenogramCanvas.LABEL_SAFE_MARGIN,
                     right: row.bounds.right + GenogramCanvas.LABEL_SAFE_MARGIN,

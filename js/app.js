@@ -286,6 +286,9 @@ class GenogramApp {
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
         this._canvasFontSignature = null;
+        this._canvasFontGeneration = 0;
+        this._canvasFontAppliedGeneration = -1;
+        this._canvasFontRepaintRequested = false;
         this.canvasFontReady = Promise.resolve();
         this.waitForCurrentCanvasFonts(true);
         this.setupEventListeners();
@@ -4633,18 +4636,35 @@ class GenogramApp {
     waitForCurrentCanvasFonts(repaint = false) {
         if (!document.fonts || typeof document.fonts.load !== 'function') return Promise.resolve();
         const text = this.getCurrentCanvasFontText();
+        if (text === this._canvasFontSignature
+            && this._canvasFontAppliedGeneration === this._canvasFontGeneration) {
+            return this.canvasFontReady;
+        }
+        if (repaint) this._canvasFontRepaintRequested = true;
         if (text === this._canvasFontSignature) return this.canvasFontReady;
         this._canvasFontSignature = text;
         const signature = text;
+        const generation = ++this._canvasFontGeneration;
         this.canvasFontReady = Promise.all([
             document.fonts.load('14px "Noto Sans TC"', text),
             document.fonts.load('bold 14px "Noto Sans TC"', text)
         ]).then(() => {
-            if (signature === this._canvasFontSignature) {
-                this.canvas?.invalidateDerivedGeometry?.();
-                if (repaint) this.render();
+            if (generation !== this._canvasFontGeneration) {
+                return this.waitForCurrentCanvasFonts(repaint);
             }
-        }).catch(() => undefined);
+            this._canvasFontAppliedGeneration = generation;
+            this.canvas?.invalidateDerivedGeometry?.();
+            const shouldRepaint = this._canvasFontRepaintRequested;
+            this._canvasFontRepaintRequested = false;
+            if (shouldRepaint && signature === this._canvasFontSignature) this.render();
+        }, () => {
+            if (generation !== this._canvasFontGeneration) {
+                return this.waitForCurrentCanvasFonts(repaint);
+            }
+            this._canvasFontAppliedGeneration = generation;
+            this._canvasFontRepaintRequested = false;
+            return undefined;
+        });
         return this.canvasFontReady;
     }
 
