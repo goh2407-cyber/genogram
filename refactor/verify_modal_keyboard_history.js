@@ -166,6 +166,252 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     }));
     check('property Undo cannot reapply cancelled preview coordinates',
         previewUndo.name === '原名' && previewUndo.x === 300, JSON.stringify(previewUndo));
+
+    const previewLoad = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.persons = [new Person({ id: 'preview-load', x: 700, y: 260, name: 'Before load' })];
+        app._syncPersonMap();
+        app.relationships = []; app.households = []; app.lifeCircles = [];
+        app.originalBeforePreview = { 'preview-load': { x: 300, y: 260 } };
+        app.originalLifeCirclesBeforePreview = {};
+        app.isPreviewingLayout = true;
+        app.loadData({ persons: [{ id: 'loaded-only', x: 500, y: 260, name: 'Loaded' }] });
+        const afterLoad = {
+            previewing: app.isPreviewingLayout,
+            ids: app.persons.map(person => person.id),
+            undo: app.history.getUndoCount()
+        };
+        app.undo();
+        return {
+            afterLoad,
+            afterUndo: app.persons.map(person => ({ id: person.id, x: person.x }))
+        };
+    });
+    check('load cancels preview before snapshot and one Undo restores committed coordinates',
+        !previewLoad.afterLoad.previewing && previewLoad.afterLoad.undo === 1
+            && previewLoad.afterUndo.length === 1
+            && previewLoad.afterUndo[0].id === 'preview-load'
+            && previewLoad.afterUndo[0].x === 300,
+        JSON.stringify(previewLoad));
+
+    const previewRelationshipModal = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.persons = [
+            new Person({ id: 'pra', x: 700, y: 260, name: 'A' }),
+            new Person({ id: 'prb', x: 900, y: 260, name: 'B' })
+        ];
+        app._syncPersonMap();
+        app.relationships = [new Relationship({
+            id: 'preview-rel', fromPersonId: 'pra', toPersonId: 'prb', type: 'married'
+        })];
+        app.originalBeforePreview = {
+            pra: { x: 300, y: 260 }, prb: { x: 500, y: 260 }
+        };
+        app.originalLifeCirclesBeforePreview = {};
+        app.isPreviewingLayout = true;
+        app.editingRelationshipId = 'preview-rel';
+        app.showRelationshipEditModal();
+        const result = {
+            previewing: app.isPreviewingLayout,
+            xs: app.persons.map(person => person.x),
+            modalActive: app.elements.relationshipModal.classList.contains('active')
+        };
+        app.closeRelationshipModal();
+        return result;
+    });
+    check('relationship edit modal cancels preview before mutation is possible',
+        !previewRelationshipModal.previewing
+            && previewRelationshipModal.xs.join(',') === '300,500'
+            && previewRelationshipModal.modalActive,
+        JSON.stringify(previewRelationshipModal));
+
+    const previewRoute = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        const rel = app.relationships.find(item => item.id === 'preview-rel');
+        app.personMap.get('pra').x = 700;
+        app.personMap.get('prb').x = 900;
+        app.originalBeforePreview = {
+            pra: { x: 300, y: 260 }, prb: { x: 500, y: 260 }
+        };
+        app.originalLifeCirclesBeforePreview = {};
+        app.isPreviewingLayout = true;
+        app.setRouteModeById('preview-rel', 'over');
+        const afterRoute = {
+            previewing: app.isPreviewingLayout,
+            xs: app.persons.map(person => person.x),
+            route: rel.routeMode,
+            undo: app.history.getUndoCount()
+        };
+        app.undo();
+        const restored = app.relationships.find(item => item.id === 'preview-rel');
+        return {
+            afterRoute,
+            afterUndo: {
+                xs: app.persons.map(person => person.x),
+                route: restored.routeMode || 'auto'
+            }
+        };
+    });
+    check('route mutation snapshots committed coordinates, not preview coordinates',
+        !previewRoute.afterRoute.previewing
+            && previewRoute.afterRoute.xs.join(',') === '300,500'
+            && previewRoute.afterRoute.route === 'over'
+            && previewRoute.afterRoute.undo === 1
+            && previewRoute.afterUndo.xs.join(',') === '300,500'
+            && previewRoute.afterUndo.route === 'auto',
+        JSON.stringify(previewRoute));
+
+    await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.persons = [
+            new Person({ id: 'ra', x: 280, y: 260, name: 'A' }),
+            new Person({ id: 'rb', x: 520, y: 260, name: 'B' })
+        ];
+        app._syncPersonMap();
+        app.relationships = [new Relationship({
+            id: 'route-edit', fromPersonId: 'ra', toPersonId: 'rb',
+            type: 'married', date: '舊日期', routeMode: 'auto'
+        })];
+        app.households = []; app.lifeCircles = [];
+        app.selectRelationship('route-edit');
+    });
+    await page.locator('#relationshipDate').fill('新日期');
+    await page.evaluate(() => window.app.setRouteModeById('route-edit', 'over'));
+    const routeCommitted = await page.evaluate(() => {
+        const app = window.app;
+        const rel = app.relationships.find(item => item.id === 'route-edit');
+        return { date: rel.date, route: rel.routeMode, undo: app.history.getUndoCount() };
+    });
+    check('focused relationship edit commits before route history',
+        routeCommitted.date === '新日期' && routeCommitted.route === 'over' && routeCommitted.undo === 2,
+        JSON.stringify(routeCommitted));
+    await page.evaluate(() => window.app.undo());
+    const routeUndo = await page.evaluate(() => {
+        const rel = window.app.relationships.find(item => item.id === 'route-edit');
+        return { date: rel.date, route: rel.routeMode };
+    });
+    check('first Undo reverts route only',
+        routeUndo.date === '新日期' && (routeUndo.routeMode || routeUndo.route || 'auto') === 'auto',
+        JSON.stringify(routeUndo));
+    await page.evaluate(() => window.app.undo());
+    const propertyUndo = await page.evaluate(() => {
+        const rel = window.app.relationships.find(item => item.id === 'route-edit');
+        return { date: rel.date, route: rel.routeMode || 'auto' };
+    });
+    check('second Undo reverts property edit without resurrection',
+        propertyUndo.date === '舊日期' && propertyUndo.route === 'auto', JSON.stringify(propertyUndo));
+
+    await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        const rel = app.relationships.find(item => item.id === 'route-edit');
+        rel.date = '舊日期'; rel.routeMode = 'auto';
+        rel.fromPersonId = 'ra'; rel.toPersonId = 'rb';
+        app.selectRelationship('route-edit');
+    });
+    await page.locator('#relationshipDate').fill('交換日期');
+    await page.evaluate(() => window.app.swapRelationshipDirectionById('route-edit'));
+    await page.evaluate(() => window.app.undo());
+    const swapUndo = await page.evaluate(() => {
+        const rel = window.app.relationships.find(item => item.id === 'route-edit');
+        return { date: rel.date, from: rel.fromPersonId, to: rel.toPersonId };
+    });
+    check('first Undo reverts swap but preserves the focused property edit',
+        swapUndo.date === '交換日期' && swapUndo.from === 'ra' && swapUndo.to === 'rb',
+        JSON.stringify(swapUndo));
+    await page.evaluate(() => window.app.undo());
+    const swapPropertyUndo = await page.evaluate(() => {
+        const rel = window.app.relationships.find(item => item.id === 'route-edit');
+        return { date: rel.date, from: rel.fromPersonId, to: rel.toPersonId };
+    });
+    check('second Undo reverts property after swap without endpoint resurrection',
+        swapPropertyUndo.date === '舊日期' && swapPropertyUndo.from === 'ra' && swapPropertyUndo.to === 'rb',
+        JSON.stringify(swapPropertyUndo));
+
+    const dragStart = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.persons = [new Person({ id: 'drag-edit', x: 300, y: 260, name: 'Drag' })];
+        app._syncPersonMap();
+        app.relationships = []; app.households = []; app.lifeCircles = [];
+        app.selectedRelationshipId = null;
+        app.setTool('select');
+        app.saveState();
+        const person = app.personMap.get('drag-edit');
+        person.x = 400;
+        app.selectPerson('drag-edit');
+        app.render();
+        const rect = app.canvas.canvas.getBoundingClientRect();
+        return {
+            x: person.x * app.canvas.scale + app.canvas.offsetX + rect.left,
+            y: person.y * app.canvas.scale + app.canvas.offsetY + rect.top
+        };
+    });
+    await page.mouse.move(dragStart.x, dragStart.y);
+    await page.mouse.down();
+    await page.mouse.move(dragStart.x + 80, dragStart.y + 20, { steps: 5 });
+    const midDrag = await page.evaluate(() => ({
+        dragging: window.app.canvas.isDragging,
+        pointerId: window.app.activePointerId,
+        hasSnapshot: Boolean(window.app.dragStartSnapshot)
+    }));
+    check('mid-drag fixture owns an active pointer and snapshot',
+        midDrag.dragging && midDrag.pointerId !== null && midDrag.hasSnapshot, JSON.stringify(midDrag));
+    const afterMidDragUndo = await page.evaluate(() => {
+        const app = window.app;
+        app.undo();
+        const pointerId = app.activePointerId;
+        return {
+            x: app.personMap.get('drag-edit').x,
+            dragging: app.canvas.isDragging,
+            panning: app.canvas.isPanning,
+            pointerId,
+            captured: pointerId !== null && app.canvas.canvas.hasPointerCapture(pointerId),
+            dragStartSnapshot: app.dragStartSnapshot,
+            dragVirtual: app.dragVirtual,
+            undo: app.history.getUndoCount(),
+            redo: app.history.getRedoCount()
+        };
+    });
+    check('Undo terminates every active drag and pointer-capture state',
+        afterMidDragUndo.x === 300 && !afterMidDragUndo.dragging && !afterMidDragUndo.panning
+            && afterMidDragUndo.pointerId === null && !afterMidDragUndo.captured
+            && afterMidDragUndo.dragStartSnapshot === null && afterMidDragUndo.dragVirtual === null,
+        JSON.stringify(afterMidDragUndo));
+    await page.mouse.up();
+    const afterStalePointerUp = await page.evaluate(() => ({
+        undo: window.app.history.getUndoCount(),
+        redo: window.app.history.getRedoCount(),
+        x: window.app.personMap.get('drag-edit').x
+    }));
+    check('pointerup after mid-drag Undo cannot push stale history or destroy redo',
+        afterStalePointerUp.undo === 0 && afterStalePointerUp.redo === 1
+            && afterStalePointerUp.x === 300,
+        JSON.stringify(afterStalePointerUp));
+
+    const emptyUndoCleanup = await page.evaluate(() => {
+        const app = window.app;
+        app.history.clear();
+        app.dragGuides = { x: { pos: 300 } };
+        app.canvas.dragGuides = app.dragGuides;
+        let renders = 0;
+        const originalRender = app.render.bind(app);
+        app.render = (...args) => {
+            renders++;
+            return originalRender(...args);
+        };
+        app.undo();
+        app.render = originalRender;
+        return { renders, appGuides: app.dragGuides, canvasGuides: app.canvas.dragGuides };
+    });
+    check('empty-history Undo repaints after transient guide cleanup',
+        emptyUndoCleanup.renders > 0 && emptyUndoCleanup.appGuides === null
+            && emptyUndoCleanup.canvasGuides === null,
+        JSON.stringify(emptyUndoCleanup));
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL MODAL KEYBOARD AND HISTORY CHECKS PASSED');
 })().catch(error => {

@@ -244,6 +244,7 @@ class GenogramApp {
 
         // 屬性編輯 History 合併：一個 focus→blur 生命週期只保留一份變更前快照
         this.propertyEditSession = null;
+        this.isSavingState = false;
 
         // Pointer capture ID (for touch/stylus support)
         this.activePointerId = null;
@@ -3404,6 +3405,7 @@ class GenogramApp {
      * 顯示關係選擇對話框
      */
     showRelationshipModal() {
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
         this.commitPropertyEditSession();
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
@@ -3429,6 +3431,7 @@ class GenogramApp {
      * 顯示關係類型編輯對話框（修改現有關係）
      */
     showRelationshipEditModal() {
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
         this.commitPropertyEditSession();
         // 變更 Modal 標題為「修改關係類型」
         const modalTitle = this.elements.relationshipModal.querySelector('.modal-title');
@@ -5108,11 +5111,25 @@ class GenogramApp {
      * 儲存當前狀態到歷史
      */
     saveState() {
-        this.history.pushState(this.getState());
-        this.updateToolbar();
+        if (this.isSavingState) return false;
+        this.isSavingState = true;
+        try {
+            if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+            this.commitPropertyEditSession();
+            this.history.pushState(this.getState());
+            this.updateToolbar();
+            return true;
+        } finally {
+            this.isSavingState = false;
+        }
     }
 
     resetTransientStateForHistory() {
+        if (this.canvas && this.activePointerId !== null &&
+            this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
+            this.canvas.canvas.releasePointerCapture(this.activePointerId);
+        }
+        this.activePointerId = null;
         this.modalManager?.closeAll({ restoreFocus: false });
         this.pendingGeneration = null;
         this.quickAddContext = null;
@@ -5129,8 +5146,14 @@ class GenogramApp {
         this.isDrawingLifeCircle = false;
         this.currentLifeCirclePoints = [];
         this.lifeCircleMousePos = null;
+        this.dragStartSnapshot = null;
+        this.dragVirtual = null;
         this.dragGuides = null;
         if (this.canvas) {
+            this.canvas.isDragging = false;
+            this.canvas.isPanning = false;
+            this.canvas.dragStart = null;
+            this.canvas.panStart = null;
             this.canvas.dragGuides = null;
             this.canvas.placementPreview = null;
             this.canvas.draggedPerson = null;
@@ -5175,7 +5198,7 @@ class GenogramApp {
             this.updatePropertyPanel();
             this.autoSave();
             this.render();
-        }
+        } else this.render();
         this.updateToolbar();
     }
 
@@ -5214,7 +5237,7 @@ class GenogramApp {
             this.updatePropertyPanel();
             this.autoSave();
             this.render();
-        }
+        } else this.render();
         this.updateToolbar();
     }
 
@@ -5325,6 +5348,7 @@ class GenogramApp {
      * 載入數據到應用程式
      */
     loadData(data) {
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
         this.commitPropertyEditSession();
         this.cancelPlacement();
         this.cancelRelationshipWorkflow();

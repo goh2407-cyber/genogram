@@ -42,6 +42,33 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         opened.active && !opened.hidden && !opened.inert && opened.ariaHidden === 'false'
             && opened.pointer === 'auto' && opened.focusInside, JSON.stringify(opened));
 
+    const outsideTab = await page.evaluate(() => {
+        const app = window.app;
+        const overlay = document.getElementById('genderModal');
+        const focusables = app.modalManager._focusables(overlay);
+        document.getElementById('addPerson').focus();
+        let forwardPrevented = false;
+        app.modalManager.handleKeyDown({
+            key: 'Tab', shiftKey: false,
+            preventDefault() { forwardPrevented = true; }
+        });
+        const forward = document.activeElement === focusables[0];
+        document.getElementById('addPerson').focus();
+        let backwardPrevented = false;
+        app.modalManager.handleKeyDown({
+            key: 'Tab', shiftKey: true,
+            preventDefault() { backwardPrevented = true; }
+        });
+        return {
+            forward, backward: document.activeElement === focusables[focusables.length - 1],
+            forwardPrevented, backwardPrevented
+        };
+    });
+    check('Tab from outside top modal moves to first control and prevents default',
+        outsideTab.forward && outsideTab.forwardPrevented, JSON.stringify(outsideTab));
+    check('Shift+Tab from outside top modal moves to last control and prevents default',
+        outsideTab.backward && outsideTab.backwardPrevented, JSON.stringify(outsideTab));
+
     await page.click('#cancelGender');
     await page.waitForTimeout(340);
     const closed = await page.evaluate(() => {
