@@ -397,6 +397,49 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const clearAutoRoute = canvas.getMarriageRoute(
             clearLeft, clearRight, clearAutoRel, [clearAutoRel]);
 
+        const routingFixtureState = {
+            persons: app.persons,
+            relationships: app.relationships,
+            households: app.households,
+            lifeCircles: app.lifeCircles
+        };
+        const routeA = new Person({ id: 'warn-route-a', x: 260, y: 460,
+            gender: 'male', name: 'A' });
+        const routeB = new Person({ id: 'warn-route-b', x: 860, y: 640,
+            gender: 'female', name: 'B' });
+        const leftBlock = new Person({ id: 'a-warn-left', x: 395, y: 485,
+            gender: 'female', name: '', notes: '左側固定長文字阻擋候選位置' });
+        const rightBlock = new Person({ id: 'b-warn-right', x: 725, y: 485,
+            gender: 'female', name: '', notes: '右側固定長文字阻擋候選位置' });
+        const target = new Person({ id: 'z-warn-target', x: 560, y: 485,
+            gender: 'male', name: '', notes: '這個範例刻意沒有完全安全的左右位置' });
+        const forced = new Relationship({ id: 'warn-straight', fromPersonId: routeA.id,
+            toPersonId: routeB.id, type: 'married', routeMode: 'straight' });
+        app.persons = [routeA, routeB, leftBlock, rightBlock, target];
+        app.relationships = [forced];
+        app.households = [];
+        app.lifeCircles = [];
+        app._syncPersonMap();
+        app.render();
+        const warning = document.getElementById('routingWarning');
+        const warningResult = warning ? {
+            visible: !warning.hidden,
+            text: warning.textContent,
+            count: app.canvas.labelRoutingWarnings.length
+        } : { visible: false, text: '', count: app.canvas.labelRoutingWarnings.length };
+        const warningExportDataUrl = app.canvas.exportToPNG(app.persons, app.relationships,
+            [], [], true, false, 1, app.viewOptions);
+        forced.routeMode = 'auto';
+        app.canvas.invalidateDerivedGeometry();
+        app.render();
+        const warningHiddenAfterAuto = warning?.hidden === true;
+
+        app.persons = routingFixtureState.persons;
+        app.relationships = routingFixtureState.relationships;
+        app.households = routingFixtureState.households;
+        app.lifeCircles = routingFixtureState.lifeCircles;
+        app._syncPersonMap();
+
         canvas.personMap = app.personMap;
         canvas.prepareDerivedGeometry(app.persons, app.relationships, { force: true });
 
@@ -437,6 +480,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             occupiedCrossingRoute,
             occupiedDirectTextHits,
             clearAutoRoute,
+            warning: warningResult,
+            warningExportDataUrl,
+            warningHiddenAfterAuto,
             forcedStraight: {
                 hasDerivedPreparation,
                 straightPathBefore,
@@ -625,6 +671,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('clear direct remains the lexicographic auto winner',
         result.clearAutoRoute.candidateName === 'direct',
         JSON.stringify(result.clearAutoRoute));
+    check('unsatisfied forced route exposes a non-export warning',
+        result.warning.visible && result.warning.text.includes('文字與關係線'),
+        JSON.stringify(result.warning));
+    check('warning is absent from exported canvas data',
+        result.warningExportDataUrl.startsWith('data:image/png;base64,'),
+        result.warningExportDataUrl.slice(0, 30));
+    check('auto route deterministically clears the editor warning',
+        result.warningHiddenAfterAuto, `hidden=${result.warningHiddenAfterAuto}`);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {

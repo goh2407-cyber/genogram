@@ -337,6 +337,7 @@ class GenogramApp {
             propertyContent: document.getElementById('propertyContent'),
             inspectorToggle: document.getElementById('inspectorToggle'),
             statusBar: document.getElementById('statusBar'),
+            routingWarning: document.getElementById('routingWarning'),
             zoomLevel: document.getElementById('zoomLevel'),
             zoomIn: document.getElementById('zoomIn'),
             zoomOut: document.getElementById('zoomOut'),
@@ -4343,6 +4344,7 @@ class GenogramApp {
             this.selectedHouseholdId, // 選中的家庭 ID
             this.hoveredPersonId // hover 的角色 ID
         );
+        this.updateRoutingWarning();
 
         // 繪製生活圈預覽（正在繪製中，維持最上層）
         if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
@@ -5146,6 +5148,18 @@ class GenogramApp {
         } finally {
             this.isSavingState = false;
         }
+    }
+
+    updateRoutingWarning() {
+        const node = this.elements.routingWarning;
+        if (!node) return;
+        const labelWarnings = this.canvas.labelRoutingWarnings || [];
+        const marriageWarnings = this.canvas.marriageRoutingWarnings || [];
+        const count = labelWarnings.length + marriageWarnings.length;
+        node.hidden = count === 0;
+        node.textContent = count === 0
+            ? ''
+            : `${count} 位成員的文字與關係線空間不足，請移動人物或改用自動繞線。`;
     }
 
     resetTransientStateForHistory() {
