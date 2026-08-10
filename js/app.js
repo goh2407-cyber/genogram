@@ -242,6 +242,9 @@ class GenogramApp {
         // 拖曳 History 合併：記錄拖曳開始時的狀態快照
         this.dragStartSnapshot = null;
 
+        // 屬性編輯 History 合併：一個 focus→blur 生命週期只保留一份變更前快照
+        this.propertyEditSession = null;
+
         // Pointer capture ID (for touch/stylus support)
         this.activePointerId = null;
 
@@ -384,6 +387,7 @@ class GenogramApp {
     }
 
     openHelpModal() {
+        this.commitPropertyEditSession();
         this.modalManager.open(this.elements.helpModal);
     }
 
@@ -1818,20 +1822,65 @@ class GenogramApp {
         }
     }
 
+    isEditableTarget(target) {
+        if (!(target instanceof Element)) return false;
+        if (target.isContentEditable || target.matches('textarea, select, [role="textbox"], [role="combobox"]')) {
+            return true;
+        }
+        if (target.matches('input')) {
+            return !new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image',
+                'radio', 'range', 'reset', 'submit']).has(target.type);
+        }
+        return Boolean(target.closest('[role="textbox"], [role="combobox"]'));
+    }
+
+    beginPropertyEditSession(field) {
+        if (!field || this.propertyEditSession?.field === field) return;
+        this.commitPropertyEditSession();
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+        const before = this.getState();
+        this.propertyEditSession = {
+            field,
+            before,
+            beforeSignature: JSON.stringify(before)
+        };
+    }
+
+    commitPropertyEditSession() {
+        const session = this.propertyEditSession;
+        this.propertyEditSession = null;
+        if (!session) return false;
+        const afterSignature = JSON.stringify(this.getState());
+        if (afterSignature === session.beforeSignature) return false;
+        this.history.pushState(session.before);
+        this.updateToolbar();
+        return true;
+    }
+
+    cancelPropertyEditSession() {
+        this.propertyEditSession = null;
+    }
+
+    bindPropertyEdit(field, apply,
+        { eventName = 'input', render = true, commitOnChange = false } = {}) {
+        if (!field) return;
+        field.addEventListener('focus', () => this.beginPropertyEditSession(field));
+        field.addEventListener(eventName, event => {
+            if (this.propertyEditSession?.field !== field) this.beginPropertyEditSession(field);
+            apply(event);
+            if (render) this.render();
+            this.autoSave();
+            if (commitOnChange) this.commitPropertyEditSession();
+        });
+        field.addEventListener('blur', () => this.commitPropertyEditSession());
+    }
+
     /**
      * 處理鍵盤快捷鍵
      */
     handleKeyDown(e) {
         if (this.modalManager?.handleKeyDown(e)) return;
-        // 如果正在輸入，忽略快捷鍵
-        const activeElem = document.activeElement;
-        const isTyping = e.target.tagName === 'INPUT' ||
-            e.target.tagName === 'TEXTAREA' ||
-            (activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA'));
-
-        if (isTyping) {
-            return;
-        }
+        if (this.isEditableTarget(e.target) || this.isEditableTarget(document.activeElement)) return;
 
         // Ctrl 組合鍵
         if (e.ctrlKey || e.metaKey) {
@@ -1906,21 +1955,12 @@ class GenogramApp {
                     this.updateStatus('新增人物已取消', 'info');
                 } else if (this.isDrawingLifeCircle) {
                     this.cancelLifeCircle();
-                } else if (this.elements.relationshipModal?.classList.contains('active')) {
-                    // 新建關係視窗仍保留 connectingFrom/connectingTo；必須先關閉視窗，
-                    // 否則第一次 Esc 只會清掉第一端點，留下無法送出的 modal。
-                    this.closeRelationshipModal();
-                    this.updateStatus('關係設定已取消', 'info');
                 } else if (this.connectingFrom) {
                     this.connectingFrom = null;
                     this.updateStatus('連接已取消', 'info');
                 } else if (this.closeCompactInspectorOverlay()) {
                     this.updateStatus('檢視面板已收合', 'info');
-                } else {
-                    this.closeGenderModal();
-                    this.closeRelationshipModal();
-                    this.setTool('select');
-                }
+                } else this.setTool('select');
                 this.render();
                 break;
             case 'Enter':
@@ -2151,6 +2191,7 @@ class GenogramApp {
      * @param {string} generation - 輩分 ('grandparent', 'parent', 'child', 'grandchild')
      */
     showGenderModal(generation, statusLabel = null) {
+        this.commitPropertyEditSession();
         // [UX Fix] 如果正在預覽自動排列，開啟對話框時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -2184,6 +2225,7 @@ class GenogramApp {
      * @param {string} buttonType - 按鈕類型 ('parent', 'sibling', 'partner', 'son', 'daughter', 'pregnancy')
      */
     handleQuickAddClick(basePerson, buttonType) {
+        this.commitPropertyEditSession();
         switch (buttonType) {
             case 'parent':
                 this.beginQuickParentPlacement(basePerson);
@@ -2832,6 +2874,7 @@ class GenogramApp {
      * 選取人物
      */
     selectPerson(id) {
+        this.commitPropertyEditSession();
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
@@ -2846,6 +2889,7 @@ class GenogramApp {
      * 選取關係線
      */
     selectRelationship(id) {
+        this.commitPropertyEditSession();
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedPersonId = null;
         this.selectedPersonIds = [];
@@ -2961,6 +3005,7 @@ class GenogramApp {
     }
 
     updatePropertyPanel() {
+        this.commitPropertyEditSession();
         if (this.selectedRelationshipId) {
             const relationship = this.relationships.find(r => r.id === this.selectedRelationshipId);
             if (!relationship) {
@@ -2976,10 +3021,8 @@ class GenogramApp {
                 `${fromPerson ? fromPerson.name || '未命名' : '未知'} ↔ ${toPerson ? toPerson.name || '未命名' : '未知'}`;
             root.querySelector('#relationshipDate').value = relationship.date || '';
 
-            root.querySelector('#relationshipDate').addEventListener('input', (e) => {
+            this.bindPropertyEdit(root.querySelector('#relationshipDate'), e => {
                 relationship.date = e.target.value;
-                this.autoSave();
-                this.render();
             });
             root.querySelector('#deleteRelationshipBtn').addEventListener('click', () => this.deleteSelected());
             return;
@@ -2997,10 +3040,9 @@ class GenogramApp {
                 root.querySelector('#householdMemberCount').textContent = `同住家庭（${household.ids.length} 位成員）`;
                 root.querySelector('#householdMembers').textContent = memberNames || '（無成員）';
                 root.querySelector('#householdNotes').value = household.notes || '';
-                root.querySelector('#householdNotes').addEventListener('input', (e) => {
+                this.bindPropertyEdit(root.querySelector('#householdNotes'), e => {
                     household.notes = e.target.value;
-                    this.autoSave();
-                });
+                }, { render: false });
                 root.querySelector('#deleteHouseholdBtn').addEventListener('click', () => this.deleteSelected());
                 return;
             }
@@ -3027,18 +3069,18 @@ class GenogramApp {
                     button.classList.toggle('active', lc.color === color);
                     swatchHost.appendChild(button);
                 });
-                root.querySelector('#lifeCircleLabel').addEventListener('input', (e) => {
+                this.bindPropertyEdit(root.querySelector('#lifeCircleLabel'), e => {
                     lc.label = e.target.value;
-                    this.autoSave();
-                    this.render();
                 });
                 root.querySelectorAll('.lc-color-swatch').forEach(btn => {
-                    btn.addEventListener('click', () => {
+                    this.bindPropertyEdit(btn, () => {
                         lc.color = btn.dataset.color;
-                        this.autoSave();
-                        this.updatePropertyPanel();
-                        this.render();
-                    });
+                        root.querySelectorAll('.lc-color-swatch').forEach(swatch => {
+                            const active = swatch === btn;
+                            swatch.classList.toggle('active', active);
+                            swatch.style.border = `2px solid ${active ? 'var(--text-primary)' : 'var(--border-color)'}`;
+                        });
+                    }, { eventName: 'click', commitOnChange: true });
                 });
                 root.querySelector('#deleteLifeCircleBtn').addEventListener('click', () => this.deleteSelected());
                 return;
@@ -3218,114 +3260,83 @@ class GenogramApp {
         if (!person) return;
 
         // 姓名
-        document.getElementById('personName').addEventListener('input', (e) => {
+        this.bindPropertyEdit(document.getElementById('personName'), e => {
             person.name = e.target.value;
-            this.render();
-            this.autoSave();
         });
 
         // 年齡
-        document.getElementById('personAge').addEventListener('input', (e) => {
+        this.bindPropertyEdit(document.getElementById('personAge'), e => {
             const raw = e.target.value;
             person.age = raw === '' ? null : Number(raw);
-            this.render();
-            this.autoSave();
         });
 
-        // 備註
-        const notesInput = document.getElementById('personNotes');
-        if (notesInput) {
-            notesInput.addEventListener('input', (e) => {
-                person.notes = e.target.value;
-                this.render();
-                this.autoSave();
-            });
-        }
+        // 備註（最多 2 行）
+        this.bindPropertyEdit(document.getElementById('personNotes'), e => {
+            const lines = e.target.value.split('\n');
+            const value = lines.length > 2 ? lines.slice(0, 2).join('\n') : e.target.value;
+            if (e.target.value !== value) e.target.value = value;
+            person.notes = value;
+        });
 
         // 性別
-        document.getElementById('personGender').addEventListener('change', (e) => {
-            this.saveState();
+        this.bindPropertyEdit(document.getElementById('personGender'), e => {
             person.gender = e.target.value;
-            this.render();
-            this.autoSave();
-        });
+        }, { eventName: 'change', commitOnChange: true });
 
         // 過世
-        document.getElementById('personDeceased').addEventListener('change', (e) => {
-            this.saveState();
+        this.bindPropertyEdit(document.getElementById('personDeceased'), e => {
             person.isDeceased = e.target.checked;
-            this.render();
-            this.autoSave();
-        });
+        }, { eventName: 'change', commitOnChange: true });
 
         // 案主
-        document.getElementById('personIP').addEventListener('change', (e) => {
-            this.saveState();
+        this.bindPropertyEdit(document.getElementById('personIP'), e => {
             person.isIdentifiedPatient = e.target.checked;
-            this.render();
-            this.autoSave();
-        });
+        }, { eventName: 'change', commitOnChange: true });
 
         // [Phase 1] 生育結果（流產/人工流產/死產）
         const lossSel = document.getElementById('personLossType');
         if (lossSel) {
-            lossSel.addEventListener('change', (e) => {
-                this.saveState();
+            this.bindPropertyEdit(lossSel, e => {
                 person.lossType = e.target.value || null;
-                this.render();
-                this.autoSave();
-            });
+            }, { eventName: 'change', commitOnChange: true });
         }
 
         // 醫學屬性處理 helper
         const updateMedical = (key, value) => {
-            this.saveState();
             if (!person.medical) person.medical = {};
             person.medical[key] = value;
-            this.render();
-            this.autoSave();
         };
 
         // 醫學下拉選單
         const medLeft = document.getElementById('medLeftHalf');
-        if (medLeft) medLeft.addEventListener('change', (e) => updateMedical('leftHalf', e.target.value));
+        this.bindPropertyEdit(medLeft, e => updateMedical('leftHalf', e.target.value),
+            { eventName: 'change', commitOnChange: true });
 
         const medBottom = document.getElementById('medBottomHalf');
-        if (medBottom) medBottom.addEventListener('change', (e) => updateMedical('bottomHalf', e.target.value));
+        this.bindPropertyEdit(medBottom, e => updateMedical('bottomHalf', e.target.value),
+            { eventName: 'change', commitOnChange: true });
 
         // 醫學核取方塊
         const medSmoker = document.getElementById('medSmoker');
-        if (medSmoker) medSmoker.addEventListener('change', (e) => updateMedical('isSmoker', e.target.checked));
+        this.bindPropertyEdit(medSmoker, e => updateMedical('isSmoker', e.target.checked),
+            { eventName: 'change', commitOnChange: true });
 
         const medObese = document.getElementById('medObese');
-        if (medObese) medObese.addEventListener('change', (e) => updateMedical('isObese', e.target.checked));
+        this.bindPropertyEdit(medObese, e => updateMedical('isObese', e.target.checked),
+            { eventName: 'change', commitOnChange: true });
 
         const medLang = document.getElementById('medLang');
-        if (medLang) medLang.addEventListener('change', (e) => updateMedical('hasLanguageProblem', e.target.checked));
-
-        // 備註 (最多 2 行)
-        document.getElementById('personNotes').addEventListener('input', (e) => {
-            let value = e.target.value;
-            // 限制最多 2 行
-            const lines = value.split('\n');
-            if (lines.length > 2) {
-                value = lines.slice(0, 2).join('\n');
-                e.target.value = value;
-            }
-            person.notes = value;
-            this.autoSave();
-        });
+        this.bindPropertyEdit(medLang, e => updateMedical('hasLanguageProblem', e.target.checked),
+            { eventName: 'change', commitOnChange: true });
 
         // 多胞胎勾選框
         const twinCheckboxes = document.querySelectorAll('.twin-checkbox');
         twinCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
+            this.bindPropertyEdit(checkbox, e => {
                 const siblingId = e.target.dataset.siblingId;
                 const sibling = this.personMap.get(siblingId);
 
                 if (!sibling) return;
-
-                this.saveState();
 
                 if (e.target.checked) {
                     // 勾選：將此人與兄弟姊妹標記為同一多胞胎群組
@@ -3356,25 +3367,20 @@ class GenogramApp {
                     this.updateStatus(`已取消 ${sibling.name || '兄弟姊妹'} 的多胞胎標記`, 'info');
                 }
 
-                this.autoSave();
-                this.render();
-            });
+            }, { eventName: 'change', commitOnChange: true });
         });
 
         // [Phase 1] 同卵/異卵切換：套用到整個多胞胎群組（合子性為群組屬性，成員須一致）
         const zygCheckbox = document.querySelector('.twin-zygosity-checkbox');
         if (zygCheckbox) {
-            zygCheckbox.addEventListener('change', (e) => {
+            this.bindPropertyEdit(zygCheckbox, e => {
                 if (!person.twinGroup) return;
-                this.saveState();
                 const z = e.target.checked ? 'mono' : 'di';
                 this.persons.forEach(p => {
                     if (p.twinGroup === person.twinGroup) p.zygosity = z;
                 });
                 this.updateStatus(e.target.checked ? '已標記為同卵雙胞胎' : '已標記為異卵雙胞胎', 'info');
-                this.autoSave();
-                this.render();
-            });
+            }, { eventName: 'change', commitOnChange: true });
         }
 
         const deletePersonBtn = document.getElementById('deletePersonBtn');
@@ -3398,6 +3404,7 @@ class GenogramApp {
      * 顯示關係選擇對話框
      */
     showRelationshipModal() {
+        this.commitPropertyEditSession();
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
         this.modalManager.open(this.elements.relationshipModal);
@@ -3422,6 +3429,7 @@ class GenogramApp {
      * 顯示關係類型編輯對話框（修改現有關係）
      */
     showRelationshipEditModal() {
+        this.commitPropertyEditSession();
         // 變更 Modal 標題為「修改關係類型」
         const modalTitle = this.elements.relationshipModal.querySelector('.modal-title');
         if (modalTitle) {
@@ -3774,6 +3782,7 @@ class GenogramApp {
      */
     showChildrenModal(potentialChildren) {
         if (!this.elements.childrenModal || !this.elements.childrenList) return;
+        this.commitPropertyEditSession();
 
         // 清空並填充子女列表
         this.elements.childrenList.replaceChildren();
@@ -4190,6 +4199,7 @@ class GenogramApp {
      * 刪除選取的項目
      */
     deleteSelected() {
+        this.commitPropertyEditSession();
         this.cancelRelationshipWorkflow();
 
         // [UX Fix] 如果正在預覽自動排列，刪除時自動取消預覽
@@ -5098,33 +5108,55 @@ class GenogramApp {
      * 儲存當前狀態到歷史
      */
     saveState() {
-        this.history.pushState({
-            persons: this.persons.map(p => p.toJSON()),
-            relationships: this.relationships.map(r => r.toJSON()),
-            households: this.households || [],
-            lifeCircles: this.lifeCircles || []
-        });
+        this.history.pushState(this.getState());
         this.updateToolbar();
+    }
+
+    resetTransientStateForHistory() {
+        this.modalManager?.closeAll({ restoreFocus: false });
+        this.pendingGeneration = null;
+        this.quickAddContext = null;
+        this.pendingParents = null;
+        this.selectedChildrenIds = [];
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
+        this.editingRelationshipId = null;
+        const swapButton = document.getElementById('swapRelationshipDirection');
+        if (swapButton) swapButton.style.display = 'none';
+        const relationshipTitle = this.elements.relationshipModal?.querySelector('.modal-title');
+        if (relationshipTitle) relationshipTitle.textContent = '選擇關係類型';
+        this.isBoxSelecting = false;
+        this.isDrawingLifeCircle = false;
+        this.currentLifeCirclePoints = [];
+        this.lifeCircleMousePos = null;
+        this.dragGuides = null;
+        if (this.canvas) {
+            this.canvas.dragGuides = null;
+            this.canvas.placementPreview = null;
+            this.canvas.draggedPerson = null;
+            this.canvas.draggedHousehold = null;
+            this.canvas.draggedLifeCircle = null;
+        }
+        this.cancelPropertyEditSession();
     }
 
     /**
      * 撤銷
      */
     undo() {
-        this.cancelPlacement();
-        this.cancelRelationshipWorkflow();
+        this.commitPropertyEditSession();
+        this.resetTransientStateForHistory();
         // [UX Fix] 如果正在預覽自動排列，撤銷時僅取消預覽，不執行歷史回溯
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
             return;
         }
 
-        const currentState = {
-            persons: this.persons.map(p => p.toJSON()),
-            relationships: this.relationships.map(r => r.toJSON()),
-            households: this.households || [],
-            lifeCircles: this.lifeCircles || []
-        };
+        const currentState = this.getState();
+        const selectedPersonId = this.selectedPersonId;
+        const selectedRelationshipId = this.selectedRelationshipId;
+        const selectedHouseholdId = this.selectedHouseholdId;
+        const selectedLifeCircleId = this.selectedLifeCircleId;
 
         const prevState = this.history.undo(currentState);
         if (prevState) {
@@ -5133,7 +5165,13 @@ class GenogramApp {
             this.relationships = prevState.relationships.map(r => Relationship.fromJSON(r));
             this.households = prevState.households || [];
             this.lifeCircles = prevState.lifeCircles || [];
-            this.selectedPersonId = null;
+            this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
+            this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
+                ? selectedRelationshipId : null;
+            this.selectedHouseholdId = this.households.some(h => h.id === selectedHouseholdId)
+                ? selectedHouseholdId : null;
+            this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
+                ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
             this.autoSave();
             this.render();
@@ -5145,20 +5183,19 @@ class GenogramApp {
      * 重做
      */
     redo() {
-        this.cancelPlacement();
-        this.cancelRelationshipWorkflow();
+        this.commitPropertyEditSession();
+        this.resetTransientStateForHistory();
         // [UX Fix] 如果正在預覽自動排列，重做時僅取消預覽 (視為退出預覽模式)
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
             return;
         }
 
-        const currentState = {
-            persons: this.persons.map(p => p.toJSON()),
-            relationships: this.relationships.map(r => r.toJSON()),
-            households: this.households || [],
-            lifeCircles: this.lifeCircles || []
-        };
+        const currentState = this.getState();
+        const selectedPersonId = this.selectedPersonId;
+        const selectedRelationshipId = this.selectedRelationshipId;
+        const selectedHouseholdId = this.selectedHouseholdId;
+        const selectedLifeCircleId = this.selectedLifeCircleId;
 
         const nextState = this.history.redo(currentState);
         if (nextState) {
@@ -5167,7 +5204,13 @@ class GenogramApp {
             this.relationships = nextState.relationships.map(r => Relationship.fromJSON(r));
             this.households = nextState.households || [];
             this.lifeCircles = nextState.lifeCircles || [];
-            this.selectedPersonId = null;
+            this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
+            this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
+                ? selectedRelationshipId : null;
+            this.selectedHouseholdId = this.households.some(h => h.id === selectedHouseholdId)
+                ? selectedHouseholdId : null;
+            this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
+                ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
             this.autoSave();
             this.render();
@@ -5282,6 +5325,7 @@ class GenogramApp {
      * 載入數據到應用程式
      */
     loadData(data) {
+        this.commitPropertyEditSession();
         this.cancelPlacement();
         this.cancelRelationshipWorkflow();
         this.saveState();
@@ -5379,6 +5423,7 @@ class GenogramApp {
      * 顯示匯出格式選擇對話框
      */
     showExportModal() {
+        this.commitPropertyEditSession();
         this.modalManager.open(this.elements.exportModal);
     }
 
@@ -5538,6 +5583,7 @@ class GenogramApp {
      * 清空畫布 (清除所有人物、關係、圈選)
      */
     clearAll() {
+        this.commitPropertyEditSession();
         this.cancelPlacement();
         this.cancelRelationshipWorkflow();
         // [UX Fix] 如果正在預覽自動排列，清空時自動取消預覽
