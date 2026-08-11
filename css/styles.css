@@ -726,25 +726,33 @@ body {
     flex: 1;
 }
 
-.label-position-control {
-    margin: 0;
+.label-selection-outline {
+    position: absolute;
+    z-index: 6;
+    border: 2px solid var(--brand);
+    border-radius: 7px;
+    background: rgba(237, 18, 97, 0.05);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+    pointer-events: none;
+}
+
+.label-position-popover {
+    position: absolute;
+    z-index: 7;
+    width: 172px;
     padding: 10px;
     border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-sm);
-    background: var(--surface-subtle);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 12px 30px rgba(23, 31, 45, 0.18), 0 2px 8px rgba(23, 31, 45, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
-.label-position-control legend {
-    padding: 0 4px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.label-position-control p {
+.label-position-popover-title {
     margin: 0 0 8px;
     font-size: 12px;
-    line-height: 1.45;
+    font-weight: 600;
     color: var(--text-secondary);
 }
 
@@ -755,19 +763,27 @@ body {
 }
 
 .label-nudge-grid button {
-    min-height: 30px;
+    min-height: 32px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
     color: var(--text-primary);
     background: #fff;
     font: inherit;
     cursor: pointer;
+    transition: border-color 120ms ease, color 120ms ease, background 120ms ease,
+        transform 120ms ease;
 }
 
 .label-nudge-grid button:hover {
     border-color: var(--brand);
     color: var(--brand-active);
     background: var(--brand-light);
+    transform: translateY(-1px);
+}
+
+.label-nudge-grid button:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
 }
 
 .label-nudge-grid .label-reset {

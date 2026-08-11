@@ -91,21 +91,6 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <label for="personNotes">備註</label>
                 <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
             </div>
-            <fieldset class="label-position-control">
-                <legend>文字位置</legend>
-                <p>只移動姓名與備註，不改變人物或關係線。</p>
-                <div class="label-nudge-grid" aria-label="微調文字位置">
-                    <button type="button" id="labelNudgeUpLeft" data-label-nudge="upLeft" aria-label="文字往左上移動" title="文字往左上移動">↖</button>
-                    <button type="button" id="labelNudgeUp" data-label-nudge="up" aria-label="文字往上移動" title="文字往上移動">↑</button>
-                    <button type="button" id="labelNudgeUpRight" data-label-nudge="upRight" aria-label="文字往右上移動" title="文字往右上移動">↗</button>
-                    <button type="button" id="labelNudgeLeft" data-label-nudge="left" aria-label="文字往左移動" title="文字往左移動">←</button>
-                    <button type="button" id="resetPersonLabelPosition" class="label-reset" aria-label="重置文字位置" title="重置文字位置">重置</button>
-                    <button type="button" id="labelNudgeRight" data-label-nudge="right" aria-label="文字往右移動" title="文字往右移動">→</button>
-                    <button type="button" id="labelNudgeDownLeft" data-label-nudge="downLeft" aria-label="文字往左下移動" title="文字往左下移動">↙</button>
-                    <button type="button" id="labelNudgeDown" data-label-nudge="down" aria-label="文字往下移動" title="文字往下移動">↓</button>
-                    <button type="button" id="labelNudgeDownRight" data-label-nudge="downRight" aria-label="文字往右下移動" title="文字往右下移動">↘</button>
-                </div>
-            </fieldset>
             <div id="twinSettingsHost"></div>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
             <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
@@ -304,6 +289,7 @@ class GenogramApp {
         this.setupModalManager();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        this.setupLabelPositionPopover();
         this.renderRelationshipLegend();
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
         // 明確 warm-up 原本可見的圖例文字；完成後重畫一次 Canvas，避免 fallback glyph 留存。
@@ -366,6 +352,8 @@ class GenogramApp {
             fitView: document.getElementById('fitView'),
             zoomReset: document.getElementById('zoomReset'),
             canvasContainer: document.getElementById('canvasContainer'),
+            labelPositionPopover: document.getElementById('labelPositionPopover'),
+            labelSelectionOutline: document.getElementById('labelSelectionOutline'),
 
             // [NEW - G 方案] 預覽確認浮動欄
             layoutPreviewBar: document.getElementById('layoutPreviewBar'),
@@ -1156,7 +1144,7 @@ class GenogramApp {
             if (clickedLabelPerson) {
                 this.selectedPersonIds = [];
                 this.selectPerson(clickedLabelPerson.id, { labelEditing: true });
-                this.updateStatus('已選取人物文字，可在右側調整文字位置', 'info');
+                this.updateStatus('已選取人物文字，可在文字旁調整位置', 'info');
                 return;
             }
 
@@ -3078,6 +3066,10 @@ class GenogramApp {
 
     updatePropertyPanel() {
         this.commitPropertyEditSession();
+        if (this.labelEditingPersonId && this.labelEditingPersonId === this.selectedPersonId) {
+            this.setPropertyPanelTemplate('empty');
+            return;
+        }
         if (this.selectedRelationshipId) {
             const relationship = this.relationships.find(r => r.id === this.selectedRelationshipId);
             if (!relationship) {
@@ -3171,10 +3163,6 @@ class GenogramApp {
         }
 
         const root = this.setPropertyPanelTemplate('person');
-        const labelPositionControl = root.querySelector('.label-position-control');
-        if (labelPositionControl) {
-            labelPositionControl.hidden = this.labelEditingPersonId !== person.id;
-        }
         const valueById = {
             personName: person.name || '',
             personAge: person.age ?? '',
@@ -3232,6 +3220,76 @@ class GenogramApp {
         person.labelPlacement = null;
         this.autoSave();
         this.render();
+    }
+
+    setupLabelPositionPopover() {
+        const popover = this.elements.labelPositionPopover;
+        if (!popover) return;
+        popover.querySelectorAll('[data-label-nudge]').forEach(button => {
+            button.addEventListener('click', () =>
+                this.adjustSelectedPersonLabel(button.dataset.labelNudge));
+        });
+        popover.querySelector('#resetPersonLabelPosition')?.addEventListener('click', () =>
+            this.resetSelectedPersonLabel());
+    }
+
+    updateLabelPositionPopover() {
+        const popover = this.elements.labelPositionPopover;
+        const outline = this.elements.labelSelectionOutline;
+        const person = this.personMap.get(this.labelEditingPersonId);
+        const isActive = this.currentTool === 'select'
+            && person
+            && this.labelEditingPersonId === this.selectedPersonId;
+        if (!popover || !outline || !isActive) {
+            if (popover) popover.hidden = true;
+            if (outline) outline.hidden = true;
+            return;
+        }
+
+        const geometry = this.canvas.getPersonLabelGeometry(person, this.viewOptions);
+        if (!geometry.bounds) {
+            popover.hidden = true;
+            outline.hidden = true;
+            return;
+        }
+
+        const scale = this.canvas.scale;
+        const target = {
+            left: geometry.bounds.left * scale + this.canvas.offsetX,
+            right: geometry.bounds.right * scale + this.canvas.offsetX,
+            top: geometry.bounds.top * scale + this.canvas.offsetY,
+            bottom: geometry.bounds.bottom * scale + this.canvas.offsetY
+        };
+        const containerWidth = this.elements.canvasContainer.clientWidth;
+        const containerHeight = this.elements.canvasContainer.clientHeight;
+        if (target.right < 0 || target.left > containerWidth
+            || target.bottom < 0 || target.top > containerHeight) {
+            popover.hidden = true;
+            outline.hidden = true;
+            return;
+        }
+
+        const outlinePadding = 5;
+        outline.hidden = false;
+        outline.style.left = `${Math.round(target.left - outlinePadding)}px`;
+        outline.style.top = `${Math.round(target.top - outlinePadding)}px`;
+        outline.style.width = `${Math.round(target.right - target.left + outlinePadding * 2)}px`;
+        outline.style.height = `${Math.round(target.bottom - target.top + outlinePadding * 2)}px`;
+
+        popover.hidden = false;
+        popover.style.visibility = 'hidden';
+        const gap = 12;
+        const edge = 12;
+        let left = target.right + gap;
+        if (left + popover.offsetWidth > containerWidth - edge) {
+            left = target.left - popover.offsetWidth - gap;
+        }
+        left = Math.max(edge, Math.min(left, containerWidth - popover.offsetWidth - edge));
+        let top = target.top - 8;
+        top = Math.max(edge, Math.min(top, containerHeight - popover.offsetHeight - edge));
+        popover.style.left = `${Math.round(left)}px`;
+        popover.style.top = `${Math.round(top)}px`;
+        popover.style.visibility = '';
     }
 
     /**
@@ -3428,12 +3486,6 @@ class GenogramApp {
         const medLang = document.getElementById('medLang');
         this.bindPropertyEdit(medLang, e => updateMedical('hasLanguageProblem', e.target.checked),
             { eventName: 'change', commitOnChange: true });
-
-        form.querySelectorAll('[data-label-nudge]').forEach(button => {
-            button.addEventListener('click', () => this.adjustSelectedPersonLabel(button.dataset.labelNudge));
-        });
-        document.getElementById('resetPersonLabelPosition')?.addEventListener('click', () =>
-            this.resetSelectedPersonLabel());
 
         // 多胞胎勾選框
         const twinCheckboxes = document.querySelectorAll('.twin-checkbox');
@@ -4450,6 +4502,7 @@ class GenogramApp {
             this.selectedHouseholdId, // 選中的家庭 ID
             this.hoveredPersonId // hover 的角色 ID
         );
+        this.updateLabelPositionPopover();
         this.updateRoutingWarning();
 
         // 繪製生活圈預覽（正在繪製中，維持最上層）

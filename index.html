@@ -209,6 +209,22 @@
             <!-- 畫布區域 -->
             <div class="canvas-container" id="canvasContainer">
                 <canvas id="genogramCanvas"></canvas>
+                <div id="labelSelectionOutline" class="label-selection-outline" aria-hidden="true" hidden></div>
+                <div id="labelPositionPopover" class="label-position-popover" role="group"
+                    aria-label="文字位置" hidden>
+                    <div class="label-position-popover-title">文字位置</div>
+                    <div class="label-nudge-grid" aria-label="微調文字位置">
+                        <button type="button" id="labelNudgeUpLeft" data-label-nudge="upLeft" aria-label="文字往左上移動" title="文字往左上移動">↖</button>
+                        <button type="button" id="labelNudgeUp" data-label-nudge="up" aria-label="文字往上移動" title="文字往上移動">↑</button>
+                        <button type="button" id="labelNudgeUpRight" data-label-nudge="upRight" aria-label="文字往右上移動" title="文字往右上移動">↗</button>
+                        <button type="button" id="labelNudgeLeft" data-label-nudge="left" aria-label="文字往左移動" title="文字往左移動">←</button>
+                        <button type="button" id="resetPersonLabelPosition" class="label-reset" aria-label="重置文字位置" title="重置文字位置">重置</button>
+                        <button type="button" id="labelNudgeRight" data-label-nudge="right" aria-label="文字往右移動" title="文字往右移動">→</button>
+                        <button type="button" id="labelNudgeDownLeft" data-label-nudge="downLeft" aria-label="文字往左下移動" title="文字往左下移動">↙</button>
+                        <button type="button" id="labelNudgeDown" data-label-nudge="down" aria-label="文字往下移動" title="文字往下移動">↓</button>
+                        <button type="button" id="labelNudgeDownRight" data-label-nudge="downRight" aria-label="文字往右下移動" title="文字往右下移動">↘</button>
+                    </div>
+                </div>
                 <div id="routingWarning" class="routing-warning" role="status" aria-live="polite" hidden></div>
                 <!-- 狀態提示條 -->
                 <div class="status-bar" id="statusBar">選取工具已啟用</div>

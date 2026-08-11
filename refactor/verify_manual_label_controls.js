@@ -213,14 +213,19 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
         controls: document.querySelectorAll('[data-label-nudge]').length,
-        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length),
+        status: window.app.elements.statusBar.textContent
     }));
     check('clicking visible name text selects label editing without the quick-add ring',
         afterLabelClick.selectedPersonId === 'label-click-target'
             && afterLabelClick.labelEditingPersonId === 'label-click-target'
             && afterLabelClick.quickDrawCount === 0
             && afterLabelClick.controls === 8
-            && afterLabelClick.controlsVisible,
+            && afterLabelClick.controlsVisible
+            && !afterLabelClick.personFormVisible
+            && /文字旁/.test(afterLabelClick.status)
+            && !/右側/.test(afterLabelClick.status),
         JSON.stringify(afterLabelClick));
 
     await page.mouse.move(labelClickFixture.quickParentScreen.x,
@@ -261,13 +266,15 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
-        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length)
     }));
     check('clicking visible notes also enters label editing without the quick-add ring',
         afterNoteClick.selectedPersonId === 'label-click-target'
             && afterNoteClick.labelEditingPersonId === 'label-click-target'
             && afterNoteClick.quickDrawCount === 0
-            && afterNoteClick.controlsVisible,
+            && afterNoteClick.controlsVisible
+            && !afterNoteClick.personFormVisible,
         JSON.stringify(afterNoteClick));
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
@@ -311,13 +318,15 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
-        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length)
     }));
     check('clicking the person symbol exits label editing and restores the quick-add ring',
         afterSymbolClick.selectedPersonId === 'label-click-target'
             && afterSymbolClick.labelEditingPersonId === null
             && afterSymbolClick.quickDrawCount > 0
-            && !afterSymbolClick.controlsVisible,
+            && !afterSymbolClick.controlsVisible
+            && afterSymbolClick.personFormVisible,
         JSON.stringify(afterSymbolClick));
 
     await page.evaluate(({ x, y }) => {
