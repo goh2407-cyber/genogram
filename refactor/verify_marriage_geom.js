@@ -106,6 +106,8 @@ const path = require('path');
         const hitBridgeD = c.isPointOnRelationship(dBridgeMidX, dBridgeBarY, dH, dW, relD, 10, allRels);
         const onMidNode = c.isPointOnRelationship(500, 480, dH, dW, relD, 10, allRels); // 夾者中心不該命中
         const textHits = FamilyRoutePlanner.pathIntersectionCount(geomD.points, textObstacles);
+        const dHLabelPlacement = c.getPersonLabelGeometry(dH,
+            { showNames: true, showNotes: true }).placement;
         const dHTop = dH.getConnectionPoint('top');
         const dWTop = dW.getConnectionPoint('top');
 
@@ -124,6 +126,7 @@ const path = require('path');
             hitStraightMid, hitBridge, hitBridgeD, onMidNode,
             bridgeFromX: geomC2.points[0].x, bridgeToX: geomC2.points[3].x, cW2x: cW2.x, cMx: cM.x,
             textHits,
+            dHLabelPlacement,
             attachment,
             dHTop,
             dWTop,
@@ -174,8 +177,10 @@ const path = require('path');
             && r.attachment.start.y < r.dHTop.y
             && r.attachment.start.y < r.dWTop.y,
         JSON.stringify({ attachment: r.attachment, dHTop: r.dHTop, dWTop: r.dWTop }));
-    check('D bridge route has zero text intersections', r.textHits === 0,
-        `hits=${r.textHits}`);
+    check('D bridge preserves the default label position for manual adjustment',
+        r.dHLabelPlacement.side === 'below'
+            && r.dHLabelPlacement.offsetX === 0 && r.dHLabelPlacement.offsetY === 0,
+        JSON.stringify({ placement: r.dHLabelPlacement, hits: r.textHits }));
     check('D hit-test == 主線幾何', eq(r.pathD, r.geomD.points), '');
     check('D bridge 橫桿可命中', r.hitBridgeD === true, `hit=${r.hitBridgeD}`);
     check('D 夾者中心不再命中婚姻線（線已離開符號）', r.onMidNode === false, `onMid=${r.onMidNode}`);

@@ -235,8 +235,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             { showNames: true, showNotes: true });
         const boundsPreparedGeometry = canvas.getPersonLabelGeometry(crossed,
             { showNames: true, showNotes: true });
-        const directBoundsPrepared = ['above', 'left', 'right'].includes(
-            boundsPreparedGeometry.placement.side)
+        const directBoundsPrepared = boundsPreparedGeometry.placement.side === 'below'
             && directBounds.minX <= boundsPreparedGeometry.bounds.left
             && directBounds.maxX >= boundsPreparedGeometry.bounds.right;
 
@@ -731,14 +730,16 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && JSON.stringify(result.forcedStraight.straightPath)
                 === JSON.stringify(result.forcedStraight.straightPathBefore),
         JSON.stringify(result.forcedStraight.straightPath));
-    check('colliding notes move as one block',
-        ['above', 'left', 'right'].includes(result.forcedStraight.moved.placement.side)
+    check('colliding notes remain as one default below block until manually moved',
+        result.forcedStraight.moved.placement.side === 'below'
+            && result.forcedStraight.moved.placement.offsetX === 0
+            && result.forcedStraight.moved.placement.offsetY === 0
             && result.forcedStraight.moved.rows.length === 2
             && result.forcedStraight.moved.rows.every(row =>
                 row.x === result.forcedStraight.moved.rows[0].x),
         JSON.stringify(result.forcedStraight.moved));
-    check('moved label no longer intersects forced straight route',
-        result.forcedStraight.movedHitCount === 0,
+    check('default label may intentionally intersect a forced straight route',
+        result.forcedStraight.movedHitCount > 0,
         `hits=${result.forcedStraight.movedHitCount}`);
     check('derived placement never mutates Person JSON',
         result.forcedStraight.crossedJSON.x === 560
@@ -752,16 +753,16 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('derived preparation leaves persisted app state byte-for-byte unchanged',
         result.forcedStraight.stateBefore === result.forcedStraight.stateAfter,
         `${result.forcedStraight.stateBefore} !== ${result.forcedStraight.stateAfter}`);
-    check('screen render prepares forced-straight label placement',
-        ['above', 'left', 'right'].includes(result.forcedStraight.renderPreparedPlacement.side),
+    check('screen render keeps forced-straight labels at the default below placement',
+        result.forcedStraight.renderPreparedPlacement.side === 'below'
+            && result.forcedStraight.renderPreparedPlacement.offsetX === 0
+            && result.forcedStraight.renderPreparedPlacement.offsetY === 0,
         JSON.stringify(result.forcedStraight.renderPreparedPlacement));
-    check('direct content bounds prepares and includes moved label geometry',
+    check('direct content bounds includes the default label geometry',
         result.forcedStraight.directBoundsPrepared,
         JSON.stringify(result.forcedStraight));
-    check('numeric label placement uses string map keys but warnings retain person id type',
-        result.forcedStraight.numericPlacementKey
-            && result.forcedStraight.numericWarning?.personId === 700
-            && result.forcedStraight.numericWarning.collisions > 0,
+    check('default routing does not create cached or automatic label placements',
+        !result.forcedStraight.numericPlacementKey && result.forcedStraight.numericWarning === null,
         JSON.stringify(result.forcedStraight.numericWarning));
     check('under route starts and ends at cardinal bottom ports',
         result.underRoute.points[0].x === result.hub.x
@@ -779,9 +780,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             === result.underRoute.attachmentSegment.end.y
             && result.underRoute.attachmentSegment.start.y > result.hubLabelBottom,
         JSON.stringify(result.underRoute.attachmentSegment));
-    check('auto route keeps its standard direct geometry, moves text, and reports an unresolved symbol warning',
+    check('auto route keeps its standard direct geometry while labels stay in place',
         result.autoSafeRoute.candidateName === 'direct'
-            && result.autoTextHits === 0
+            && result.autoTextHits > 0
             && result.safeMarriageWarnings.some(warning =>
                 warning.relationshipId === 'route-auto-crossing'),
         JSON.stringify({ route: result.autoSafeRoute,
@@ -861,8 +862,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.archAuto.route.points.at(-1).x === result.archAuto.right.x
             && result.archAuto.route.points.at(-1).y === result.archAuto.right.y - result.half,
         JSON.stringify(result.archAuto.route));
-    check('unsatisfied forced route exposes a non-export warning',
-        result.warning.visible && result.warning.text.includes('文字與關係線'),
+    check('default label overlap does not create an automatic routing warning',
+        !result.warning.visible && result.warning.count === 0,
         JSON.stringify(result.warning));
     check('warning is absent from exported canvas data',
         result.warningExportDataUrl.startsWith('data:image/png;base64,'),

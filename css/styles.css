@@ -726,6 +726,55 @@ body {
     flex: 1;
 }
 
+.label-position-control {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background: var(--surface-subtle);
+}
+
+.label-position-control legend {
+    padding: 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.label-position-control p {
+    margin: 0 0 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.label-nudge-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.label-nudge-grid button {
+    min-height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    color: var(--text-primary);
+    background: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+.label-nudge-grid button:hover {
+    border-color: var(--brand);
+    color: var(--brand-active);
+    background: var(--brand-light);
+}
+
+.label-nudge-grid .label-reset {
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .checkbox-group {
     display: flex;
     align-items: center;

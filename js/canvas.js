@@ -745,8 +745,13 @@ class GenogramCanvas {
 
     getPersonLabelGeometry(person, options = {}, placement = undefined) {
         const view = this.normalizeViewOptions(options);
+        const manualPlacement = person?.labelPlacement
+            && (Number.isFinite(person.labelPlacement.offsetX)
+                || Number.isFinite(person.labelPlacement.offsetY))
+            ? { side: 'below', ...person.labelPlacement }
+            : null;
         const resolved = placement === undefined
-            ? (this.personLabelPlacements?.get(String(person.id)) || { side: 'below' })
+            ? (manualPlacement || this.personLabelPlacements?.get(String(person.id)) || { side: 'below' })
             : placement;
         const name = view.showNames ? String(person.name || '') : '';
         const noteLines = view.showNotes && person.notes
@@ -3941,66 +3946,9 @@ class GenogramCanvas {
     }
 
     _placeLabelsForRelationshipRoutes(persons, relationships) {
-        if (typeof FamilyRoutePlanner === 'undefined') return;
-        const sortedPeople = [...persons]
-            .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-        const defaultBounds = new Map(sortedPeople.map(person => [String(person.id),
-            this.getPersonLabelGeometry(person,
-                { showNames: true, showNotes: true }, { side: 'below' }).bounds]));
-        const previewRoutes = relationships
-            .filter(rel => Relationship.getCategory(rel.type) === 'marriage')
-            .map(rel => {
-                const from = this.personMap.get(rel.fromPersonId);
-                const to = this.personMap.get(rel.toPersonId);
-                if (!from || !to) return null;
-                const config = this.getMarriageConfiguration(from, to, rel, relationships);
-                return { rel, points: this.getMarriageGeometry(from, to, config).points };
-            }).filter(Boolean);
-        if (previewRoutes.length === 0) return;
-
-        const symbolObstacles = this.getSymbolRouteObstacles(sortedPeople);
-        const placedBounds = new Map();
-        sortedPeople.forEach(person => {
-            const personKey = String(person.id);
-            const below = this.getPersonLabelGeometry(person,
-                { showNames: true, showNotes: true }, { side: 'below' });
-            if (!below.bounds
-                || !previewRoutes.some(route => this._pathHitsRect(route.points, below.bounds))) {
-                if (below.bounds) placedBounds.set(personKey, below.bounds);
-                return;
-            }
-            const otherLabelObstacles = sortedPeople
-                .filter(other => String(other.id) !== personKey)
-                .map(other => {
-                    const bounds = placedBounds.get(String(other.id))
-                        || defaultBounds.get(String(other.id));
-                    return bounds ? { ownerId: other.id, ...bounds } : null;
-                })
-                .filter(Boolean);
-            const candidates = this._labelPlacementCandidates(person).map((candidate, order) => {
-                const rect = candidate.geometry.bounds;
-                const routeHits = previewRoutes.reduce((sum, route) =>
-                    sum + (this._pathHitsRect(route.points, rect) ? 1 : 0), 0);
-                const symbolHits = symbolObstacles.reduce((sum, obstacle) => sum
-                    + (String(obstacle.ownerId) !== personKey
-                        && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
-                const otherLabelHits = otherLabelObstacles.reduce((sum, obstacle) => sum
-                    + (String(obstacle.ownerId) !== personKey
-                        && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
-                return { ...candidate, order, collisions: routeHits + symbolHits + otherLabelHits };
-            }).sort((a, b) => a.collisions - b.collisions || a.order - b.order);
-            const winner = candidates[0];
-            if (!winner) return;
-            this.personLabelPlacements.set(personKey, winner.placement);
-            placedBounds.set(personKey, winner.geometry.bounds);
-            if (winner.collisions > 0) {
-                this.labelRoutingWarnings.push({
-                    personId: person.id,
-                    reason: 'forced-straight-label-collision',
-                    collisions: winner.collisions
-                });
-            }
-        });
+        // Labels deliberately stay in their original below position unless the user moves them.
+        // Manual offsets are read directly from Person, so this derived cache remains empty.
+        this.personLabelPlacements = new Map();
     }
 
     _placeLabelsForForcedStraight(persons, relationships) {

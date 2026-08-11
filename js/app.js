@@ -91,6 +91,21 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <label for="personNotes">備註</label>
                 <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
             </div>
+            <fieldset class="label-position-control">
+                <legend>文字位置</legend>
+                <p>只移動姓名與備註，不改變人物或關係線。</p>
+                <div class="label-nudge-grid" aria-label="微調文字位置">
+                    <button type="button" id="labelNudgeUpLeft" data-label-nudge="upLeft" aria-label="文字往左上移動" title="文字往左上移動">↖</button>
+                    <button type="button" id="labelNudgeUp" data-label-nudge="up" aria-label="文字往上移動" title="文字往上移動">↑</button>
+                    <button type="button" id="labelNudgeUpRight" data-label-nudge="upRight" aria-label="文字往右上移動" title="文字往右上移動">↗</button>
+                    <button type="button" id="labelNudgeLeft" data-label-nudge="left" aria-label="文字往左移動" title="文字往左移動">←</button>
+                    <button type="button" id="resetPersonLabelPosition" class="label-reset" aria-label="重置文字位置" title="重置文字位置">重置</button>
+                    <button type="button" id="labelNudgeRight" data-label-nudge="right" aria-label="文字往右移動" title="文字往右移動">→</button>
+                    <button type="button" id="labelNudgeDownLeft" data-label-nudge="downLeft" aria-label="文字往左下移動" title="文字往左下移動">↙</button>
+                    <button type="button" id="labelNudgeDown" data-label-nudge="down" aria-label="文字往下移動" title="文字往下移動">↓</button>
+                    <button type="button" id="labelNudgeDownRight" data-label-nudge="downRight" aria-label="文字往右下移動" title="文字往右下移動">↘</button>
+                </div>
+            </fieldset>
             <div id="twinSettingsHost"></div>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
             <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
@@ -175,6 +190,12 @@ class GenogramApp {
         'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
         'engaged-separated', 'engaged-cohabiting'
     ];
+    static LABEL_NUDGE_DISTANCE = 12;
+    static LABEL_NUDGE_DIRECTIONS = Object.freeze({
+        upLeft: [-1, -1], up: [0, -1], upRight: [1, -1],
+        left: [-1, 0], right: [1, 0],
+        downLeft: [-1, 1], down: [0, 1], downRight: [1, 1]
+    });
     constructor() {
         // 資料
         this.persons = [];
@@ -3140,6 +3161,30 @@ class GenogramApp {
         this.setupPropertyFormEvents();
     }
 
+    adjustSelectedPersonLabel(direction) {
+        const delta = GenogramApp.LABEL_NUDGE_DIRECTIONS[direction];
+        const person = this.personMap.get(this.selectedPersonId);
+        if (!person || !delta) return;
+        const current = person.labelPlacement || { offsetX: 0, offsetY: 0 };
+        const next = {
+            offsetX: current.offsetX + delta[0] * GenogramApp.LABEL_NUDGE_DISTANCE,
+            offsetY: current.offsetY + delta[1] * GenogramApp.LABEL_NUDGE_DISTANCE
+        };
+        this.saveState();
+        person.labelPlacement = next.offsetX || next.offsetY ? next : null;
+        this.autoSave();
+        this.render();
+    }
+
+    resetSelectedPersonLabel() {
+        const person = this.personMap.get(this.selectedPersonId);
+        if (!person || !person.labelPlacement) return;
+        this.saveState();
+        person.labelPlacement = null;
+        this.autoSave();
+        this.render();
+    }
+
     /**
      * 建立同住家庭
      */
@@ -3334,6 +3379,12 @@ class GenogramApp {
         const medLang = document.getElementById('medLang');
         this.bindPropertyEdit(medLang, e => updateMedical('hasLanguageProblem', e.target.checked),
             { eventName: 'change', commitOnChange: true });
+
+        form.querySelectorAll('[data-label-nudge]').forEach(button => {
+            button.addEventListener('click', () => this.adjustSelectedPersonLabel(button.dataset.labelNudge));
+        });
+        document.getElementById('resetPersonLabelPosition')?.addEventListener('click', () =>
+            this.resetSelectedPersonLabel());
 
         // 多胞胎勾選框
         const twinCheckboxes = document.querySelectorAll('.twin-checkbox');
@@ -5173,7 +5224,7 @@ class GenogramApp {
         node.hidden = count === 0;
         node.textContent = count === 0
             ? ''
-            : `${count} 項文字與關係線空間不足，請移動人物或改用自動繞線。`;
+            : `${count} 項文字與關係線空間不足，請調整文字位置、移動人物或改用手動繞線。`;
     }
 
     resetTransientStateForHistory() {
