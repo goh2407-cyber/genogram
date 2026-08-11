@@ -215,7 +215,9 @@ function isCleanOrthogonalPath(path) {
                 marriageRoute,
                 familySource,
                 sourceOnMarriageAttachment:
-                    familySource.y === marriageRoute.attachmentSegment.start.y
+                    marriageRoute.attachmentSegment.start.y
+                        === marriageRoute.attachmentSegment.end.y
+                    && familySource.y === marriageRoute.attachmentSegment.start.y
                     && familySource.x >= attachmentMinX
                     && familySource.x <= attachmentMaxX,
                 bridge: {
@@ -223,6 +225,7 @@ function isCleanOrthogonalPath(path) {
                     route: bridgeMarriageRoute,
                     source: bridgeSource,
                     sourceOnCanonicalAttachment: Boolean(bridgeSource)
+                        && bridgeAttachment.start.y === bridgeAttachment.end.y
                         && bridgeSource.y === bridgeAttachment.start.y
                         && bridgeSource.x >= bridgeAttachmentMinX
                         && bridgeSource.x <= bridgeAttachmentMaxX
