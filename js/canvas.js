@@ -5130,21 +5130,6 @@ class GenogramCanvas {
                 }
             }
 
-            // [Fix] 人物文字與畫面、走線及匯出共用同一份量測幾何。
-            const label = this.getPersonLabelGeometry(m,
-                { showNames: true, showNotes: true });
-            if (label.bounds) {
-                const topY = m.y + personRadius;            // 文字起點（符號下緣）
-                const lastRow = label.rows[label.rows.length - 1];
-                const botY = label.bounds.bottom + (lastRow.kind === 'note' ? 16 : 14);
-                const left = label.bounds.left - 12;
-                const right = label.bounds.right + 12;
-                points.push({ x: left, y: topY });
-                points.push({ x: right, y: topY });
-                points.push({ x: left, y: botY });
-                points.push({ x: right, y: botY });
-                points.push({ x: m.x, y: botY + 4 });
-            }
         });
 
         // 2. 加入成員間的連接線點 (User Request: 泡泡要包住連接線)
