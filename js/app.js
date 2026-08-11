@@ -3171,6 +3171,10 @@ class GenogramApp {
         }
 
         const root = this.setPropertyPanelTemplate('person');
+        const labelPositionControl = root.querySelector('.label-position-control');
+        if (labelPositionControl) {
+            labelPositionControl.hidden = this.labelEditingPersonId !== person.id;
+        }
         const valueById = {
             personName: person.name || '',
             personAge: person.age ?? '',

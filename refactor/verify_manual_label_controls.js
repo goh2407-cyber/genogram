@@ -19,7 +19,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         app.persons = [left, right, target];
         app.relationships = [marriage];
         app._syncPersonMap();
-        app.selectPerson(target.id);
+        app.selectPerson(target.id, { labelEditing: true });
         app.render();
         const geometry = app.canvas.getPersonLabelGeometry(target,
             { showNames: true, showNotes: true });
@@ -40,7 +40,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && initial.geometry.placement.offsetX === 0
             && initial.geometry.placement.offsetY === 0,
         JSON.stringify(initial.geometry.placement));
-    check('person panel exposes eight accessible text-position nudge buttons plus reset',
+    check('label text selection exposes eight accessible text-position nudge buttons plus reset',
         initial.controls.length === 8
             && initial.controls.every(control => control.direction && control.ariaLabel)
             && initial.hasReset,
@@ -212,13 +212,15 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
-        controls: document.querySelectorAll('[data-label-nudge]').length
+        controls: document.querySelectorAll('[data-label-nudge]').length,
+        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
     }));
     check('clicking visible name text selects label editing without the quick-add ring',
         afterLabelClick.selectedPersonId === 'label-click-target'
             && afterLabelClick.labelEditingPersonId === 'label-click-target'
             && afterLabelClick.quickDrawCount === 0
-            && afterLabelClick.controls === 8,
+            && afterLabelClick.controls === 8
+            && afterLabelClick.controlsVisible,
         JSON.stringify(afterLabelClick));
 
     await page.mouse.move(labelClickFixture.quickParentScreen.x,
@@ -258,12 +260,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     const afterNoteClick = await page.evaluate(() => ({
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
-        quickDrawCount: window.__quickLabelDrawCount
+        quickDrawCount: window.__quickLabelDrawCount,
+        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
     }));
     check('clicking visible notes also enters label editing without the quick-add ring',
         afterNoteClick.selectedPersonId === 'label-click-target'
             && afterNoteClick.labelEditingPersonId === 'label-click-target'
-            && afterNoteClick.quickDrawCount === 0,
+            && afterNoteClick.quickDrawCount === 0
+            && afterNoteClick.controlsVisible,
         JSON.stringify(afterNoteClick));
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
@@ -306,12 +310,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     const afterSymbolClick = await page.evaluate(() => ({
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
-        quickDrawCount: window.__quickLabelDrawCount
+        quickDrawCount: window.__quickLabelDrawCount,
+        controlsVisible: Boolean(document.querySelector('.label-position-control')?.getClientRects().length)
     }));
     check('clicking the person symbol exits label editing and restores the quick-add ring',
         afterSymbolClick.selectedPersonId === 'label-click-target'
             && afterSymbolClick.labelEditingPersonId === null
-            && afterSymbolClick.quickDrawCount > 0,
+            && afterSymbolClick.quickDrawCount > 0
+            && !afterSymbolClick.controlsVisible,
         JSON.stringify(afterSymbolClick));
 
     await page.evaluate(({ x, y }) => {
