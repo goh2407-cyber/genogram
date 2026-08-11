@@ -285,6 +285,7 @@ class GenogramCanvas {
             this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
         }
         this.prepareDerivedGeometry(this.lastPersons, this.lastRelationships);
+        this._refreshLabelRouteWarnings(this.lastPersons, this.lastRelationships);
         const view = this.normalizeViewOptions(this.viewOptions);
 
         this.clear();
@@ -3949,6 +3950,42 @@ class GenogramCanvas {
         // Labels deliberately stay in their original below position unless the user moves them.
         // Manual offsets are read directly from Person, so this derived cache remains empty.
         this.personLabelPlacements = new Map();
+    }
+
+    _refreshLabelRouteWarnings(persons, relationships) {
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = Array.isArray(relationships) ? relationships : [];
+        this.labelRoutingWarnings = (this.labelRoutingWarnings || [])
+            .filter(warning => warning.reason !== 'label-route-overlap');
+        if (typeof FamilyRoutePlanner === 'undefined') return;
+
+        const routes = allRelationships
+            .slice()
+            .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+            .map(relationship => {
+                const from = this.personMap.get(relationship.fromPersonId);
+                const to = this.personMap.get(relationship.toPersonId);
+                if (!from || !to) return null;
+                return {
+                    relationship,
+                    points: this.getRelationshipPath(from, to, relationship, allRelationships)
+                };
+            })
+            .filter(route => Array.isArray(route.points) && route.points.length >= 2);
+
+        allPersons.forEach(person => {
+            const label = this.getPersonLabelGeometry(person,
+                { showNames: true, showNotes: true });
+            if (!label.bounds) return;
+            routes.forEach(route => {
+                if (!this._pathHitsRect(route.points, label.bounds)) return;
+                this.labelRoutingWarnings.push({
+                    personId: person.id,
+                    relationshipId: route.relationship.id,
+                    reason: 'label-route-overlap'
+                });
+            });
+        });
     }
 
     _placeLabelsForForcedStraight(persons, relationships) {

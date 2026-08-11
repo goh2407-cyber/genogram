@@ -499,10 +499,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         app._syncPersonMap();
         app.render();
         const warning = document.getElementById('routingWarning');
+        const warningRouteBefore = JSON.stringify(canvas.getMarriageRoute(
+            routeA, routeB, forced, app.relationships).points);
         const warningResult = warning ? {
             visible: !warning.hidden,
             text: warning.textContent,
-            count: app.canvas.labelRoutingWarnings.length
+            count: app.canvas.labelRoutingWarnings.length,
+            targetWarnings: app.canvas.labelRoutingWarnings.filter(item =>
+                item.personId === target.id && item.reason === 'label-route-overlap')
         } : { visible: false, text: '', count: app.canvas.labelRoutingWarnings.length };
         const warningExportDataUrl = app.canvas.exportToPNG(app.persons, app.relationships,
             [], [], true, false, 1, app.viewOptions);
@@ -511,6 +515,19 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const hiddenWarningExportDataUrl = app.canvas.exportToPNG(app.persons, app.relationships,
             [], [], true, false, 1, app.viewOptions);
         if (warning) warning.hidden = warningWasHidden;
+
+        app.selectedPersonId = target.id;
+        for (let index = 0; index < 34; index++) app.adjustSelectedPersonLabel('right');
+        const manualWarningResult = {
+            targetWarnings: app.canvas.labelRoutingWarnings.filter(item =>
+                item.personId === target.id && item.reason === 'label-route-overlap'),
+            placement: canvas.getPersonLabelGeometry(target,
+                { showNames: true, showNotes: true }).placement,
+            person: { x: target.x, y: target.y },
+            route: JSON.stringify(canvas.getMarriageRoute(
+                routeA, routeB, forced, app.relationships).points),
+            placementCacheEmpty: canvas.personLabelPlacements.size === 0
+        };
 
         const originalLabelWarnings = canvas.labelRoutingWarnings;
         const originalMarriageWarnings = canvas.marriageRoutingWarnings;
@@ -611,6 +628,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 right: { x: archAutoRight.x, y: archAutoRight.y }
             },
             warning: warningResult,
+            warningRouteBefore,
+            manualWarning: manualWarningResult,
             warningExportDataUrl,
             hiddenWarningExportDataUrl,
             mixedWarning: mixedWarningResult,
@@ -862,9 +881,18 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.archAuto.route.points.at(-1).x === result.archAuto.right.x
             && result.archAuto.route.points.at(-1).y === result.archAuto.right.y - result.half,
         JSON.stringify(result.archAuto.route));
-    check('default label overlap does not create an automatic routing warning',
-        !result.warning.visible && result.warning.count === 0,
+    check('default below label overlap remains unmoved but shows a manual-adjust warning',
+        result.warning.visible && result.warning.text.includes('調整文字位置')
+            && result.warning.targetWarnings.length === 1,
         JSON.stringify(result.warning));
+    check('manual label nudge clears its overlap warning without moving the person or route',
+        result.manualWarning.targetWarnings.length === 0
+            && result.manualWarning.placement.offsetX === 408
+            && result.manualWarning.placement.offsetY === 0
+            && result.manualWarning.person.x === 560 && result.manualWarning.person.y === 485
+            && result.manualWarning.route === result.warningRouteBefore
+            && result.manualWarning.placementCacheEmpty,
+        JSON.stringify(result.manualWarning));
     check('warning is absent from exported canvas data',
         result.warningExportDataUrl.startsWith('data:image/png;base64,'),
         result.warningExportDataUrl.slice(0, 30));
