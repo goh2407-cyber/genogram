@@ -54,7 +54,33 @@
 - 大型 JSON 載入後自動符合全圖；自動儲存恢復保留原縮放與位移。
 - `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
-## I. Release-Hardening Gate
+## I. 標準伴侶線走法守門
+
+下列命令驗證同一份 canonical relationship geometry 同時供畫面、家庭來源、
+命中、編輯鈕、日期與匯出使用。執行時需設定 Playwright 的 `NODE_PATH`。
+
+```powershell
+node refactor/verify_label_routing.js
+node refactor/verify_marriage_geom.js
+node refactor/verify_family_routing.js
+node refactor/verify_relationship_edges.js
+node refactor/verify_view_export.js
+node refactor/verify_view_rendering.js
+node refactor/visual_golden.js
+node refactor/verify_mirror_sync.js
+node refactor/smoke_visual.js
+```
+
+- `auto` 同列淨空使用左右側接水平線；中間有符號時只可選有限的上方 bridge，
+  **不得**自動使用底部 U／`under` 候選。
+- `under` 是關係編輯器中使用者明確選擇的手動走法；只有它可使用下方 cardinal
+  ports。`straight`、`over` 的既有手動語意維持不變。
+- 匯出（PNG/JPEG 與例外 finally）必須回復原畫面的 canonical route、
+  `attachmentSegment`、標籤位置與家庭線快取 identity；視覺匯出不得混入 warning DOM。
+- Golden 15/16/17 只可在人工逐張核可後更新；三副本 JS 的 raw MD5 必須一致，
+  smoke 的 pageerror 與 console error 必須為 0。
+
+## J. Release-Hardening Gate
 
 下列四項為發行前永久守門。每一項都必須在具備可用 Playwright runtime
 與瀏覽器的環境中重新執行；缺少 runtime、瀏覽器或相依套件時，結果是
