@@ -397,6 +397,50 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const clearAutoRoute = canvas.getMarriageRoute(
             clearLeft, clearRight, clearAutoRel, [clearAutoRel]);
 
+        // Standard auto marriage: a clear same-row pair uses the side ports directly.
+        const standardLeft = new Person({ id: 'standard-left', x: 180, y: 1260,
+            gender: 'male', name: '標準左側姓名' });
+        const standardRight = new Person({ id: 'standard-right', x: 820, y: 1260,
+            gender: 'female', name: '標準右側姓名' });
+        const standardRel = new Relationship({ id: 'standard-auto',
+            fromPersonId: standardLeft.id, toPersonId: standardRight.id,
+            type: 'married', routeMode: 'auto' });
+        const standardPersons = [standardLeft, standardRight];
+        canvas.prepareDerivedGeometry(standardPersons, [standardRel], { force: true });
+        const standardRoute = canvas.getMarriageRoute(
+            standardLeft, standardRight, standardRel, [standardRel]);
+        const standardLabelLeft = canvas.getPersonLabelGeometry(standardLeft,
+            { showNames: true, showNotes: true });
+        const standardLabelRight = canvas.getPersonLabelGeometry(standardRight,
+            { showNames: true, showNotes: true });
+        const standardLabelHits = FamilyRoutePlanner.pathIntersectionCount(
+            standardRoute.points, [standardLabelLeft.bounds, standardLabelRight.bounds]);
+
+        // Standard auto marriage with a symbol in the middle must bridge above;
+        // the current under route is deliberately retained here as a RED contract.
+        const bridgeLeft = new Person({ id: 'bridge-left', x: 120, y: 1440,
+            gender: 'male', name: '左側配偶' });
+        const bridgeBlocker = new Person({ id: 'bridge-blocker', x: 500, y: 1440,
+            gender: 'same', name: '中間人物' });
+        const bridgeRight = new Person({ id: 'bridge-right', x: 880, y: 1440,
+            gender: 'female', name: '右側配偶' });
+        const bridgeRel = new Relationship({ id: 'bridge-auto',
+            fromPersonId: bridgeLeft.id, toPersonId: bridgeRight.id,
+            type: 'married', routeMode: 'auto' });
+        const bridgePersons = [bridgeLeft, bridgeBlocker, bridgeRight];
+        canvas.prepareDerivedGeometry(bridgePersons, [bridgeRel], { force: true });
+        const bridgeConfig = canvas.getMarriageConfiguration(
+            bridgeLeft, bridgeRight, bridgeRel, [bridgeRel]);
+        const bridgeRoute = canvas.getMarriageRoute(
+            bridgeLeft, bridgeRight, bridgeRel, [bridgeRel]);
+        const bridgeTextHits = FamilyRoutePlanner.pathIntersectionCount(
+            bridgeRoute.points,
+            canvas.getPersonRouteObstacles(bridgePersons).filter(rect => rect.kind === 'text'));
+        const bridgeBottomEndpoints = [
+            bridgeLeft.getConnectionPoint('bottom'),
+            bridgeRight.getConnectionPoint('bottom')
+        ];
+
         const archAutoLeft = new Person({ id: 'arch-auto-left', x: 100, y: 1080,
             gender: 'male', name: '' });
         const archAutoBlocker = new Person({ id: 'arch-auto-blocker', x: 500, y: 1080,
@@ -527,6 +571,18 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             occupiedCrossingRoute,
             occupiedDirectTextHits,
             clearAutoRoute,
+            standardAuto: {
+                route: standardRoute,
+                left: standardLeft.getConnectionPoint('right'),
+                right: standardRight.getConnectionPoint('left'),
+                labelHits: standardLabelHits
+            },
+            bridgeAuto: {
+                config: bridgeConfig,
+                route: bridgeRoute,
+                textHits: bridgeTextHits,
+                bottomEndpoints: bridgeBottomEndpoints
+            },
             archAuto: {
                 config: archAutoConfig,
                 route: archAutoRoute,
@@ -726,6 +782,30 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('clear direct remains the lexicographic auto winner',
         result.clearAutoRoute.candidateName === 'direct',
         JSON.stringify(result.clearAutoRoute));
+    check('standard clear auto route is a two-point side-port horizontal direct line',
+        result.standardAuto.route.candidateName === 'direct'
+            && result.standardAuto.route.points.length === 2
+            && JSON.stringify(result.standardAuto.route.points[0])
+                === JSON.stringify(result.standardAuto.left)
+            && JSON.stringify(result.standardAuto.route.points[1])
+                === JSON.stringify(result.standardAuto.right)
+            && result.standardAuto.route.points[0].y === result.standardAuto.route.points[1].y,
+        JSON.stringify(result.standardAuto.route));
+    check('standard clear auto side-port route does not cross either label block',
+        result.standardAuto.labelHits === 0,
+        `labelHits=${result.standardAuto.labelHits}`);
+    check('middle-symbol auto route is never an automatic bottom under route',
+        !['under', 'inner', 'outer-left', 'outer-right']
+            .includes(result.bridgeAuto.route.candidateName)
+            && result.bridgeAuto.config.isArch !== true
+            && JSON.stringify(result.bridgeAuto.route.points[0])
+                !== JSON.stringify(result.bridgeAuto.bottomEndpoints[0])
+            && JSON.stringify(result.bridgeAuto.route.points.at(-1))
+                !== JSON.stringify(result.bridgeAuto.bottomEndpoints[1]),
+        JSON.stringify(result.bridgeAuto));
+    check('middle-symbol auto route records a label-safe non-under candidate',
+        result.bridgeAuto.textHits === 0,
+        JSON.stringify(result.bridgeAuto));
     check('auto same-row obstacle remains an under arch candidate',
         result.archAuto.config.isArch
             && ['inner', 'outer-left', 'outer-right']

@@ -38,7 +38,7 @@ const path = require('path');
         const relC1 = new Relationship({ id: 'rC1', fromPersonId: 'cW1', toPersonId: 'cM', type: 'married', date: '2010-01-01' });
         const relC2 = new Relationship({ id: 'rC2', fromPersonId: 'cW2', toPersonId: 'cM', type: 'divorced', date: '2000-01-01' });
 
-        // D：同列婚姻、中間夾 1 人 → ㄩ 下折越障（底部中心連接、barY 在下方）
+        // D：同列婚姻、中間夾 1 人。舊行為是 ㄩ 下折；新契約要求自動上橋。
         const dH = new Person({ id: 'dH', x: 300, y: 480, gender: 'male', name: '', age: 62,
             notes: '雙相情緒障礙症\n（精神中度障礙）' });
         const dMid = new Person({ id: 'dMid', x: 500, y: 480, gender: 'female', name: '',
@@ -101,6 +101,7 @@ const path = require('path');
             geomA, pathA, geomB, pathB, geomC2, pathC2, geomD, pathD,
             cfgC2_isBridge: cfgC2.isBridge, cfgC1_isBridge: cfgC1.isBridge,
             cfgD_isArch: cfgD.isArch,
+            cfgD_isBridge: cfgD.isBridge,
             hitStraightMid, hitBridge, hitArchBar, onMidNode,
             bridgeFromX: geomC2.points[0].x, bridgeToX: geomC2.points[3].x, cW2x: cW2.x, cMx: cM.x,
             rawPointCount: rawCandidate?.rawPoints?.length || 0,
@@ -149,6 +150,13 @@ const path = require('path');
     check('D hit-test == 主線幾何', eq(r.pathD, r.geomD.points), '');
     check('D arch 橫桿可命中', r.hitArchBar === true, `hit=${r.hitArchBar}`);
     check('D 夾者中心不再命中婚姻線（線已離開符號）', r.onMidNode === false, `onMid=${r.onMidNode}`);
+    check('D 標準 auto 夾人路由使用上橋而非底部 under',
+        r.cfgD_isBridge === true
+            && !['under', 'inner', 'outer-left', 'outer-right'].includes(r.geomD.candidateName)
+            && !eq(r.geomD.points[0], r.dHBottom)
+            && !eq(r.geomD.points.at(-1), r.dWBottom),
+        JSON.stringify({ config: { isArch: r.cfgD_isArch, isBridge: r.cfgD_isBridge },
+            candidateName: r.geomD.candidateName, points: r.geomD.points }));
 
     check('確定性：canonical route 強制重算 3 次相同', r.detEqual === true, `detEqual=${r.detEqual}`);
 
