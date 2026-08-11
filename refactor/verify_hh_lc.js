@@ -352,6 +352,58 @@ function check(name, cond, detail = '') {
     check('P1 生活圈面板：名稱/色票可編輯', r.hasLcUI && r.labelApplied, JSON.stringify(r));
     check('P1 同住框面板：成員清單/備註可編輯', r.hasHhUI && r.notesApplied, JSON.stringify(r));
 
+    // ====== H7: 人物文字微調不得改變同住框或生活圈 ======
+    r = await page.evaluate(() => {
+        const app = window.app;
+        const memberA = new Person({ id: 'label-stable-a', x: 360, y: 360,
+            gender: 'male', name: '很長的同住成員姓名', notes: '備註第一行\n備註第二行' });
+        const memberB = new Person({ id: 'label-stable-b', x: 600, y: 360,
+            gender: 'female', name: '同住成員乙' });
+        app.persons = [memberA, memberB];
+        app.relationships = [];
+        app.households = [{ id: 'label-stable-household',
+            ids: [memberA.id, memberB.id], notes: '固定資料' }];
+        app.lifeCircles = [{ id: 'label-stable-circle', color: '#90caf9',
+            label: '固定生活圈', points: [
+                { x: 260, y: 240 }, { x: 700, y: 240 },
+                { x: 700, y: 500 }, { x: 260, y: 500 }
+            ] }];
+        app._syncPersonMap();
+        app.selectPerson(memberA.id);
+        const before = {
+            householdGeometry: app.canvas.getHouseholdBounds(
+                app.households[0], app.persons, app.relationships),
+            households: JSON.stringify(app.households),
+            lifeCircles: JSON.stringify(app.lifeCircles),
+            person: { x: memberA.x, y: memberA.y },
+            label: app.canvas.getPersonLabelGeometry(memberA,
+                { showNames: true, showNotes: true }).bounds
+        };
+        app.adjustSelectedPersonLabel('right');
+        const after = {
+            householdGeometry: app.canvas.getHouseholdBounds(
+                app.households[0], app.persons, app.relationships),
+            households: JSON.stringify(app.households),
+            lifeCircles: JSON.stringify(app.lifeCircles),
+            person: { x: memberA.x, y: memberA.y },
+            label: app.canvas.getPersonLabelGeometry(memberA,
+                { showNames: true, showNotes: true }).bounds,
+            exportOk: app.canvas.exportToPNG(app.persons, app.relationships,
+                app.households, app.lifeCircles, true, false, 1, app.viewOptions)
+                .startsWith('data:image/png;base64,')
+        };
+        return { before, after };
+    });
+    check('H7 文字微調不改變同住框、生活圈或人物座標',
+        JSON.stringify(r.before.householdGeometry)
+            === JSON.stringify(r.after.householdGeometry)
+            && r.before.households === r.after.households
+            && r.before.lifeCircles === r.after.lifeCircles
+            && JSON.stringify(r.before.person) === JSON.stringify(r.after.person)
+            && Math.abs(r.after.label.left - r.before.label.left - 12) < 0.000001
+            && r.after.exportOk,
+        JSON.stringify(r));
+
     // ====== 截圖總覽 ======
     await page.evaluate(() => window.app.render());
     await page.screenshot({ path: path.join(__dirname, 'hhlc_final.png') });

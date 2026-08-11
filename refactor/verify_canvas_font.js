@@ -33,6 +33,76 @@ async function canvasPng(page) {
     if (rejectionErrors.length) throw new Error(`font load rejection was unhandled: ${rejectionErrors.join('; ')}`);
     await rejectionPage.close();
 
+    const racePage = await browser.newPage();
+    await racePage.addInitScript(() => {
+        window.__deferredFontLoads = [];
+        window.__releaseFontLoads = marker => {
+            window.__deferredFontLoads.forEach(load => {
+                if (load.released || (marker && !load.text.includes(marker))) return;
+                load.released = true;
+                load.resolve();
+            });
+        };
+        Object.defineProperty(document.fonts, 'load', {
+            configurable: true,
+            value: (font, text) => new Promise(resolve => {
+                window.__deferredFontLoads.push({ font, text, resolve, released: false });
+            })
+        });
+    });
+    await racePage.goto(URL);
+    await racePage.waitForFunction(() => window.app && window.__deferredFontLoads.length >= 2);
+    await racePage.evaluate(() => window.__releaseFontLoads(''));
+    await racePage.evaluate(() => window.app.canvasFontReady);
+    await racePage.evaluate(() => {
+        const app = window.app;
+        const originalInvalidate = app.canvas.invalidateDerivedGeometry.bind(app.canvas);
+        window.__fontRace = {
+            invalidations: 0,
+            exportCalls: 0,
+            exportASettled: false,
+            waitBSettled: false
+        };
+        app.canvas.invalidateDerivedGeometry = () => {
+            window.__fontRace.invalidations++;
+            return originalInvalidate();
+        };
+        app.storage.exportPNG = () => { window.__fontRace.exportCalls++; };
+        app.persons = [new Person({
+            id: 'font-race-person', x: 320, y: 280, gender: 'male', name: 'font-race-A'
+        })];
+        app._syncPersonMap();
+        window.__fontRace.exportA = app.exportPNG(false, false, 1)
+            .then(() => { window.__fontRace.exportASettled = true; });
+        app.persons[0].name = 'font-race-B';
+        window.__fontRace.waitB = app.waitForCurrentCanvasFonts(false)
+            .then(() => { window.__fontRace.waitBSettled = true; });
+    });
+    await racePage.waitForFunction(() => {
+        const loads = window.__deferredFontLoads;
+        return loads.filter(load => load.text.includes('font-race-A')).length === 2
+            && loads.filter(load => load.text.includes('font-race-B')).length === 2;
+    });
+    await racePage.evaluate(() => window.__releaseFontLoads('font-race-A'));
+    await racePage.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
+    const raceAfterA = await racePage.evaluate(() => ({
+        exportASettled: window.__fontRace.exportASettled,
+        waitBSettled: window.__fontRace.waitBSettled,
+        exportCalls: window.__fontRace.exportCalls,
+        invalidations: window.__fontRace.invalidations
+    }));
+    await racePage.evaluate(() => window.__releaseFontLoads('font-race-B'));
+    await racePage.evaluate(() => Promise.all([
+        window.__fontRace.exportA, window.__fontRace.waitB
+    ]));
+    const raceAfterB = await racePage.evaluate(() => ({
+        exportASettled: window.__fontRace.exportASettled,
+        waitBSettled: window.__fontRace.waitBSettled,
+        exportCalls: window.__fontRace.exportCalls,
+        invalidations: window.__fontRace.invalidations
+    }));
+    await racePage.close();
+
     const page = await browser.newPage({ viewport: { width: 1280, height: 780 }, deviceScaleFactor: 1 });
     await page.goto(URL);
     await page.waitForFunction(() => window.app && window.app.canvas);
@@ -106,5 +176,11 @@ async function canvasPng(page) {
     if (equalPixels(lifeCircleFallback,lifeCircleExpected)) throw new Error('setup failed: life-circle label glyph did not transition');
     if (!equalPixels(lifeCircleAutomatic,lifeCircleExpected)) throw new Error('life-circle label did not repaint after font readiness');
     if (!lifeCirclePromise||lifeCircleExportedEarly) throw new Error('life-circle export did not await label glyph readiness');
+    if (raceAfterA.exportASettled || raceAfterA.waitBSettled || raceAfterA.exportCalls !== 0 || raceAfterA.invalidations !== 0) {
+        throw new Error(`stale A generation released export before B: ${JSON.stringify(raceAfterA)}`);
+    }
+    if (!raceAfterB.exportASettled || !raceAfterB.waitBSettled || raceAfterB.exportCalls !== 1 || raceAfterB.invalidations !== 1) {
+        throw new Error(`latest B generation did not release export exactly once: ${JSON.stringify(raceAfterB)}`);
+    }
     console.log('PASS | Canvas and life-circle labels repaint; all image exports await arbitrary unicode-range glyphs');
 })().catch(error => { console.error('FAIL | ' + error.message); process.exit(1); });

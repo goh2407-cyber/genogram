@@ -11,7 +11,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 notes: '第一行', medical: { leftHalf: 'filled', bottomHalf: 'none', centerSymbol: 'none',
                     isSmoker: false, isObese: false, hasLanguageProblem: false } }),
             new Person({ id: 'b', x: 540, y: 260, gender: 'female', name: '乙', isDeceased: true }),
-            new Person({ id: 'loss', x: 700, y: 420, gender: 'pregnancy', name: '流產', lossType: 'miscarriage' })
+            new Person({ id: 'loss', x: 700, y: 420, gender: 'pregnancy', name: '流產', lossType: 'miscarriage' }),
+            new Person({ id: 'notes-only', x: 880, y: 420, gender: 'female', name: '',
+                notes: '第一行\n第二行' })
         ];
         app._syncPersonMap();
         app.relationships = [
@@ -53,6 +55,10 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const textLayout = canvas.getPersonTextLayout(app.persons[0], {
             ...app.viewOptions, showNames: false, showNotes: true
         });
+        const notesOnly = app.persons.find(person => person.id === 'notes-only');
+        const notesOnlyGeometry = canvas.getPersonLabelGeometry(notesOnly, {
+            ...app.viewOptions, showNames: false, showNotes: true
+        });
         const originalRelationshipHit = canvas.isPointOnRelationship;
         canvas.isPointOnRelationship = () => true;
         const relationshipHit = app.getRelationshipAt(420, 260);
@@ -66,7 +72,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const householdReopened = app.viewOptions.showHouseholds;
         app.setTool('lifeCircle');
         const circleReopened = app.viewOptions.showLifeCircles;
-        return { calls, textLayout, hiddenHits: {
+        return { calls, textLayout, notesOnlyGeometry, notesOnlyFirstY:
+            notesOnly.y + canvas.personSize / 2 + 8, hiddenHits: {
             household: hiddenHits.household && hiddenHits.household.id,
             lifeCircle: hiddenHits.lifeCircle && hiddenHits.lifeCircle.id,
             relationship: hiddenHits.relationship && hiddenHits.relationship.type
@@ -84,6 +91,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('notes move to first label row when name is hidden',
         result.textLayout.name === '' && result.textLayout.noteLines[0] === '第一行'
             && result.textLayout.noteStartY === result.textLayout.nameY, JSON.stringify(result.textLayout));
+    check('notes-only geometry starts notes at the first label row',
+        result.notesOnlyGeometry.rows.length === 2
+            && result.notesOnlyGeometry.rows[0].kind === 'note'
+            && result.notesOnlyGeometry.rows[0].y === result.notesOnlyFirstY,
+        JSON.stringify(result.notesOnlyGeometry));
     check('starting hidden creation tools reopens their layers', result.householdReopened && result.circleReopened);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL VIEW RENDERING CHECKS PASSED');

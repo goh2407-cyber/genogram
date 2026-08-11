@@ -36,6 +36,9 @@ async function shellMetrics(page) {
             actions: rect('.global-actions'),
             canvas: rect('#canvasContainer'),
             inspector: rect('#inspectorPanel'),
+            routingWarning: rect('#routingWarning'),
+            routingWarningPointerEvents: getComputedStyle(
+                document.querySelector('#routingWarning')).pointerEvents,
             spacer: rect('#inspectorRailSpacer'),
             compact: document.body.classList.contains('inspector-compact'),
             overlay: document.body.classList.contains('inspector-overlay-open'),
@@ -54,6 +57,16 @@ function overlaps(a, b) {
 async function settleResponsiveLayout(page) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.waitForTimeout(180);
+}
+
+async function showRoutingWarning(page) {
+    await page.evaluate(() => {
+        window.app.canvas.labelRoutingWarnings = [{
+            personId: 'ui-warning',
+            reason: 'forced-straight-label-collision'
+        }];
+        window.app.updateRoutingWarning();
+    });
 }
 
 async function checkIconOnlyAccessibility(page) {
@@ -113,6 +126,7 @@ async function checkIconOnlyAccessibility(page) {
     const url = 'file:///' + path.resolve(__dirname, '..', 'index.html').replace(/\\/g, '/');
     await page.goto(url);
     await page.waitForFunction(() => window.app && window.app.canvas);
+    await showRoutingWarning(page);
 
     const required = [
         '#globalBar', '#canvasToolDock', '#inspectorPanel', '#inspectorToggle', '#inspectorRailSpacer',
@@ -172,11 +186,17 @@ async function checkIconOnlyAccessibility(page) {
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await settleResponsiveLayout(page);
+    await showRoutingWarning(page);
     const wide = await shellMetrics(page);
     check('1920px uses fixed desktop inspector', !wide.compact && !wide.overlay
         && wide.inspector?.width >= 315 && wide.inspector?.width <= 317, JSON.stringify(wide));
     check('1920px canvas dock does not collide with global actions',
         !overlaps(wide.dock, wide.actions), JSON.stringify({ dock: wide.dock, actions: wide.actions }));
+    check('desktop routing warning stays within canvas and ignores pointers',
+        wide.routingWarningPointerEvents === 'none'
+            && wide.routingWarning?.left >= wide.canvas?.left
+            && wide.routingWarning?.right <= wide.canvas?.right
+            && !overlaps(wide.routingWarning, wide.inspector), JSON.stringify(wide));
 
     await page.setViewportSize({ width: 1366, height: 768 });
     await settleResponsiveLayout(page);
@@ -201,6 +221,7 @@ async function checkIconOnlyAccessibility(page) {
 
         await page.setViewportSize({ width: 1180, height: 820 });
         await settleResponsiveLayout(page);
+        await showRoutingWarning(page);
         const rail = await shellMetrics(page);
         check('1180px defaults to compact rail mode', rail.compact && !rail.overlay && !rail.collapsed,
             JSON.stringify(rail));
@@ -209,16 +230,28 @@ async function checkIconOnlyAccessibility(page) {
                 && Math.abs((rail.spacer?.width || 0) - 52) < 0.5,
             JSON.stringify({ inspector: rail.inspector, spacer: rail.spacer }));
         check('compact mode hides the document name', rail.documentNameVisible === false);
+        check('closed compact rail leaves routing warning inside the canvas',
+            rail.routingWarningPointerEvents === 'none'
+                && rail.routingWarning?.left >= rail.canvas?.left
+                && rail.routingWarning?.right <= rail.canvas?.right
+                && !overlaps(rail.routingWarning, rail.inspector), JSON.stringify(rail));
 
         const compactCanvasWidth = rail.canvas?.width;
         await toggle.click();
         await settleResponsiveLayout(page);
+        await showRoutingWarning(page);
         const opened = await shellMetrics(page);
         check('compact toggle opens a 296px overlay', opened.compact && opened.overlay
             && Math.abs((opened.inspector?.width || 0) - 296) < 0.5, JSON.stringify(opened));
         check('compact overlay does not change canvas layout width',
             Math.abs((opened.canvas?.width || 0) - compactCanvasWidth) < 0.5,
             `${compactCanvasWidth} → ${opened.canvas?.width}`);
+        check('1180px compact overlay does not cover the routing warning',
+            opened.routingWarningPointerEvents === 'none'
+                && opened.routingWarning?.left >= opened.canvas?.left
+                && opened.routingWarning?.right <= opened.canvas?.right
+                && opened.routingWarning?.right <= opened.inspector?.left - 24
+                && !overlaps(opened.routingWarning, opened.inspector), JSON.stringify(opened));
         check('opened compact toggle exposes collapse action text',
             await toggle.getAttribute('title') === '收合檢視面板'
                 && await toggle.getAttribute('aria-label') === '收合檢視面板');
@@ -250,6 +283,7 @@ async function checkIconOnlyAccessibility(page) {
 
         await page.setViewportSize({ width: 1024, height: 768 });
         await settleResponsiveLayout(page);
+        await showRoutingWarning(page);
         const compact1024 = await shellMetrics(page);
         check('1024px remains compact with a one-row global bar',
             compact1024.compact && compact1024.bar?.height <= 66, JSON.stringify(compact1024));
@@ -265,6 +299,18 @@ async function checkIconOnlyAccessibility(page) {
         check('1024px toolbar buttons keep at least 36px pointer targets',
             toolbarTargets.every(target => target.width >= 36 && target.height >= 36),
             JSON.stringify(toolbarTargets));
+        await toggle.click();
+        await settleResponsiveLayout(page);
+        await showRoutingWarning(page);
+        const opened1024 = await shellMetrics(page);
+        check('1024px compact overlay does not cover the routing warning',
+            opened1024.overlay && opened1024.routingWarningPointerEvents === 'none'
+                && opened1024.routingWarning?.left >= opened1024.canvas?.left
+                && opened1024.routingWarning?.right <= opened1024.canvas?.right
+                && opened1024.routingWarning?.right <= opened1024.inspector?.left - 24
+                && !overlaps(opened1024.routingWarning, opened1024.inspector), JSON.stringify(opened1024));
+        await toggle.click();
+        await settleResponsiveLayout(page);
 
         await page.setViewportSize({ width: 1023, height: 768 });
         await settleResponsiveLayout(page);

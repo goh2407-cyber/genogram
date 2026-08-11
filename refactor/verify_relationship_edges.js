@@ -21,7 +21,7 @@ const path = require('path');
     await page.evaluate(() => {
         window.__relationshipEdgeReset = ({ childRow = false, relationships = [] } = {}) => {
             const app = window.app;
-            app.elements.relationshipModal.classList.remove('active');
+            app.closeRelationshipModal();
             app.editingRelationshipId = null;
             app.connectingFrom = null;
             app.connectingTo = null;
@@ -309,6 +309,152 @@ const path = require('path');
     });
     check('多子女樹狀線的每一個子女分支都可命中',
         familyHits.every(hit => hit.type === 'parent-child' && hit.hitChild === hit.childId), JSON.stringify(familyHits));
+
+    const routeModeEdges = await page.evaluate(() => {
+        const app = window.__relationshipEdgeReset();
+        const canvas = app.canvas;
+        const makePair = (prefix, y, { blocker = false } = {}) => [
+            new Person({ id: `${prefix}-from`, gender: 'male', x: 220, y, name: '' }),
+            new Person({ id: `${prefix}-to`, gender: 'female', x: 540, y, name: '' }),
+            ...(blocker ? [new Person({ id: `${prefix}-blocker`, gender: 'male', x: 380, y, name: '夾者' })] : [])
+        ];
+        app.persons = [
+            ...makePair('straight', 140),
+            ...makePair('over', 300),
+            ...makePair('under', 460),
+            ...makePair('auto', 620, { blocker: true })
+        ];
+        app.relationships = [
+            new Relationship({ id: 'straight', fromPersonId: 'straight-from', toPersonId: 'straight-to',
+                type: 'married', routeMode: 'straight', date: 'straight-date' }),
+            new Relationship({ id: 'over', fromPersonId: 'over-from', toPersonId: 'over-to',
+                type: 'married', routeMode: 'over', date: 'over-date' }),
+            new Relationship({ id: 'under', fromPersonId: 'under-from', toPersonId: 'under-to',
+                type: 'married', routeMode: 'under', date: 'under-date' }),
+            new Relationship({ id: 'auto', fromPersonId: 'auto-from', toPersonId: 'auto-to',
+                type: 'married', routeMode: 'auto', date: 'auto-date' })
+        ];
+        app._syncPersonMap();
+        app.render();
+        const eq = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y;
+        const pointOnPath = (point, path) => path.slice(1).some((end, index) =>
+            canvas.distanceToLineSegment(point.x, point.y, path[index].x, path[index].y,
+                end.x, end.y) <= 1e-7);
+        const inspect = rel => {
+            const from = app.personMap.get(rel.fromPersonId);
+            const to = app.personMap.get(rel.toPersonId);
+            const route = canvas.getMarriageRoute(from, to, rel, app.relationships);
+            const path = canvas.getRelationshipPath(from, to, rel, app.relationships);
+            const attachment = route.attachmentSegment;
+            const anchor = {
+                x: (attachment.start.x + attachment.end.x) / 2,
+                y: (attachment.start.y + attachment.end.y) / 2
+            };
+            const originalEditButtonGeom = canvas._editButtonGeom;
+            const editGeometryCalls = [];
+            let editButton = null;
+            let pencil = false;
+            canvas._editButtonGeom = function(editPath, category) {
+                const geometry = originalEditButtonGeom.call(this, editPath, category);
+                editGeometryCalls.push({ path: editPath, category, point: geometry?.point });
+                return geometry;
+            };
+            try {
+                editButton = canvas.drawRelationshipEditButton(rel, from, to, app.relationships);
+                pencil = !!editButton && canvas.isPointOnEditButton(editButton.x, editButton.y,
+                    rel, from, to, app.relationships);
+            } finally {
+                canvas._editButtonGeom = originalEditButtonGeom;
+            }
+            const originalTranslate = canvas.ctx.translate;
+            let dateAnchor = null;
+            canvas.ctx.translate = function(x, y) {
+                dateAnchor = { x, y };
+                return originalTranslate.call(this, x, y);
+            };
+            try {
+                canvas.drawRelationshipDate(from, to, rel, app.persons, app.relationships);
+            } finally {
+                canvas.ctx.translate = originalTranslate;
+            }
+            return {
+                route,
+                path,
+                from,
+                to,
+                pathMatchesRoute: JSON.stringify(path) === JSON.stringify(route.points),
+                hit: app.getRelationshipAt(anchor.x, anchor.y)?.id || null,
+                pencil,
+                pencilCanonicalRoute: editGeometryCalls.length === 2 && editGeometryCalls.every(call =>
+                    call.category === 'marriage'
+                    && JSON.stringify(call.path) === JSON.stringify(route.points)
+                    && pointOnPath(call.point, route.points)),
+                dateAnchor,
+                dateOnCanonicalRoute: eq(dateAnchor, route.decoration)
+                    && pointOnPath(dateAnchor, route.points),
+                attachmentOnCanonicalRoute: pointOnPath(attachment.start, route.points)
+                    && pointOnPath(attachment.end, route.points)
+            };
+        };
+        const byId = Object.fromEntries(app.relationships.map(rel => [rel.id, inspect(rel)]));
+        const straight = byId.straight;
+        const over = byId.over;
+        const under = byId.under;
+        const auto = byId.auto;
+        const straightRight = straight.from.getConnectionPoint('right');
+        const straightLeft = straight.to.getConnectionPoint('left');
+        const overTop = over.from.getConnectionPoint('top');
+        const underBottom = under.from.getConnectionPoint('bottom');
+        const underBottomEnd = under.to.getConnectionPoint('bottom');
+        return {
+            straight: {
+                exactSideLine: straight.route.points.length === 2
+                    && eq(straight.route.points[0], straightRight)
+                    && eq(straight.route.points[1], straightLeft),
+                pencilCanonicalRoute: straight.pencilCanonicalRoute,
+                canonical: straight.pathMatchesRoute && straight.hit === 'straight'
+                    && straight.pencil && straight.pencilCanonicalRoute && straight.dateOnCanonicalRoute
+                    && straight.attachmentOnCanonicalRoute
+            },
+            over: {
+                topOnly: eq(over.route.points[0], overTop)
+                    && eq(over.route.points.at(-1), over.to.getConnectionPoint('top'))
+                    && over.route.points.every(point => point.y <= over.from.y),
+                pencilCanonicalRoute: over.pencilCanonicalRoute,
+                canonical: over.pathMatchesRoute && over.hit === 'over'
+                    && over.pencil && over.pencilCanonicalRoute && over.dateOnCanonicalRoute && over.attachmentOnCanonicalRoute
+            },
+            under: {
+                bottomOnly: eq(under.route.points[0], underBottom)
+                    && eq(under.route.points.at(-1), underBottomEnd)
+                    && under.route.points.some(point => point.y > under.from.y + canvas.personSize / 2),
+                pencilCanonicalRoute: under.pencilCanonicalRoute,
+                canonical: under.pathMatchesRoute && under.hit === 'under'
+                    && under.pencil && under.pencilCanonicalRoute && under.dateOnCanonicalRoute && under.attachmentOnCanonicalRoute
+            },
+            auto: {
+                directOnly: auto.route.candidateName === 'direct'
+                    && auto.route.points.length === 2
+                    && eq(auto.route.points[0], auto.from.getConnectionPoint('right'))
+                    && eq(auto.route.points.at(-1), auto.to.getConnectionPoint('left')),
+                pencilCanonicalRoute: auto.pencilCanonicalRoute,
+                canonical: auto.pathMatchesRoute && auto.hit === 'auto'
+                    && auto.pencil && auto.pencilCanonicalRoute && auto.dateOnCanonicalRoute && auto.attachmentOnCanonicalRoute
+            }
+        };
+    });
+    check('straight 走法維持左右側接的原始水平點位',
+        routeModeEdges.straight.exactSideLine, JSON.stringify(routeModeEdges.straight));
+    check('over 走法只經由上方 bridge',
+        routeModeEdges.over.topOnly, JSON.stringify(routeModeEdges.over));
+    check('under 走法才使用下方 cardinal ports',
+        routeModeEdges.under.bottomOnly, JSON.stringify(routeModeEdges.under));
+    check('auto 遇夾者仍維持標準側接直線',
+        routeModeEdges.auto.directOnly, JSON.stringify(routeModeEdges.auto));
+    check('四種婚姻走法的鉛筆錨點均來自 canonical route',
+        Object.values(routeModeEdges).every(mode => mode.pencilCanonicalRoute), JSON.stringify(routeModeEdges));
+    check('四種婚姻走法的命中、鉛筆、日期均共用 canonical route',
+        Object.values(routeModeEdges).every(mode => mode.canonical), JSON.stringify(routeModeEdges));
 
     check('測試期間無 console/page error', errors.length === 0, errors.join(' | '));
 

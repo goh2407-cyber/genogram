@@ -54,9 +54,82 @@
 - 大型 JSON 載入後自動符合全圖；自動儲存恢復保留原縮放與位移。
 - `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
+## I. 標準伴侶線走法守門
+
+下列命令驗證同一份 canonical relationship geometry 同時供畫面、家庭來源、
+命中、編輯鈕、日期與匯出使用。執行時需設定 Playwright 的 `NODE_PATH`。
+
+```powershell
+node refactor/verify_label_routing.js
+node refactor/verify_marriage_geom.js
+node refactor/verify_standard_default_routes.js
+node refactor/verify_family_routing.js
+node refactor/verify_relationship_edges.js
+node refactor/verify_view_export.js
+node refactor/verify_view_rendering.js
+node refactor/visual_golden.js
+node refactor/verify_mirror_sync.js
+node refactor/smoke_visual.js
+```
+
+- `auto` 一律保持標準左右側接線，不因中間人物、文字或多段婚姻自動改成
+  上橋、底部 U 或外側大矩形；需要繞線時由使用者明確選擇。
+- `under` 是關係編輯器中使用者明確選擇的手動走法；只有它可使用下方 cardinal
+  ports，且固定為四點小 U，端點底部第一段必須垂直、不得多出小橫條。
+  `straight`、`over` 的既有手動語意維持不變。
+- 重疊診斷可留在記憶體供測試使用，但編輯器不得顯示文字警告；人物文字只由
+  屬性面板的八方向按鈕手動微調。
+- 匯出（PNG/JPEG 與例外 finally）必須回復原畫面的 canonical route、
+  `attachmentSegment`、標籤位置與家庭線快取 identity；視覺匯出不得混入 warning DOM。
+- Golden 15/16/17 只可在人工逐張核可後更新；三副本 JS 的 raw MD5 必須一致，
+  smoke 的 pageerror 與 console error 必須為 0。
+
+## J. Release-Hardening Gate
+
+下列四項為發行前永久守門。每一項都必須在具備可用 Playwright runtime
+與瀏覽器的環境中重新執行；缺少 runtime、瀏覽器或相依套件時，結果是
+**blocked gate**，不是 PASS，必須補齊環境後重跑。
+
+```powershell
+node refactor/verify_modal_flow.js
+# ALL MODAL FLOW CHECKS PASSED
+
+node refactor/verify_dom_security.js
+# ALL DOM SECURITY CHECKS PASSED
+
+node refactor/verify_zero_roundtrip.js
+# ALL ZERO ROUNDTRIP CHECKS PASSED
+
+node refactor/verify_modal_keyboard_history.js
+# ALL MODAL KEYBOARD AND HISTORY CHECKS PASSED
+```
+
+- Modal flow：隱藏 modal 關閉時立即 `pointer-events: none`，轉場結束後為
+  `hidden`；五種 modal 都有 ARIA、焦點圈限、Escape 與焦點還原。
+- DOM security：執行期個案資料僅可經安全的文字／value property 進入 DOM。
+- Zero roundtrip：`age: 0`、`x: 0`、`y: 0` 必須通過所有持久化路徑。
+- Modal keyboard/history：文字欄位聚焦時 Ctrl/Cmd+Z 維持原生操作；一次完成
+  的欄位編輯只建立一筆 App Undo。
+
+## K. 人物文字與群組外框守門
+
+```powershell
+node refactor/verify_manual_label_controls.js
+node refactor/verify_hh_lc.js
+```
+
+- 點擊可見的姓名或備註時，選取該人物並進入文字調整狀態；右側八方向與重置
+  控制維持可用，但人物周圍的快速新增功能圈必須隱藏。
+- 文字微調後維持文字調整狀態；點人物符號恢復原快速功能圈，點空白、其他人物
+  或切換工具則退出。隱藏姓名／備註時不得保留文字命中區。
+- `labelPlacement` 只改人物文字幾何；不得改人物座標、同住框 hull、生活圈點位、
+  關係線或其 JSON。畫面與 PNG 匯出必須使用同一文字位置。
+
 ## 驗收記錄
-- 測試日期：2026-07-15
-- 測試版本：`codex/desktop-rwd-line-legend-polish`
+- 測試日期：2026-08-11
+- 測試版本：`codex/genogram-hardening`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：22 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。
+- 備註：29 支 `verify_*.js` 全數通過；三副本 raw MD5、`geno` 零外部請求與
+  視覺 smoke 全數通過。此次只調整文字命中與群組外框資料依賴，未更新或覆寫
+  Golden baseline。

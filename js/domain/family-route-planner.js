@@ -44,6 +44,58 @@ class FamilyRoutePlanner {
         return false;
     }
 
+    static segmentIntersectsRect(a, b, rect) {
+        const normalized = this._normalizeObstacles([rect]);
+        return normalized.length === 1 && this._segmentIntersectsRect(a, b, normalized[0]);
+    }
+
+    static pathIntersectionCount(points, obstacles = [], allowedSymbolOwnerIds = new Set()) {
+        if (!Array.isArray(points) || points.length < 2) return 0;
+        const ownerIds = allowedSymbolOwnerIds instanceof Set
+            ? allowedSymbolOwnerIds : new Set(allowedSymbolOwnerIds || []);
+        const allowed = new Set([...ownerIds].map(ownerId => String(ownerId)));
+        const rects = this._normalizeObstacles(obstacles);
+        let count = 0;
+        for (let index = 1; index < points.length; index++) {
+            for (const rect of rects) {
+                if (rect.kind === 'symbol' && allowed.has(String(rect.ownerId))) continue;
+                if (this._segmentIntersectsRect(points[index - 1], points[index], rect)) count++;
+            }
+        }
+        return count;
+    }
+
+    static pathLength(points) {
+        return (points || []).slice(1).reduce((total, point, index) =>
+            total + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+    }
+
+    static pathBendCount(points) {
+        let bends = 0;
+        for (let index = 2; index < (points || []).length; index++) {
+            const a = points[index - 2], b = points[index - 1], c = points[index];
+            const firstHorizontal = Math.abs(a.y - b.y) <= 1e-9;
+            const secondHorizontal = Math.abs(b.y - c.y) <= 1e-9;
+            if (firstHorizontal !== secondHorizontal) bends++;
+        }
+        return bends;
+    }
+
+    static polylineCrossingCount(points, occupiedSegments = []) {
+        let count = 0;
+        const samePoint = (a, b) => Math.abs(a.x - b.x) <= 1e-9
+            && Math.abs(a.y - b.y) <= 1e-9;
+        for (let index = 1; index < (points || []).length; index++) {
+            const a = points[index - 1], b = points[index];
+            occupiedSegments.forEach(segment => {
+                if (samePoint(a, segment.start) || samePoint(a, segment.end)
+                    || samePoint(b, segment.start) || samePoint(b, segment.end)) return;
+                if (this._segmentsIntersect(a, b, segment.start, segment.end)) count++;
+            });
+        }
+        return count;
+    }
+
     static _planNormal(input) {
         const { parents, children, obstacles, personSize, margin } = input;
         const half = personSize / 2;

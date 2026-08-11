@@ -10,12 +10,12 @@ class Person {
         this.id = data.id || this.generateId();
         this.name = data.name || '';
         this.gender = data.gender || 'male'; // 'male', 'female', 'other'
-        this.age = data.age || null;
+        this.age = data.age ?? null;
         this.isDeceased = data.isDeceased || false;
         this.isIdentifiedPatient = data.isIdentifiedPatient || false;
 
         // 醫學/狀態標記
-        this.medical = data.medical || {
+        this.medical = data.medical ? { ...data.medical } : {
             topLeft: 'none',      // none, striped, filled
             topRight: 'none',
             bottomLeft: 'none',
@@ -32,9 +32,17 @@ class Person {
         // [NEW] 跨性別標記 ('ftm', 'mtf', 或 null)
         this.transgender = data.transgender || null;
 
-        this.x = data.x || 100;
-        this.y = data.y || 100;
+        this.x = data.x ?? 100;
+        this.y = data.y ?? 100;
         this.notes = data.notes || '';
+        const labelOffsetX = Number.isFinite(data.labelPlacement?.offsetX)
+            ? data.labelPlacement.offsetX : 0;
+        const labelOffsetY = Number.isFinite(data.labelPlacement?.offsetY)
+            ? data.labelPlacement.offsetY : 0;
+        // Optional persisted manual adjustment. Absence is the legacy/default zero position.
+        this.labelPlacement = labelOffsetX || labelOffsetY
+            ? { offsetX: labelOffsetX, offsetY: labelOffsetY }
+            : null;
         this.generation = data.generation || null; // 'grandparent', 'parent', 'child', 'grandchild'
         this.twinGroup = data.twinGroup || null; // 多胞胎群組ID，null表示非多胞胎
         // [Phase 1] 合子性：'mono'(同卵→畫連接橫桿) / 'di' 或 null(異卵)。屬群組層級，群組成員應一致。
@@ -117,14 +125,14 @@ class Person {
      * @returns {Object}
      */
     toJSON() {
-        return {
+        const json = {
             id: this.id,
             name: this.name,
             gender: this.gender,
             age: this.age,
             isDeceased: this.isDeceased,
             isIdentifiedPatient: this.isIdentifiedPatient,
-            medical: this.medical,
+            medical: { ...this.medical },
             sexualOrientation: this.sexualOrientation,
             transgender: this.transgender,
             x: this.x,
@@ -135,6 +143,10 @@ class Person {
             zygosity: this.zygosity,
             lossType: this.lossType
         };
+        if (this.labelPlacement) {
+            json.labelPlacement = { ...this.labelPlacement };
+        }
+        return json;
     }
 
     /**
