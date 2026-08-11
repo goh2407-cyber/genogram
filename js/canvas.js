@@ -773,7 +773,7 @@ class GenogramCanvas {
 
         const blockWidth = measured.reduce((max, row) => Math.max(max, row.width), 0);
         const half = this.personSize / 2;
-        const side = ['below', 'left', 'right'].includes(resolved?.side)
+        const side = ['below', 'above', 'left', 'right'].includes(resolved?.side)
             ? resolved.side : 'below';
         let centerX = person.x;
         if (side === 'left') {
@@ -784,7 +784,10 @@ class GenogramCanvas {
         const offsetX = Number.isFinite(resolved?.offsetX) ? resolved.offsetX : 0;
         const offsetY = Number.isFinite(resolved?.offsetY) ? resolved.offsetY : 0;
         centerX += offsetX;
-        let cursorY = person.y + half + 8 + offsetY;
+        const totalHeight = measured.reduce((sum, row) => sum + row.lineHeight, 0);
+        let cursorY = side === 'above'
+            ? person.y - half - 8 - totalHeight + offsetY
+            : person.y + half + 8 + offsetY;
         const rows = measured.map(row => {
             const y = cursorY;
             const bounds = {
@@ -815,12 +818,15 @@ class GenogramCanvas {
         const geometry = this.getPersonLabelGeometry(person, options, placement);
         const nameRow = geometry.rows.find(row => row.kind === 'name');
         const noteRows = geometry.rows.filter(row => row.kind === 'note');
-        const nameY = person.y + this.personSize / 2 + 8;
+        const fallbackY = geometry.rows[0]?.y ?? geometry.anchor.y;
+        const nameY = nameRow?.y ?? fallbackY;
         return {
             name: nameRow?.text || '',
             noteLines: noteRows.map(row => row.text),
             nameY,
-            noteStartY: nameY + (nameRow ? this.fontSize + 4 : 0)
+            noteStartY: noteRows[0]?.y ?? (nameRow
+                ? nameRow.y + nameRow.lineHeight
+                : fallbackY)
         };
     }
 
@@ -3819,7 +3825,7 @@ class GenogramCanvas {
         this.personLabelPlacements = new Map();
         this.marriageRouteCache = new Map();
         this.labelRoutingWarnings = [];
-        this._placeLabelsForForcedStraight(allPersons, allRelationships);
+        this._placeLabelsForRelationshipRoutes(allPersons, allRelationships);
         this._prepareMarriageRoutes(allPersons, allRelationships);
     }
 
@@ -3836,23 +3842,23 @@ class GenogramCanvas {
     }
 
     _labelPlacementCandidates(person) {
-        return [{ side: 'left' }, { side: 'right' }].map(placement => ({
+        return [{ side: 'above' }, { side: 'left' }, { side: 'right' }].map(placement => ({
             placement,
             geometry: this.getPersonLabelGeometry(person,
                 { showNames: true, showNotes: true }, placement)
         }));
     }
 
-    _placeLabelsForForcedStraight(persons, relationships) {
+    _placeLabelsForRelationshipRoutes(persons, relationships) {
         if (typeof FamilyRoutePlanner === 'undefined') return;
         const sortedPeople = [...persons]
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
         const defaultBounds = new Map(sortedPeople.map(person => [String(person.id),
             this.getPersonLabelGeometry(person,
                 { showNames: true, showNotes: true }, { side: 'below' }).bounds]));
-        const straightRoutes = relationships
+        const previewRoutes = relationships
             .filter(rel => Relationship.getCategory(rel.type) === 'marriage'
-                && (rel.routeMode || 'auto') === 'straight')
+                && ['straight', 'under'].includes(rel.routeMode || 'auto'))
             .map(rel => {
                 const from = this.personMap.get(rel.fromPersonId);
                 const to = this.personMap.get(rel.toPersonId);
@@ -3860,7 +3866,7 @@ class GenogramCanvas {
                 const config = this.getMarriageConfiguration(from, to, rel, relationships);
                 return { rel, points: this.getMarriageGeometry(from, to, config).points };
             }).filter(Boolean);
-        if (straightRoutes.length === 0) return;
+        if (previewRoutes.length === 0) return;
 
         const symbolObstacles = this.getSymbolRouteObstacles(sortedPeople);
         const placedBounds = new Map();
@@ -3869,7 +3875,7 @@ class GenogramCanvas {
             const below = this.getPersonLabelGeometry(person,
                 { showNames: true, showNotes: true }, { side: 'below' });
             if (!below.bounds
-                || !straightRoutes.some(route => this._pathHitsRect(route.points, below.bounds))) {
+                || !previewRoutes.some(route => this._pathHitsRect(route.points, below.bounds))) {
                 if (below.bounds) placedBounds.set(personKey, below.bounds);
                 return;
             }
@@ -3883,13 +3889,15 @@ class GenogramCanvas {
                 .filter(Boolean);
             const candidates = this._labelPlacementCandidates(person).map((candidate, order) => {
                 const rect = candidate.geometry.bounds;
-                const routeHits = straightRoutes.reduce((sum, route) =>
+                const routeHits = previewRoutes.reduce((sum, route) =>
                     sum + (this._pathHitsRect(route.points, rect) ? 1 : 0), 0);
-                const obstacleHits = [...symbolObstacles, ...otherLabelObstacles]
-                    .reduce((sum, obstacle) => sum
-                        + (String(obstacle.ownerId) !== personKey
-                            && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
-                return { ...candidate, order, collisions: routeHits + obstacleHits };
+                const symbolHits = symbolObstacles.reduce((sum, obstacle) => sum
+                    + (String(obstacle.ownerId) !== personKey
+                        && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
+                const otherLabelHits = otherLabelObstacles.reduce((sum, obstacle) => sum
+                    + (String(obstacle.ownerId) !== personKey
+                        && this._rectsOverlap(rect, obstacle) ? 1 : 0), 0);
+                return { ...candidate, order, collisions: routeHits + symbolHits + otherLabelHits };
             }).sort((a, b) => a.collisions - b.collisions || a.order - b.order);
             const winner = candidates[0];
             if (!winner) return;
@@ -3903,6 +3911,10 @@ class GenogramCanvas {
                 });
             }
         });
+    }
+
+    _placeLabelsForForcedStraight(persons, relationships) {
+        this._placeLabelsForRelationshipRoutes(persons, relationships);
     }
 
     getSymbolRouteObstacles(persons) {

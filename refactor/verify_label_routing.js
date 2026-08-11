@@ -88,6 +88,10 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             id: 'adapter-person', x: 300, y: 620, gender: 'male',
             name: 'Adapter Name', notes: 'first note\nsecond note'
         });
+        const abovePerson = new Person({
+            id: 'above-person', x: 720, y: 620, gender: 'female',
+            name: 'Above Name', notes: 'first above note\nsecond above note'
+        });
         const emptyPerson = new Person({
             id: 'adapter-empty', x: 500, y: 620, gender: 'female', name: '', notes: ''
         });
@@ -101,15 +105,25 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             notesOnly: canvas.getPersonTextLayout(adapterPerson,
                 { showNames: false, showNotes: true })
         };
+        const aboveGeometry = canvas.getPersonLabelGeometry(abovePerson,
+            { showNames: true, showNotes: true }, { side: 'above' });
+        const belowGeometry = canvas.getPersonLabelGeometry(abovePerson,
+            { showNames: true, showNotes: true }, { side: 'below' });
+        const aboveLayout = canvas.getPersonTextLayout(abovePerson,
+            { showNames: true, showNotes: true }, { side: 'above' });
         canvas.personLabelPlacements.set(String(adapterPerson.id),
             { side: 'left', offsetX: 17, offsetY: 29 });
+        adapterLayouts.mappedPlacement = canvas.getPersonTextLayout(adapterPerson,
+            { showNames: true, showNotes: true });
         adapterLayouts.explicitPlacement = canvas.getPersonTextLayout(adapterPerson,
             { showNames: true, showNotes: true },
             { side: 'right', offsetX: 31, offsetY: 47 });
         adapterLayouts.expected = {
             adapterTop,
             emptyTop,
-            namedNoteTop: adapterTop + canvas.fontSize + 4
+            namedNoteTop: adapterTop + canvas.fontSize + 4,
+            mappedTop: adapterTop + 29,
+            explicitTop: adapterTop + 47
         };
 
         canvas._derivedGeometrySignature = 'stale';
@@ -221,7 +235,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             { showNames: true, showNotes: true });
         const boundsPreparedGeometry = canvas.getPersonLabelGeometry(crossed,
             { showNames: true, showNotes: true });
-        const directBoundsPrepared = ['left', 'right'].includes(
+        const directBoundsPrepared = ['above', 'left', 'right'].includes(
             boundsPreparedGeometry.placement.side)
             && directBounds.minX <= boundsPreparedGeometry.bounds.left
             && directBounds.maxX >= boundsPreparedGeometry.bounds.right;
@@ -232,7 +246,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             gender: 'male', name: 'L' });
         const rightBlocker = new Person({ id: 'right-blocker', x: 640, y: 580,
             gender: 'female', name: 'R' });
-        app.persons = [lineA, lineB, warningPerson, leftBlocker, rightBlocker];
+        const aboveBlocker = new Person({ id: 'above-blocker', x: 560, y: 440,
+            gender: 'female', name: '' });
+        app.persons = [lineA, lineB, warningPerson, leftBlocker, rightBlocker, aboveBlocker];
         app.relationships = [straight];
         app._syncPersonMap();
         if (hasDerivedPreparation) {
@@ -471,11 +487,13 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             gender: 'female', name: '', notes: '左側固定長文字阻擋候選位置' });
         const rightBlock = new Person({ id: 'b-warn-right', x: 725, y: 485,
             gender: 'female', name: '', notes: '右側固定長文字阻擋候選位置' });
+        const aboveBlock = new Person({ id: 'c-warn-above', x: 560, y: 425,
+            gender: 'female', name: '' });
         const target = new Person({ id: 'z-warn-target', x: 560, y: 485,
             gender: 'male', name: '', notes: '這個範例刻意沒有完全安全的左右位置' });
         const forced = new Relationship({ id: 'warn-straight', fromPersonId: routeA.id,
             toPersonId: routeB.id, type: 'married', routeMode: 'straight' });
-        app.persons = [routeA, routeB, leftBlock, rightBlock, target];
+        app.persons = [routeA, routeB, leftBlock, rightBlock, aboveBlock, target];
         app.relationships = [forced];
         app.households = [];
         app.lifeCircles = [];
@@ -546,6 +564,10 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             },
             appIdComparisons,
             adapterLayouts,
+            aboveGeometry,
+            belowGeometry,
+            aboveLayout,
+            abovePerson: { y: abovePerson.y, half: canvas.personSize / 2 },
             underRoute,
             autoSafeRoute,
             underTextHits,
@@ -648,10 +670,30 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         result.adapterLayouts.notesOnly.nameY === result.adapterLayouts.expected.adapterTop
             && result.adapterLayouts.notesOnly.noteStartY === result.adapterLayouts.expected.adapterTop,
         JSON.stringify(result.adapterLayouts.notesOnly));
-    check('compatibility adapter coordinates ignore mapped and explicit placement offsets',
-        result.adapterLayouts.explicitPlacement.nameY === result.adapterLayouts.expected.adapterTop
-            && result.adapterLayouts.explicitPlacement.noteStartY === result.adapterLayouts.expected.namedNoteTop,
+    check('above label geometry keeps the full block above the symbol',
+        result.aboveGeometry.bounds.bottom < result.abovePerson.y - result.abovePerson.half
+            && result.belowGeometry.bounds.top > result.abovePerson.y + result.abovePerson.half,
+        JSON.stringify({ above: result.aboveGeometry, below: result.belowGeometry }));
+    check('above label geometry preserves name-to-notes row order and shared X',
+        result.aboveGeometry.rows.map(row => row.kind).join(',') === 'name,note,note'
+            && result.aboveGeometry.rows.every(row => row.x === result.aboveGeometry.rows[0].x),
+        JSON.stringify(result.aboveGeometry.rows));
+    check('text layout uses mapped placement row coordinates',
+        result.adapterLayouts.mappedPlacement.nameY === result.adapterLayouts.expected.mappedTop
+            && result.adapterLayouts.mappedPlacement.noteStartY
+                === result.adapterLayouts.expected.mappedTop + result.adapterLayouts.expected.namedNoteTop
+                    - result.adapterLayouts.expected.adapterTop,
+        JSON.stringify(result.adapterLayouts.mappedPlacement));
+    check('text layout uses explicit placement row coordinates',
+        result.adapterLayouts.explicitPlacement.nameY === result.adapterLayouts.expected.explicitTop
+            && result.adapterLayouts.explicitPlacement.noteStartY
+                === result.adapterLayouts.expected.explicitTop + result.adapterLayouts.expected.namedNoteTop
+                    - result.adapterLayouts.expected.adapterTop,
         JSON.stringify(result.adapterLayouts.explicitPlacement));
+    check('text layout uses above geometry row coordinates',
+        result.aboveLayout.nameY === result.aboveGeometry.rows[0].y
+            && result.aboveLayout.noteStartY === result.aboveGeometry.rows[1].y,
+        JSON.stringify({ layout: result.aboveLayout, rows: result.aboveGeometry.rows }));
     check('content bounds include label minX',
         result.bounds.minX <= result.longLabel.bounds.left,
         `minX=${result.bounds.minX} labelLeft=${result.longLabel.bounds.left}`);
@@ -690,7 +732,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 === JSON.stringify(result.forcedStraight.straightPathBefore),
         JSON.stringify(result.forcedStraight.straightPath));
     check('colliding notes move as one block',
-        ['left', 'right'].includes(result.forcedStraight.moved.placement.side)
+        ['above', 'left', 'right'].includes(result.forcedStraight.moved.placement.side)
             && result.forcedStraight.moved.rows.length === 2
             && result.forcedStraight.moved.rows.every(row =>
                 row.x === result.forcedStraight.moved.rows[0].x),
@@ -711,7 +753,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         result.forcedStraight.stateBefore === result.forcedStraight.stateAfter,
         `${result.forcedStraight.stateBefore} !== ${result.forcedStraight.stateAfter}`);
     check('screen render prepares forced-straight label placement',
-        ['left', 'right'].includes(result.forcedStraight.renderPreparedPlacement.side),
+        ['above', 'left', 'right'].includes(result.forcedStraight.renderPreparedPlacement.side),
         JSON.stringify(result.forcedStraight.renderPreparedPlacement));
     check('direct content bounds prepares and includes moved label geometry',
         result.forcedStraight.directBoundsPrepared,
