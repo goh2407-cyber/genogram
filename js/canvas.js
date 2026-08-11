@@ -3958,8 +3958,12 @@ class GenogramCanvas {
         this.labelRoutingWarnings = (this.labelRoutingWarnings || [])
             .filter(warning => warning.reason !== 'label-route-overlap');
         if (typeof FamilyRoutePlanner === 'undefined') return;
+        const view = this.normalizeViewOptions(this.viewOptions);
+        if (!view.showNames && !view.showNotes) return;
 
         const routes = allRelationships
+            .filter(relationship => view.showEmotionalRelationships
+                || !Relationship.isEmotionalDisplayType(relationship.type))
             .slice()
             .sort((a, b) => String(a.id).localeCompare(String(b.id)))
             .map(relationship => {
@@ -3975,7 +3979,7 @@ class GenogramCanvas {
 
         allPersons.forEach(person => {
             const label = this.getPersonLabelGeometry(person,
-                { showNames: true, showNotes: true });
+                view);
             if (!label.bounds) return;
             routes.forEach(route => {
                 if (!this._pathHitsRect(route.points, label.bounds)) return;

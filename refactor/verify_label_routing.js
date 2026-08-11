@@ -492,6 +492,12 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             gender: 'male', name: '', notes: '這個範例刻意沒有完全安全的左右位置' });
         const forced = new Relationship({ id: 'warn-straight', fromPersonId: routeA.id,
             toPersonId: routeB.id, type: 'married', routeMode: 'straight' });
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: true,
+            showNotes: true,
+            showEmotionalRelationships: true
+        };
         app.persons = [routeA, routeB, leftBlock, rightBlock, aboveBlock, target];
         app.relationships = [forced];
         app.households = [];
@@ -528,6 +534,42 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 routeA, routeB, forced, app.relationships).points),
             placementCacheEmpty: canvas.personLabelPlacements.size === 0
         };
+
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: false,
+            showNotes: false,
+            showEmotionalRelationships: false
+        };
+        app.render();
+        const hiddenTextWarningResult = {
+            targetWarnings: app.canvas.labelRoutingWarnings.filter(item =>
+                item.personId === target.id && item.reason === 'label-route-overlap'),
+            hidden: warning?.hidden === true
+        };
+
+        target.labelPlacement = null;
+        forced.type = 'conflict';
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: true,
+            showNotes: true,
+            showEmotionalRelationships: false
+        };
+        app.render();
+        const hiddenEmotionWarningResult = {
+            targetWarnings: app.canvas.labelRoutingWarnings.filter(item =>
+                item.personId === target.id && item.reason === 'label-route-overlap'),
+            hidden: warning?.hidden === true
+        };
+        forced.type = 'married';
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: true,
+            showNotes: true,
+            showEmotionalRelationships: true
+        };
+        app.render();
 
         const originalLabelWarnings = canvas.labelRoutingWarnings;
         const originalMarriageWarnings = canvas.marriageRoutingWarnings;
@@ -630,6 +672,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             warning: warningResult,
             warningRouteBefore,
             manualWarning: manualWarningResult,
+            hiddenTextWarning: hiddenTextWarningResult,
+            hiddenEmotionWarning: hiddenEmotionWarningResult,
             warningExportDataUrl,
             hiddenWarningExportDataUrl,
             mixedWarning: mixedWarningResult,
@@ -893,6 +937,14 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.manualWarning.route === result.warningRouteBefore
             && result.manualWarning.placementCacheEmpty,
         JSON.stringify(result.manualWarning));
+    check('hidden names and notes clear label warnings and hide the warning banner',
+        result.hiddenTextWarning.targetWarnings.length === 0
+            && result.hiddenTextWarning.hidden,
+        JSON.stringify(result.hiddenTextWarning));
+    check('hidden emotional relationships do not create label warnings',
+        result.hiddenEmotionWarning.targetWarnings.length === 0
+            && result.hiddenEmotionWarning.hidden,
+        JSON.stringify(result.hiddenEmotionWarning));
     check('warning is absent from exported canvas data',
         result.warningExportDataUrl.startsWith('data:image/png;base64,'),
         result.warningExportDataUrl.slice(0, 30));
