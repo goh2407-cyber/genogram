@@ -212,6 +212,7 @@ class GenogramApp {
         // 狀態
         this.currentTool = 'select'; // select, addMale, addFemale, connect, boxSelect, household
         this.selectedPersonId = null;
+        this.labelEditingPersonId = null; // 純 UI 暫態：直接點姓名／備註時隱藏人物快速功能圈
         this.selectedRelationshipId = null;
         this.editingRelationshipId = null; // 正在編輯的關係線 ID (用於修改關係類型)
         this.selectedHouseholdId = null; // 選中的圈選框 ID
@@ -802,6 +803,7 @@ class GenogramApp {
         // Placement is an ephemeral transaction. Any explicit tool change aborts it
         // without touching history. commitPlacement clears it before selecting a tool.
         this.cancelPlacement();
+        this.labelEditingPersonId = null;
         // [UX Fix] 如果正在預覽自動排列，切換工具時自動取消預覽
         if (this.isPreviewingLayout) {
             this.cancelPreviewedLayout();
@@ -856,6 +858,7 @@ class GenogramApp {
      */
     clearAllSelections() {
         this.selectedPersonId = null;
+        this.labelEditingPersonId = null;
         this.selectedPersonIds = [];
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
@@ -1024,7 +1027,8 @@ class GenogramApp {
         }
 
         // [NEW] 快速按鈕點擊偵測（角色選取後才顯示鈕，故用 selectedPersonId）
-        if (this.selectedPersonId && this.currentTool === 'select') {
+        if (this.selectedPersonId && this.currentTool === 'select'
+            && this.labelEditingPersonId !== this.selectedPersonId) {
             const selPerson = this.personMap.get(this.selectedPersonId);
             if (selPerson) {
                 const buttonType = this.canvas.getQuickButtonAt(point.x, point.y, selPerson);
@@ -1143,6 +1147,16 @@ class GenogramApp {
                 }
             }
 
+            // 姓名／備註是獨立的文字編輯命中區。點文字只選人物與開啟文字控制，
+            // 不啟動人物拖曳，也不顯示人物周圍的快速新增功能圈。
+            const clickedLabelPerson = this.getPersonLabelAt(point.x, point.y);
+            if (clickedLabelPerson) {
+                this.selectedPersonIds = [];
+                this.selectPerson(clickedLabelPerson.id, { labelEditing: true });
+                this.updateStatus('已選取人物文字，可在右側調整文字位置', 'info');
+                return;
+            }
+
             // 優先檢查滑鼠下的「家庭」（這現在包含了家庭成員）
             // 如果點擊了某人，我們需要判斷意圖：
             // A. 如果該人在家庭內 -> 拖曳家庭 (User Request: "就算拉到人員或關係線也應該整體一起移動")
@@ -1257,6 +1271,7 @@ class GenogramApp {
             if (clickedLifeCircle && !e.shiftKey) {
                 this.selectedLifeCircleId = clickedLifeCircle.id;
                 this.selectedPersonId = null;
+                this.labelEditingPersonId = null;
                 this.selectedPersonIds = [];
                 this.selectedRelationshipId = null;
                 this.selectedHouseholdId = null;
@@ -1282,6 +1297,7 @@ class GenogramApp {
                 } else {
                     this.selectedHouseholdId = clickedHousehold.id;
                     this.selectedPersonId = null;
+                    this.labelEditingPersonId = null;
                     this.selectedPersonIds = [];
                     this.selectedRelationshipId = null;
                     this.selectedLifeCircleId = null;
@@ -1318,6 +1334,7 @@ class GenogramApp {
                 } else {
                     // 普通點擊空白處 -> 拖曳畫布 (Pan)
                     this.selectedPersonId = null;
+                    this.labelEditingPersonId = null;
                     this.selectedPersonIds = [];
                     this.selectedRelationshipId = null;
                     this.selectedHouseholdId = null;
@@ -1477,6 +1494,8 @@ class GenogramApp {
         // 我們把原來的邏輯改寫一下以支援 household
         if (this.currentTool === 'select' || this.currentTool === 'household') {
             const person = this.getPersonAt(point.x, point.y);
+            const labelPerson = this.currentTool === 'select'
+                ? this.getPersonLabelAt(point.x, point.y) : null;
             const rel = this.getRelationshipAt(point.x, point.y);
             const household = this.getHouseholdAt(point.x, point.y);
 
@@ -1488,7 +1507,9 @@ class GenogramApp {
                 }
             } else {
                 // Select tool logic
-                if (person) {
+                if (labelPerson) {
+                    this.canvas.canvas.style.cursor = 'pointer';
+                } else if (person) {
                     this.canvas.canvas.style.cursor = 'move';
                 } else if (rel) {
                     this.canvas.canvas.style.cursor = 'pointer';
@@ -2021,6 +2042,24 @@ class GenogramApp {
             if (this.persons[i].containsPoint(x, y)) {
                 return this.persons[i];
             }
+        }
+        return null;
+    }
+
+    /**
+     * 取得指定座標下可見的姓名／備註擁有者。
+     * 年齡位於人物符號內，維持人物本身的命中與快速功能圈語意。
+     */
+    getPersonLabelAt(x, y) {
+        const view = this.canvas.normalizeViewOptions(this.viewOptions);
+        if (!view.showNames && !view.showNotes) return null;
+        for (let i = this.persons.length - 1; i >= 0; i--) {
+            const person = this.persons[i];
+            const geometry = this.canvas.getPersonLabelGeometry(person, view);
+            const hit = geometry.rows.some(row => x >= row.bounds.left - 3
+                && x <= row.bounds.right + 3 && y >= row.bounds.top - 3
+                && y <= row.bounds.bottom + 3);
+            if (hit) return person;
         }
         return null;
     }
@@ -2900,7 +2939,7 @@ class GenogramApp {
     /**
      * 選取人物
      */
-    selectPerson(id) {
+    selectPerson(id, { labelEditing = false } = {}) {
         this.commitPropertyEditSession();
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedRelationshipId = null;
@@ -2908,6 +2947,7 @@ class GenogramApp {
         this.selectedLifeCircleId = null;
         // 保留 selectedPersonIds 多選狀態（如果是 Shift+點擊）
         this.selectedPersonId = id;
+        this.labelEditingPersonId = labelEditing ? id : null;
         this.updatePropertyPanel();
         this.render();
     }
@@ -2919,6 +2959,7 @@ class GenogramApp {
         this.commitPropertyEditSession();
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedPersonId = null;
+        this.labelEditingPersonId = null;
         this.selectedPersonIds = [];
         this.selectedHouseholdId = null;
         this.selectedLifeCircleId = null;
@@ -4367,6 +4408,11 @@ class GenogramApp {
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
         this.canvas.viewOptions = this.viewOptions;
+        if (this.labelEditingPersonId !== this.selectedPersonId
+            || !this.personMap.has(this.labelEditingPersonId)) {
+            this.labelEditingPersonId = null;
+        }
+        this.canvas.suppressQuickAddButtons = Boolean(this.labelEditingPersonId);
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
         // 直接呼叫 canvas.render（測試/外部）時取不到 → 自行 fallback 重建，避免取到舊值。
         this.canvas._renderInputs = {

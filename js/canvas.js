@@ -84,6 +84,7 @@ class GenogramCanvas {
         this.personSize = 50;
         this.fontSize = 14;
         this.fontFamily = 'Noto Sans TC, sans-serif';
+        this.suppressQuickAddButtons = false;
 
         // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
         this._familyRoutePlans = [];
@@ -395,7 +396,8 @@ class GenogramCanvas {
         }
 
         // 8. 繪製快速新增按鈕（拖曳或格位預覽中隱藏，避免遮住人物與預覽線）
-        if (selectedId && !this.isDragging && !this.placementPreview) {
+        if (selectedId && !this.suppressQuickAddButtons
+            && !this.isDragging && !this.placementPreview) {
             const selPerson = this.personMap.get(selectedId);
             if (selPerson) {
                 this.drawQuickAddButtons(selPerson);

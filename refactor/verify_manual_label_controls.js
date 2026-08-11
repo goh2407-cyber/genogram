@@ -156,6 +156,139 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('legacy Person data without text placement remains backward compatible at zero offset',
         undoRedo.legacy?.offsetX === 0 && undoRedo.legacy?.offsetY === 0,
         JSON.stringify(undoRedo.legacy));
+
+    const labelClickFixture = await page.evaluate(() => {
+        const app = window.app;
+        const target = new Person({
+            id: 'label-click-target', x: 560, y: 390, gender: 'female',
+            name: '直接點這段姓名', notes: '也可以點備註'
+        });
+        app.persons = [target];
+        app.relationships = [];
+        app.households = [];
+        app.lifeCircles = [];
+        app._syncPersonMap();
+        app.currentTool = 'select';
+        app.selectedPersonId = null;
+        app.selectedPersonIds = [];
+        app.viewOptions = { ...app.viewOptions, showNames: true, showNotes: true };
+        app.canvas.scale = 1;
+        app.canvas.offsetX = 0;
+        app.canvas.offsetY = 0;
+        window.__quickLabelDrawCount = 0;
+        const original = app.canvas.drawQuickAddButtons.bind(app.canvas);
+        app.canvas.drawQuickAddButtons = person => {
+            window.__quickLabelDrawCount++;
+            return original(person);
+        };
+        app.render();
+        const geometry = app.canvas.getPersonLabelGeometry(target, app.viewOptions);
+        const nameRow = geometry.rows.find(row => row.kind === 'name');
+        const noteRow = geometry.rows.find(row => row.kind === 'note');
+        const rect = document.querySelector('#genogramCanvas').getBoundingClientRect();
+        return {
+            labelScreen: {
+                x: rect.left + (nameRow.bounds.left + nameRow.bounds.right) / 2,
+                y: rect.top + (nameRow.bounds.top + nameRow.bounds.bottom) / 2
+            },
+            hiddenLabelScreen: {
+                x: rect.left + (noteRow.bounds.left + noteRow.bounds.right) / 2,
+                y: rect.top + (noteRow.bounds.top + noteRow.bounds.bottom) / 2
+            },
+            hiddenLabelWorld: {
+                x: (noteRow.bounds.left + noteRow.bounds.right) / 2,
+                y: (noteRow.bounds.top + noteRow.bounds.bottom) / 2
+            },
+            symbolScreen: { x: rect.left + target.x, y: rect.top + target.y },
+            blankScreen: { x: rect.right - 80, y: rect.bottom - 80 }
+        };
+    });
+    await page.mouse.click(labelClickFixture.labelScreen.x, labelClickFixture.labelScreen.y);
+    const afterLabelClick = await page.evaluate(() => ({
+        selectedPersonId: window.app.selectedPersonId,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        quickDrawCount: window.__quickLabelDrawCount,
+        controls: document.querySelectorAll('[data-label-nudge]').length
+    }));
+    check('clicking visible name text selects label editing without the quick-add ring',
+        afterLabelClick.selectedPersonId === 'label-click-target'
+            && afterLabelClick.labelEditingPersonId === 'label-click-target'
+            && afterLabelClick.quickDrawCount === 0
+            && afterLabelClick.controls === 8,
+        JSON.stringify(afterLabelClick));
+
+    await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
+    await page.locator('#labelNudgeRight').click();
+    const afterLabelNudge = await page.evaluate(() => ({
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        placement: window.app.personMap.get('label-click-target').labelPlacement,
+        quickDrawCount: window.__quickLabelDrawCount
+    }));
+    check('label nudge preserves label editing context and keeps the quick-add ring hidden',
+        afterLabelNudge.labelEditingPersonId === 'label-click-target'
+            && afterLabelNudge.placement?.offsetX === 12
+            && afterLabelNudge.placement?.offsetY === 0
+            && afterLabelNudge.quickDrawCount === 0,
+        JSON.stringify(afterLabelNudge));
+
+    await page.mouse.click(labelClickFixture.blankScreen.x, labelClickFixture.blankScreen.y);
+    const afterBlankClick = await page.evaluate(() => ({
+        selectedPersonId: window.app.selectedPersonId,
+        labelEditingPersonId: window.app.labelEditingPersonId
+    }));
+    check('clicking blank canvas exits label editing context',
+        afterBlankClick.selectedPersonId === null
+            && afterBlankClick.labelEditingPersonId === null,
+        JSON.stringify(afterBlankClick));
+
+    await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
+    await page.mouse.click(labelClickFixture.hiddenLabelScreen.x,
+        labelClickFixture.hiddenLabelScreen.y);
+    const afterNoteClick = await page.evaluate(() => ({
+        selectedPersonId: window.app.selectedPersonId,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        quickDrawCount: window.__quickLabelDrawCount
+    }));
+    check('clicking visible notes also enters label editing without the quick-add ring',
+        afterNoteClick.selectedPersonId === 'label-click-target'
+            && afterNoteClick.labelEditingPersonId === 'label-click-target'
+            && afterNoteClick.quickDrawCount === 0,
+        JSON.stringify(afterNoteClick));
+
+    await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
+    await page.mouse.click(labelClickFixture.symbolScreen.x, labelClickFixture.symbolScreen.y);
+    const afterSymbolClick = await page.evaluate(() => ({
+        selectedPersonId: window.app.selectedPersonId,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        quickDrawCount: window.__quickLabelDrawCount
+    }));
+    check('clicking the person symbol exits label editing and restores the quick-add ring',
+        afterSymbolClick.selectedPersonId === 'label-click-target'
+            && afterSymbolClick.labelEditingPersonId === null
+            && afterSymbolClick.quickDrawCount > 0,
+        JSON.stringify(afterSymbolClick));
+
+    await page.evaluate(({ x, y }) => {
+        const app = window.app;
+        app.viewOptions.showNames = false;
+        app.viewOptions.showNotes = false;
+        app.selectedPersonId = null;
+        app.labelEditingPersonId = null;
+        app.render();
+        window.__hiddenLabelHit = app.getPersonLabelAt?.(x, y) || null;
+    }, labelClickFixture.hiddenLabelWorld);
+    await page.mouse.click(labelClickFixture.hiddenLabelScreen.x,
+        labelClickFixture.hiddenLabelScreen.y);
+    const afterHiddenClick = await page.evaluate(() => ({
+        selectedPersonId: window.app.selectedPersonId,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        hiddenLabelHit: window.__hiddenLabelHit
+    }));
+    check('hidden name and notes have no label hit target and blank click clears editing',
+        afterHiddenClick.hiddenLabelHit === null
+            && afterHiddenClick.selectedPersonId === null
+            && afterHiddenClick.labelEditingPersonId === null,
+        JSON.stringify(afterHiddenClick));
     check('manual label controls cause no browser errors', errors.length === 0, errors.join('\n'));
 
     await finish(browser, passes, failures, 'Manual label controls contract passed.');
