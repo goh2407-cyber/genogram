@@ -851,6 +851,9 @@ class GenogramApp {
                 break;
         }
         this.updateStatus(statusText);
+        // 工具與文字編輯狀態會共同決定快速功能圈是否可見／可命中。
+        // 工具切換必須立即重畫，避免留下看不見但仍可點擊的舊熱區。
+        if (this.canvas) this.render();
     }
 
     /**
@@ -1528,7 +1531,8 @@ class GenogramApp {
             if (this.hoveredPersonId !== null) {
                 this.hoveredPersonId = null; // 不再以 hover 觸發快速鈕
             }
-            if (this.selectedPersonId) {
+            if (this.selectedPersonId
+                && this.labelEditingPersonId !== this.selectedPersonId) {
                 const selPerson = this.personMap.get(this.selectedPersonId);
                 if (selPerson && this.canvas.getQuickButtonAt(point.x, point.y, selPerson)) {
                     this.canvas.canvas.style.cursor = 'pointer';
@@ -4412,7 +4416,8 @@ class GenogramApp {
             || !this.personMap.has(this.labelEditingPersonId)) {
             this.labelEditingPersonId = null;
         }
-        this.canvas.suppressQuickAddButtons = Boolean(this.labelEditingPersonId);
+        this.canvas.suppressQuickAddButtons = this.currentTool !== 'select'
+            || Boolean(this.labelEditingPersonId);
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
         // 直接呼叫 canvas.render（測試/外部）時取不到 → 自行 fallback 重建，避免取到舊值。
         this.canvas._renderInputs = {

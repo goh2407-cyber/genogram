@@ -199,6 +199,10 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 x: (noteRow.bounds.left + noteRow.bounds.right) / 2,
                 y: (noteRow.bounds.top + noteRow.bounds.bottom) / 2
             },
+            quickParentScreen: {
+                x: rect.left + target.x,
+                y: rect.top + target.y + GenogramCanvas.QUICK_BUTTONS.parent.offsetY
+            },
             symbolScreen: { x: rect.left + target.x, y: rect.top + target.y },
             blankScreen: { x: rect.right - 80, y: rect.bottom - 80 }
         };
@@ -216,6 +220,13 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && afterLabelClick.quickDrawCount === 0
             && afterLabelClick.controls === 8,
         JSON.stringify(afterLabelClick));
+
+    await page.mouse.move(labelClickFixture.quickParentScreen.x,
+        labelClickFixture.quickParentScreen.y);
+    const hiddenQuickCursor = await page.locator('#genogramCanvas').evaluate(canvas =>
+        canvas.style.cursor);
+    check('hidden quick-add positions do not expose a pointer cursor during label editing',
+        hiddenQuickCursor !== 'pointer', hiddenQuickCursor);
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
     await page.locator('#labelNudgeRight').click();
@@ -254,6 +265,35 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && afterNoteClick.labelEditingPersonId === 'label-click-target'
             && afterNoteClick.quickDrawCount === 0,
         JSON.stringify(afterNoteClick));
+
+    await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
+    await page.locator('#connectTool').click();
+    const afterConnectTool = await page.evaluate(() => ({
+        tool: window.app.currentTool,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        suppressQuickAddButtons: window.app.canvas.suppressQuickAddButtons,
+        quickDrawCount: window.__quickLabelDrawCount
+    }));
+    await page.locator('#selectTool').click();
+    const afterSelectTool = await page.evaluate(() => ({
+        tool: window.app.currentTool,
+        labelEditingPersonId: window.app.labelEditingPersonId,
+        suppressQuickAddButtons: window.app.canvas.suppressQuickAddButtons,
+        quickDrawCount: window.__quickLabelDrawCount
+    }));
+    check('tool switching exits label editing and repaints the correct quick-add visibility',
+        afterConnectTool.tool === 'connect'
+            && afterConnectTool.labelEditingPersonId === null
+            && afterConnectTool.suppressQuickAddButtons === true
+            && afterConnectTool.quickDrawCount === 0
+            && afterSelectTool.tool === 'select'
+            && afterSelectTool.labelEditingPersonId === null
+            && afterSelectTool.suppressQuickAddButtons === false
+            && afterSelectTool.quickDrawCount > 0,
+        JSON.stringify({ afterConnectTool, afterSelectTool }));
+
+    await page.mouse.click(labelClickFixture.hiddenLabelScreen.x,
+        labelClickFixture.hiddenLabelScreen.y);
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
     await page.mouse.click(labelClickFixture.symbolScreen.x, labelClickFixture.symbolScreen.y);
