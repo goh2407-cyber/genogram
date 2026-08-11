@@ -1531,7 +1531,7 @@ class GenogramApp {
             if (this.hoveredPersonId !== null) {
                 this.hoveredPersonId = null; // 不再以 hover 觸發快速鈕
             }
-            if (this.selectedPersonId
+            if (this.currentTool === 'select' && this.selectedPersonId
                 && this.labelEditingPersonId !== this.selectedPersonId) {
                 const selPerson = this.personMap.get(this.selectedPersonId);
                 if (selPerson && this.canvas.getQuickButtonAt(point.x, point.y, selPerson)) {

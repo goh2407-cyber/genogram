@@ -274,6 +274,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         suppressQuickAddButtons: window.app.canvas.suppressQuickAddButtons,
         quickDrawCount: window.__quickLabelDrawCount
     }));
+    await page.locator('#householdTool').click();
+    await page.mouse.move(labelClickFixture.quickParentScreen.x,
+        labelClickFixture.quickParentScreen.y);
+    const householdQuickCursor = await page.locator('#genogramCanvas').evaluate(canvas =>
+        canvas.style.cursor);
     await page.locator('#selectTool').click();
     const afterSelectTool = await page.evaluate(() => ({
         tool: window.app.currentTool,
@@ -286,11 +291,12 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && afterConnectTool.labelEditingPersonId === null
             && afterConnectTool.suppressQuickAddButtons === true
             && afterConnectTool.quickDrawCount === 0
+            && householdQuickCursor !== 'pointer'
             && afterSelectTool.tool === 'select'
             && afterSelectTool.labelEditingPersonId === null
             && afterSelectTool.suppressQuickAddButtons === false
             && afterSelectTool.quickDrawCount > 0,
-        JSON.stringify({ afterConnectTool, afterSelectTool }));
+        JSON.stringify({ afterConnectTool, householdQuickCursor, afterSelectTool }));
 
     await page.mouse.click(labelClickFixture.hiddenLabelScreen.x,
         labelClickFixture.hiddenLabelScreen.y);
