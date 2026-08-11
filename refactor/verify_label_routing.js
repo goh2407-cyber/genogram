@@ -333,7 +333,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             type: 'married', routeMode: 'auto' });
         const originalGetPersonRouteObstacles = canvas.getPersonRouteObstacles;
         canvas.getPersonRouteObstacles = () => [{
-            ownerId: 'synthetic-wall', kind: 'text',
+            ownerId: 'synthetic-wall', kind: 'symbol',
             left: -1000, right: 2000, top: -1000, bottom: 2000
         }];
         const unresolvedWarningSnapshots = [];
@@ -411,6 +411,55 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             [clearLeft, clearRight], [clearAutoRel], { force: true });
         const clearAutoRoute = canvas.getMarriageRoute(
             clearLeft, clearRight, clearAutoRel, [clearAutoRel]);
+
+        // Text-only collision: the route misses the symbol but crosses its long label.
+        const textOnlyA = new Person({ id: 'text-only-a', x: 300, y: 700,
+            gender: 'male', name: 'A' });
+        const textOnlyB = new Person({ id: 'text-only-b', x: 820, y: 960,
+            gender: 'female', name: 'B' });
+        const textOnlyLabel = new Person({ id: 'text-only-label', x: 430, y: 740,
+            gender: 'female', name: '',
+            notes: '這是一段只會與關係線重疊的非常長文字，不會碰到人物符號' });
+        const textOnlyRel = new Relationship({ id: 'text-only-rel',
+            fromPersonId: textOnlyA.id, toPersonId: textOnlyB.id,
+            type: 'married', routeMode: 'auto' });
+        app.persons = [textOnlyA, textOnlyB, textOnlyLabel];
+        app.relationships = [textOnlyRel];
+        app._syncPersonMap();
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: true,
+            showNotes: true,
+            showEmotionalRelationships: true
+        };
+        app.render();
+        const textOnlyWarningNode = document.getElementById('routingWarning');
+        const textOnlyRouteBefore = JSON.stringify(canvas.getMarriageRoute(
+            textOnlyA, textOnlyB, textOnlyRel, app.relationships).points);
+        const textOnlyVisible = {
+            visible: !textOnlyWarningNode.hidden,
+            labelWarnings: canvas.labelRoutingWarnings.filter(warning =>
+                warning.relationshipId === textOnlyRel.id
+                    && warning.reason === 'label-route-overlap'),
+            marriageWarnings: canvas.labelRoutingWarnings.filter(warning =>
+                warning.relationshipId === textOnlyRel.id
+                    && warning.reason === 'marriage-route-collision')
+        };
+        app.viewOptions = {
+            ...app.viewOptions,
+            showNames: false,
+            showNotes: false,
+            showEmotionalRelationships: false
+        };
+        app.render();
+        const textOnlyHidden = {
+            hidden: textOnlyWarningNode.hidden,
+            warnings: canvas.labelRoutingWarnings.filter(warning =>
+                warning.relationshipId === textOnlyRel.id),
+            route: JSON.stringify(canvas.getMarriageRoute(
+                textOnlyA, textOnlyB, textOnlyRel, app.relationships).points),
+            person: { x: textOnlyLabel.x, y: textOnlyLabel.y }
+        };
 
         // Standard auto marriage: a clear same-row pair uses the side ports directly.
         const standardLeft = new Person({ id: 'standard-left', x: 180, y: 1260,
@@ -651,6 +700,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             occupiedCrossingRoute,
             occupiedDirectTextHits,
             clearAutoRoute,
+            textOnlyWarning: {
+                visible: textOnlyVisible,
+                hidden: textOnlyHidden,
+                routeBefore: textOnlyRouteBefore
+            },
             standardAuto: {
                 route: standardRoute,
                 left: standardLeft.getConnectionPoint('right'),
@@ -889,6 +943,18 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('clear direct remains the lexicographic auto winner',
         result.clearAutoRoute.candidateName === 'direct',
         JSON.stringify(result.clearAutoRoute));
+    check('text-only route collision shows a current label warning, not a persisted route warning',
+        result.textOnlyWarning.visible.visible
+            && result.textOnlyWarning.visible.labelWarnings.length === 1
+            && result.textOnlyWarning.visible.marriageWarnings.length === 0,
+        JSON.stringify(result.textOnlyWarning.visible));
+    check('hiding text clears text-only route warnings without moving the route or person',
+        result.textOnlyWarning.hidden.hidden
+            && result.textOnlyWarning.hidden.warnings.length === 0
+            && result.textOnlyWarning.hidden.route === result.textOnlyWarning.routeBefore
+            && result.textOnlyWarning.hidden.person.x === 430
+            && result.textOnlyWarning.hidden.person.y === 740,
+        JSON.stringify(result.textOnlyWarning.hidden));
     check('standard clear auto route is a two-point side-port horizontal direct line',
         result.standardAuto.route.candidateName === 'direct'
             && result.standardAuto.route.points.length === 2

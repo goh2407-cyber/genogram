@@ -1773,11 +1773,14 @@ class GenogramCanvas {
                     candidateName = geometry.name;
                     const selectedScore = this._marriageCandidateScore(
                         geometry, obstacles, occupiedSegments, from, to, familySegments);
-                    if (selectedScore[0] > 0 || selectedScore[1] > 0) {
+                    const nonTextCollisions = FamilyRoutePlanner.pathIntersectionCount(
+                        geometry.points, obstacles.filter(obstacle => obstacle.kind !== 'text'),
+                        new Set([String(from.id), String(to.id)]));
+                    if (nonTextCollisions > 0 || selectedScore[1] > 0) {
                         this.labelRoutingWarnings.push({
                             relationshipId: rel.id,
                             reason: 'marriage-route-collision',
-                            collisions: selectedScore[0] + selectedScore[1],
+                            collisions: nonTextCollisions + selectedScore[1],
                             candidateName
                         });
                     }
@@ -3975,7 +3978,7 @@ class GenogramCanvas {
                     points: this.getRelationshipPath(from, to, relationship, allRelationships)
                 };
             })
-            .filter(route => Array.isArray(route.points) && route.points.length >= 2);
+            .filter(route => route && Array.isArray(route.points) && route.points.length >= 2);
 
         allPersons.forEach(person => {
             const label = this.getPersonLabelGeometry(person,
