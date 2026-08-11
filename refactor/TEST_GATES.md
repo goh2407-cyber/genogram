@@ -111,9 +111,25 @@ node refactor/verify_modal_keyboard_history.js
 - Modal keyboard/history：文字欄位聚焦時 Ctrl/Cmd+Z 維持原生操作；一次完成
   的欄位編輯只建立一筆 App Undo。
 
+## K. 人物文字與群組外框守門
+
+```powershell
+node refactor/verify_manual_label_controls.js
+node refactor/verify_hh_lc.js
+```
+
+- 點擊可見的姓名或備註時，選取該人物並進入文字調整狀態；右側八方向與重置
+  控制維持可用，但人物周圍的快速新增功能圈必須隱藏。
+- 文字微調後維持文字調整狀態；點人物符號恢復原快速功能圈，點空白、其他人物
+  或切換工具則退出。隱藏姓名／備註時不得保留文字命中區。
+- `labelPlacement` 只改人物文字幾何；不得改人物座標、同住框 hull、生活圈點位、
+  關係線或其 JSON。畫面與 PNG 匯出必須使用同一文字位置。
+
 ## 驗收記錄
-- 測試日期：2026-08-10
+- 測試日期：2026-08-11
 - 測試版本：`codex/genogram-hardening`
 - 測試人員：Codex
 - 結果：`PASS`
-- 備註：26 支 `verify_*.js` 全數通過；Golden 16/16 皆 `diffPixels=0`，三副本 raw MD5、`geno` 零外部請求與視覺 smoke 全數通過；1920／1366／1180／1024px 實際瀏覽器檢查皆無碰撞、換行、圖例溢出或執行期錯誤。
+- 備註：29 支 `verify_*.js` 全數通過；三副本 raw MD5、`geno` 零外部請求與
+  視覺 smoke 全數通過。此次只調整文字命中與群組外框資料依賴，未更新或覆寫
+  Golden baseline。
