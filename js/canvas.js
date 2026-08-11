@@ -1384,7 +1384,15 @@ class GenogramCanvas {
     getMarriageConfiguration(p1, p2, rel, allRels) {
         // 1. 確保只處理婚姻類
         const cat = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
-        if (cat !== 'marriage') return { level: 0, bridgeY: (p1.y + p2.y) / 2, isBridge: false };
+        if (cat !== 'marriage') {
+            return {
+                level: 0,
+                bridgeY: (p1.y + p2.y) / 2,
+                isBridge: false,
+                isArch: false,
+                needsBridge: false
+            };
+        }
 
         // 2. 天橋層級 = 「同側、且比本配偶更靠近 hub 的其他配偶數」。
         //    [Phase 2A.2] 同側才需跨過 → 架天橋；對側 / 單獨配偶 = 0 = 直線側接。
@@ -1444,29 +1452,35 @@ class GenogramCanvas {
         const routeMode = rel.routeMode || 'auto';
         if (routeMode === 'straight') {
             // 一：強制直線側接（即使會穿過中間人物 — 使用者明示選擇）
-            return { level: 0, bridgeY, isBridge: false, isArch: false, archBarY: null, routeMode };
+            return { level: 0, bridgeY, isBridge: false, isArch: false,
+                needsBridge: false, archBarY: null, routeMode };
         }
         if (routeMode === 'over') {
             // ㄇ：強制上折（頂端連接天橋）。無多婚層級時抬一層；有則沿用層級高度。
             const overY = baseY - step * Math.max(level, 1);
-            return { level: Math.max(level, 1), bridgeY: overY, isBridge: true, isArch: false, archBarY: null, routeMode };
+            return { level: Math.max(level, 1), bridgeY: overY, isBridge: true,
+                isArch: false, needsBridge: false, archBarY: null, routeMode };
         }
         if (routeMode === 'under') {
             // ㄩ：強制下折（底部連接、越過被夾者）。
-            return { level, bridgeY, isBridge: false, isArch: true, archBarY: underBarY, routeMode };
+            return { level, bridgeY, isBridge: false, isArch: true,
+                needsBridge: false, archBarY: underBarY, routeMode };
         }
 
         // routeMode === 'auto'：系統自動判斷
         if (level > 0) {
             // 同側多婚 → 上折天橋
-            return { level, bridgeY, isBridge: true, isArch: false, archBarY: null, routeMode };
+            return { level, bridgeY, isBridge: true, isArch: false,
+                needsBridge: false, archBarY: null, routeMode };
         }
         if (hasObstacle) {
-            // 同列夾人 → 下折越障（預設往下：避開被夾者上方親子線、子女自然垂下）
-            return { level, bridgeY, isBridge: false, isArch: true, archBarY: underBarY, routeMode };
+            // 同列夾人 → 標準上橋。底部下繞只保留給明確的 manual under 模式。
+            return { level, bridgeY, isBridge: true, isArch: false,
+                needsBridge: true, archBarY: null, routeMode };
         }
         // 同列淨空 / 跨列 → 直線 / 正交（由 getMarriageGeometry 決定）
-        return { level, bridgeY, isBridge: false, isArch: false, archBarY: null, routeMode };
+        return { level, bridgeY, isBridge: false, isArch: false,
+            needsBridge: false, archBarY: null, routeMode };
     }
 
     /**
@@ -1610,11 +1624,100 @@ class GenogramCanvas {
         });
     }
 
-    _marriageCandidateScore(candidate, obstacles, occupiedSegments, fromPerson, toPerson) {
+    _getBridgeMarriageCandidates(fromPerson, toPerson, bridgeYs = undefined) {
+        const half = this.personSize / 2;
+        const baseY = Math.min(fromPerson.y, toPerson.y) - half - 20;
+        const candidateYs = Array.isArray(bridgeYs)
+            ? bridgeYs
+            : Number.isFinite(bridgeYs)
+                ? [bridgeYs]
+                : [baseY, baseY - 30, baseY - 60];
+        const names = ['bridge-near', 'bridge-middle', 'bridge-far'];
+        const fromTop = fromPerson.getConnectionPoint('top');
+        const toTop = toPerson.getConnectionPoint('top');
+        return candidateYs
+            .filter(y => Number.isFinite(y))
+            .slice(0, 3)
+            .map((bridgeY, index) => {
+                const points = FamilyRoutePlanner.cleanPath([
+                    fromTop,
+                    { x: fromPerson.x, y: bridgeY },
+                    { x: toPerson.x, y: bridgeY },
+                    toTop
+                ]);
+                return {
+                    name: names[index] || `bridge-${index + 1}`,
+                    points,
+                    decoration: { x: (fromPerson.x + toPerson.x) / 2, y: bridgeY },
+                    attachmentSegment: {
+                        start: { x: fromPerson.x, y: bridgeY },
+                        end: { x: toPerson.x, y: bridgeY }
+                    }
+                };
+            });
+    }
+
+    _getFamilyOccupiedSegments(persons, relationships, excludedRelationshipId = undefined) {
+        if (typeof KinshipEngine === 'undefined') return [];
+        const allPersons = Array.isArray(persons) ? persons : [];
+        const allRelationships = Array.isArray(relationships) ? relationships : [];
+        const personMap = new Map(allPersons.map(person => [person.id, person]));
+        const kinship = new KinshipEngine(allPersons, allRelationships);
+        const excluded = excludedRelationshipId === undefined || excludedRelationshipId === null
+            ? null : String(excludedRelationshipId);
+        const byChild = new Map();
+        const segments = [];
+        allRelationships
+            .slice()
+            .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+            .forEach(rel => {
+                if (excluded !== null && String(rel.id) === excluded) return;
+                const normalized = kinship.normalizeParentChild(rel);
+                if (!normalized) return;
+                const parent = personMap.get(normalized.parentId);
+                const child = personMap.get(normalized.childId);
+                if (!parent || !child) return;
+                const start = parent.getConnectionPoint('bottom');
+                const end = child.getConnectionPoint('top');
+                if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return;
+                segments.push({
+                    relationshipId: String(rel.id),
+                    kind: 'family',
+                    start: { ...start },
+                    end: { ...end }
+                });
+                if (!byChild.has(normalized.childId)) byChild.set(normalized.childId, []);
+                byChild.get(normalized.childId).push(parent);
+            });
+        Array.from(byChild.entries())
+            .sort(([a], [b]) => String(a).localeCompare(String(b)))
+            .forEach(([childId, parents]) => {
+                const child = personMap.get(childId);
+                const uniqueParents = Array.from(new Map(parents.map(parent => [parent.id, parent])).values())
+                    .sort((a, b) => a.x - b.x || String(a.id).localeCompare(String(b.id)));
+                if (!child || uniqueParents.length < 2) return;
+                const parentBottom = Math.max(...uniqueParents.map(parent =>
+                    parent.getConnectionPoint('bottom').y));
+                const childTop = child.getConnectionPoint('top').y;
+                const barY = (parentBottom + childTop) / 2;
+                if (!Number.isFinite(barY)) return;
+                segments.push({
+                    relationshipId: `family-bar:${String(childId)}`,
+                    kind: 'family',
+                    start: { x: uniqueParents[0].x, y: barY },
+                    end: { x: uniqueParents.at(-1).x, y: barY }
+                });
+            });
+        return segments;
+    }
+
+    _marriageCandidateScore(candidate, obstacles, occupiedSegments, fromPerson, toPerson,
+        familySegments = []) {
         return [
             FamilyRoutePlanner.pathIntersectionCount(candidate.points, obstacles,
                 new Set([String(fromPerson.id), String(toPerson.id)])),
-            FamilyRoutePlanner.polylineCrossingCount(candidate.points, occupiedSegments),
+            FamilyRoutePlanner.polylineCrossingCount(candidate.points, occupiedSegments)
+                + FamilyRoutePlanner.polylineCrossingCount(candidate.points, familySegments),
             FamilyRoutePlanner.pathBendCount(candidate.points),
             FamilyRoutePlanner.pathLength(candidate.points),
             candidate.name
@@ -1636,55 +1739,43 @@ class GenogramCanvas {
                 let candidateName = 'direct';
                 const routeMode = rel.routeMode || 'auto';
                 let candidates = null;
-                if (routeMode === 'auto' || config.isArch) {
-                    const directConfig = {
-                        ...config, isArch: false, isBridge: false, archBarY: null
-                    };
-                    const directGeometry = this.getMarriageGeometry(
-                        from, to, directConfig);
-                    const endpointIds = new Set([String(from.id), String(to.id)]);
-                    const directCollisionRects = obstacles.filter(rect =>
-                        rect.kind === 'text'
-                        && (endpointIds.has(String(rect.ownerId))
-                            || this._pathHitsRect(directGeometry.points, rect)));
-                    const fallbackBottom = Math.max(from.y, to.y) + this.personSize / 2;
-                    const underBarY = Number.isFinite(config.archBarY)
-                        ? config.archBarY
-                        : Math.max(fallbackBottom,
-                            ...directCollisionRects.map(rect => rect.bottom)) + 14;
+                if (routeMode === 'straight') {
+                    geometry = this.getMarriageGeometry(from, to, config);
+                } else if (routeMode === 'under') {
                     candidates = this._underMarriageCandidates(from, to,
-                        underBarY, obstacles);
-                    if (routeMode === 'auto' && !config.isArch) {
-                        candidates.push({ name: 'direct', ...directGeometry });
-                        const topY = Math.min(from.y, to.y) - this.personSize / 2
-                            - 20 - 30 * Math.max(config.level || 0, 1);
-                        const overConfig = {
-                            ...config, isArch: false, isBridge: true,
-                            bridgeY: topY, archBarY: null
-                        };
-                        const overGeometry = this.getMarriageGeometry(from, to, overConfig);
-                        candidates.push({ name: 'auto-over', ...overGeometry });
-                    }
+                        config.archBarY, obstacles);
+                } else if (routeMode === 'over') {
+                    // Explicit over keeps its existing configured bridge height exactly.
+                    geometry = this.getMarriageGeometry(from, to, config);
+                } else if (config.needsBridge) {
+                    candidates = this._getBridgeMarriageCandidates(from, to);
+                } else if (config.isBridge) {
+                    // Existing same-side multi-partner bridge keeps its established height.
+                    geometry = this.getMarriageGeometry(from, to, config);
+                } else {
+                    candidates = [{ name: 'direct', ...this.getMarriageGeometry(from, to, config) }];
                 }
                 if (candidates) {
+                    const familySegments = this._getFamilyOccupiedSegments(persons,
+                        relationships, rel.id);
                     candidates.sort((a, b) => compareRouteScoreTuples(
                         this._marriageCandidateScore(
-                            a, obstacles, occupiedSegments, from, to),
+                            a, obstacles, occupiedSegments, from, to, familySegments),
                         this._marriageCandidateScore(
-                            b, obstacles, occupiedSegments, from, to)));
+                            b, obstacles, occupiedSegments, from, to, familySegments)));
                     geometry = candidates[0];
                     candidateName = geometry.name;
                     const selectedScore = this._marriageCandidateScore(
-                        geometry, obstacles, occupiedSegments, from, to);
-                    if (selectedScore[0] > 0) {
+                        geometry, obstacles, occupiedSegments, from, to, familySegments);
+                    if (selectedScore[0] > 0 || selectedScore[1] > 0) {
                         this.labelRoutingWarnings.push({
                             relationshipId: rel.id,
                             reason: 'marriage-route-collision',
-                            collisions: selectedScore[0],
+                            collisions: selectedScore[0] + selectedScore[1],
                             candidateName
                         });
                     }
-                } else {
+                } else if (!geometry) {
                     geometry = this.getMarriageGeometry(from, to, config);
                 }
                 const route = {
@@ -3857,8 +3948,7 @@ class GenogramCanvas {
             this.getPersonLabelGeometry(person,
                 { showNames: true, showNotes: true }, { side: 'below' }).bounds]));
         const previewRoutes = relationships
-            .filter(rel => Relationship.getCategory(rel.type) === 'marriage'
-                && ['straight', 'under'].includes(rel.routeMode || 'auto'))
+            .filter(rel => Relationship.getCategory(rel.type) === 'marriage')
             .map(rel => {
                 const from = this.personMap.get(rel.fromPersonId);
                 const to = this.personMap.get(rel.toPersonId);

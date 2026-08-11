@@ -1,7 +1,7 @@
 /**
  * [Phase 2A.0/2A.1/2A.2] 婚姻線幾何回歸：主線 / 高亮 / hit-test 共用 getMarriageGeometry。
  * 涵蓋：① 跨列正交三折　② 同列直線　③ 同側多婚天橋（2A.2：只同側才架）
- *       ④ 同列走廊夾人 → ㄩ 下折越障（2A.1：底部中心連接、barY 在下方）
+ *       ④ 同列走廊夾人 → 有限上橋避讓（自動模式不可下繞）
  * 用法：NODE_PATH=$HOME/.cache/pw-smoke/node_modules node refactor/verify_marriage_geom.js
  */
 const { chromium } = require('playwright');
@@ -38,17 +38,26 @@ const path = require('path');
         const relC1 = new Relationship({ id: 'rC1', fromPersonId: 'cW1', toPersonId: 'cM', type: 'married', date: '2010-01-01' });
         const relC2 = new Relationship({ id: 'rC2', fromPersonId: 'cW2', toPersonId: 'cM', type: 'divorced', date: '2000-01-01' });
 
-        // D：同列婚姻、中間夾 1 人。舊行為是 ㄩ 下折；新契約要求自動上橋。
+        // D：同列婚姻、中間夾人。自動模式只能選擇有限的上橋候選。
         const dH = new Person({ id: 'dH', x: 300, y: 480, gender: 'male', name: '', age: 62,
             notes: '雙相情緒障礙症\n（精神中度障礙）' });
         const dMid = new Person({ id: 'dMid', x: 500, y: 480, gender: 'female', name: '',
             notes: '中間人物文字也必須避開\n第二行備註' });
         const dW = new Person({ id: 'dW', x: 700, y: 480, gender: 'female', name: '妻3' });
         const relD = new Relationship({ id: 'rD', fromPersonId: 'dH', toPersonId: 'dW', type: 'married' });
+        // 上代親子主幹會穿過橋候選；無安全候選時必須留下 editor warning。
+        const familyParent = new Person({ id: 'family-parent', x: 200, y: 325,
+            gender: 'male', name: '' });
+        const familyChild = new Person({ id: 'family-child', x: 800, y: 545,
+            gender: 'female', name: '' });
+        const familyRel = new Relationship({ id: 'family-trunk',
+            fromPersonId: familyParent.id, toPersonId: familyChild.id,
+            type: 'parent-child' });
 
-        app.persons = [a1, a2, b1, b2, cM, cW1, cW2, dH, dMid, dW];
+        app.persons = [a1, a2, b1, b2, cM, cW1, cW2, dH, dMid, dW,
+            familyParent, familyChild];
         app._syncPersonMap();
-        app.relationships = [relA, relB, relC1, relC2, relD];
+        app.relationships = [relA, relB, relC1, relC2, relD, familyRel];
         app.render();
         const allRels = app.relationships;
 
@@ -70,25 +79,35 @@ const path = require('path');
         const bridgeMidX = (geomC2.points[1].x + geomC2.points[2].x) / 2;
         const hitBridge = c.isPointOnRelationship(bridgeMidX, bridgeBarY, cW2, cM, relC2, 10, allRels);
 
-        // D：arch
+        // D：auto bridge
         const cfgD = c.getMarriageConfiguration(dH, dW, relD, allRels);
         const geomD = c.getMarriageRoute(dH, dW, relD, allRels);
         const pathD = c.getRelationshipPath(dH, dW, relD, allRels);
         const textObstacles = c.getPersonRouteObstacles(app.persons)
             .filter(rect => rect.kind === 'text');
-        const rawCandidate = c._underMarriageCandidates(
-            dH, dW, cfgD.archBarY, c.getPersonRouteObstacles(app.persons))
-            .find(candidate => candidate.name === geomD.candidateName);
+        const bridgeCandidates = c._getBridgeMarriageCandidates(dH, dW);
+        const familySegments = c._getFamilyOccupiedSegments(app.persons, allRels, relD.id);
+        const naiveBridge = bridgeCandidates.find(candidate => candidate.name === 'bridge-near');
+        const selectedScore = c._marriageCandidateScore(
+            { name: geomD.candidateName, points: geomD.points },
+            c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments);
+        const naiveScore = c._marriageCandidateScore(
+            naiveBridge, c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments);
+        const bridgeCandidateScores = bridgeCandidates.map(candidate => ({
+            name: candidate.name,
+            score: c._marriageCandidateScore(candidate,
+                c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments),
+            familyCrossings: FamilyRoutePlanner.polylineCrossingCount(
+                candidate.points, familySegments)
+        }));
         const attachment = geomD.attachmentSegment;
-        const archBarY = attachment.start.y;
-        const archMidX = (attachment.start.x + attachment.end.x) / 2;
-        const hitArchBar = c.isPointOnRelationship(archMidX, archBarY, dH, dW, relD, 10, allRels);
+        const dBridgeBarY = attachment.start.y;
+        const dBridgeMidX = (attachment.start.x + attachment.end.x) / 2;
+        const hitBridgeD = c.isPointOnRelationship(dBridgeMidX, dBridgeBarY, dH, dW, relD, 10, allRels);
         const onMidNode = c.isPointOnRelationship(500, 480, dH, dW, relD, 10, allRels); // 夾者中心不該命中
-        const labelBottoms = [dH, dMid, dW].map(person =>
-            c.getPersonLabelGeometry(person, { showNames: true, showNotes: true }).bounds.bottom);
         const textHits = FamilyRoutePlanner.pathIntersectionCount(geomD.points, textObstacles);
-        const dHBottom = dH.getConnectionPoint('bottom');
-        const dWBottom = dW.getConnectionPoint('bottom');
+        const dHTop = dH.getConnectionPoint('top');
+        const dWTop = dW.getConnectionPoint('top');
 
         // 確定性
         const snapshots = [];
@@ -102,14 +121,24 @@ const path = require('path');
             cfgC2_isBridge: cfgC2.isBridge, cfgC1_isBridge: cfgC1.isBridge,
             cfgD_isArch: cfgD.isArch,
             cfgD_isBridge: cfgD.isBridge,
-            hitStraightMid, hitBridge, hitArchBar, onMidNode,
+            hitStraightMid, hitBridge, hitBridgeD, onMidNode,
             bridgeFromX: geomC2.points[0].x, bridgeToX: geomC2.points[3].x, cW2x: cW2.x, cMx: cM.x,
-            rawPointCount: rawCandidate?.rawPoints?.length || 0,
             textHits,
-            maxLabelBottom: Math.max(...labelBottoms),
             attachment,
-            dHBottom,
-            dWBottom,
+            dHTop,
+            dWTop,
+            bridgeCandidates,
+            familySegments,
+            naiveScore,
+            selectedScore,
+            bridgeCandidateScores,
+            selectedFamilyCrossings: FamilyRoutePlanner.polylineCrossingCount(
+                geomD.points, familySegments),
+            naiveFamilyCrossings: FamilyRoutePlanner.polylineCrossingCount(
+                naiveBridge.points, familySegments),
+            familyWarnings: c.labelRoutingWarnings.filter(warning =>
+                warning.relationshipId === relD.id
+                && warning.reason === 'marriage-route-collision'),
             detEqual: new Set(snapshots).size === 1,
         };
     });
@@ -132,31 +161,46 @@ const path = require('path');
     check('C 天橋垂直腿 X = 節點中心', r.bridgeFromX === r.cW2x && r.bridgeToX === r.cMx, `from=${r.bridgeFromX}(want ${r.cW2x}) to=${r.bridgeToX}(want ${r.cMx})`);
     check('C 天橋橫段中點可命中', r.hitBridge === true, `hit=${r.hitBridge}`);
 
-    check('D [2A.1] 夾人 → isArch=true', r.cfgD_isArch === true, `isArch=${r.cfgD_isArch}`);
-    check('D under candidate has at least eight raw points before cleanPath',
-        r.rawPointCount >= 8, `rawPoints=${r.rawPointCount}`);
-    check('D cleaned under route keeps at least six points',
-        r.geomD.points.length >= 6, `points=${r.geomD.points.length}`);
-    check('D route retains cardinal bottom endpoints',
-        eq(r.geomD.points[0], r.dHBottom)
-            && eq(r.geomD.points.at(-1), r.dWBottom),
+    check('D 夾人 auto 設為 needsBridge 而非 isArch',
+        r.cfgD_isBridge === true && r.cfgD_isArch === false,
+        JSON.stringify({ isBridge: r.cfgD_isBridge, isArch: r.cfgD_isArch }));
+    check('D auto bridge is a clean four-point top path',
+        r.geomD.points.length === 4
+            && eq(r.geomD.points[0], r.dHTop)
+            && eq(r.geomD.points.at(-1), r.dWTop),
         JSON.stringify(r.geomD.points));
-    check('D attachment bar is horizontal and below every label',
+    check('D attachment bar is horizontal and above both endpoints',
         r.attachment.start.y === r.attachment.end.y
-            && r.attachment.start.y > r.maxLabelBottom,
-        JSON.stringify({ attachment: r.attachment, maxLabelBottom: r.maxLabelBottom }));
-    check('D under route has zero text intersections', r.textHits === 0,
+            && r.attachment.start.y < r.dHTop.y
+            && r.attachment.start.y < r.dWTop.y,
+        JSON.stringify({ attachment: r.attachment, dHTop: r.dHTop, dWTop: r.dWTop }));
+    check('D bridge route has zero text intersections', r.textHits === 0,
         `hits=${r.textHits}`);
     check('D hit-test == 主線幾何', eq(r.pathD, r.geomD.points), '');
-    check('D arch 橫桿可命中', r.hitArchBar === true, `hit=${r.hitArchBar}`);
+    check('D bridge 橫桿可命中', r.hitBridgeD === true, `hit=${r.hitBridgeD}`);
     check('D 夾者中心不再命中婚姻線（線已離開符號）', r.onMidNode === false, `onMid=${r.onMidNode}`);
     check('D 標準 auto 夾人路由使用上橋而非底部 under',
         r.cfgD_isBridge === true
             && !['under', 'inner', 'outer-left', 'outer-right'].includes(r.geomD.candidateName)
-            && !eq(r.geomD.points[0], r.dHBottom)
-            && !eq(r.geomD.points.at(-1), r.dWBottom),
+            && eq(r.geomD.points[0], r.dHTop)
+            && eq(r.geomD.points.at(-1), r.dWTop),
         JSON.stringify({ config: { isArch: r.cfgD_isArch, isBridge: r.cfgD_isBridge },
             candidateName: r.geomD.candidateName, points: r.geomD.points }));
+    check('D family occupancy exposes finite parent-child trunk segments',
+        r.familySegments.length >= 1
+            && r.familySegments.every(segment => segment.kind === 'family'
+                && [segment.start.x, segment.start.y, segment.end.x, segment.end.y]
+                    .every(Number.isFinite)),
+        JSON.stringify(r.familySegments));
+    check('D family crossing is scored separately and never remains unmarked',
+        r.naiveFamilyCrossings > 0 && r.selectedFamilyCrossings > 0
+            && r.selectedScore[1] > 0 && r.familyWarnings.length === 1
+            && r.familyWarnings[0].collisions >= r.selectedScore[1],
+        JSON.stringify({ naive: r.naiveScore, selected: r.selectedScore,
+            naiveFamilyCrossings: r.naiveFamilyCrossings,
+            selectedFamilyCrossings: r.selectedFamilyCrossings,
+            warnings: r.familyWarnings,
+            candidates: r.bridgeCandidateScores }));
 
     check('確定性：canonical route 強制重算 3 次相同', r.detEqual === true, `detEqual=${r.detEqual}`);
 

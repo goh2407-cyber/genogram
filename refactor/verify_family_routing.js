@@ -224,6 +224,8 @@ function isCleanOrthogonalPath(path) {
                     config: bridgeConfig,
                     route: bridgeMarriageRoute,
                     source: bridgeSource,
+                    dadTop: bridgeDad.getConnectionPoint('top'),
+                    momTop: bridgeMom.getConnectionPoint('top'),
                     sourceOnCanonicalAttachment: Boolean(bridgeSource)
                         && bridgeAttachment.start.y === bridgeAttachment.end.y
                         && bridgeSource.y === bridgeAttachment.start.y
@@ -258,8 +260,15 @@ function isCleanOrthogonalPath(path) {
                 attachment: data.marriageRoute.attachmentSegment }));
         check('bridge-family source uses the canonical bridge attachment, not legacy arch state',
             data.bridge.config.isArch !== true
+                && data.bridge.config.needsBridge === true
+                && ['bridge-near', 'bridge-middle', 'bridge-far']
+                    .includes(data.bridge.route.candidateName)
                 && !['under', 'inner', 'outer-left', 'outer-right']
                     .includes(data.bridge.route.candidateName)
+                && data.bridge.route.points[0].x === data.bridge.dadTop.x
+                && data.bridge.route.points[0].y === data.bridge.dadTop.y
+                && data.bridge.route.points.at(-1).x === data.bridge.momTop.x
+                && data.bridge.route.points.at(-1).y === data.bridge.momTop.y
                 && data.bridge.sourceOnCanonicalAttachment,
             JSON.stringify(data.bridge));
         check('family route contains only finite points',

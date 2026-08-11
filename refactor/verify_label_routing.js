@@ -779,9 +779,13 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             === result.underRoute.attachmentSegment.end.y
             && result.underRoute.attachmentSegment.start.y > result.hubLabelBottom,
         JSON.stringify(result.underRoute.attachmentSegment));
-    check('auto route replaces a colliding direct candidate with a safe candidate',
-        result.autoTextHits === 0 && result.autoSafeRoute.candidateName !== 'direct',
-        JSON.stringify(result.autoSafeRoute));
+    check('auto route keeps its standard direct geometry, moves text, and reports an unresolved symbol warning',
+        result.autoSafeRoute.candidateName === 'direct'
+            && result.autoTextHits === 0
+            && result.safeMarriageWarnings.some(warning =>
+                warning.relationshipId === 'route-auto-crossing'),
+        JSON.stringify({ route: result.autoSafeRoute,
+            warnings: result.safeMarriageWarnings }));
     check('draw, selected highlight and hit path share canonical points',
         JSON.stringify(result.relationshipPath) === JSON.stringify(result.underRoute.points)
             && result.drawnPaths.length >= 2
@@ -796,9 +800,6 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('view-option toggles do not make routes jump',
         result.fullViewRoute === result.hiddenViewRoute,
         `${result.fullViewRoute} != ${result.hiddenViewRoute}`);
-    check('safe candidates do not emit unresolved marriage warnings',
-        result.safeMarriageWarnings.length === 0,
-        JSON.stringify(result.safeMarriageWarnings));
     check('all-colliding candidates emit one deterministic unresolved warning',
         new Set(result.unresolvedWarningSnapshots).size === 1
             && JSON.parse(result.unresolvedWarningSnapshots[0]).length === 1
@@ -816,9 +817,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         JSON.stringify({ direct: result.unresolvedDirectScore,
             selected: result.unresolvedSelectedScore,
             route: JSON.parse(result.unresolvedRouteSnapshots[0]) }));
-    check('safe direct can lose when it crosses an occupied marriage path',
+    check('clear auto geometry does not silently detour around an occupied marriage path',
         result.occupiedDirectTextHits === 0
-            && result.occupiedCrossingRoute.candidateName !== 'direct',
+            && result.occupiedCrossingRoute.candidateName === 'direct',
         JSON.stringify({ hits: result.occupiedDirectTextHits,
             route: result.occupiedCrossingRoute }));
     check('clear direct remains the lexicographic auto winner',
@@ -848,16 +849,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('middle-symbol auto route records a label-safe non-under candidate',
         result.bridgeAuto.textHits === 0,
         JSON.stringify(result.bridgeAuto));
-    check('auto same-row obstacle remains an under arch candidate',
-        result.archAuto.config.isArch
-            && ['inner', 'outer-left', 'outer-right']
+    check('auto same-row obstacle becomes a top bridge candidate',
+        result.archAuto.config.needsBridge
+            && result.archAuto.config.isArch === false
+            && ['bridge-near', 'bridge-middle', 'bridge-far']
                 .includes(result.archAuto.route.candidateName),
         JSON.stringify(result.archAuto));
-    check('auto arch candidate uses bottom cardinal ports',
+    check('auto bridge candidate uses top cardinal ports',
         result.archAuto.route.points[0].x === result.archAuto.left.x
-            && result.archAuto.route.points[0].y === result.archAuto.left.y + result.half
+            && result.archAuto.route.points[0].y === result.archAuto.left.y - result.half
             && result.archAuto.route.points.at(-1).x === result.archAuto.right.x
-            && result.archAuto.route.points.at(-1).y === result.archAuto.right.y + result.half,
+            && result.archAuto.route.points.at(-1).y === result.archAuto.right.y - result.half,
         JSON.stringify(result.archAuto.route));
     check('unsatisfied forced route exposes a non-export warning',
         result.warning.visible && result.warning.text.includes('文字與關係線'),
@@ -873,8 +875,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.mixedWarning.text.includes('3 項文字與關係線')
             && !result.mixedWarning.text.includes('位成員'),
         JSON.stringify(result.mixedWarning));
-    check('auto route deterministically clears the editor warning',
-        result.warningHiddenAfterAuto, `hidden=${result.warningHiddenAfterAuto}`);
+    check('unresolved auto route keeps the editor warning visible',
+        result.warningHiddenAfterAuto === false, `hidden=${result.warningHiddenAfterAuto}`);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {
