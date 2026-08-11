@@ -138,9 +138,8 @@ function isCleanOrthogonalPath(path) {
             const attachmentMaxX = Math.max(marriageRoute.attachmentSegment.start.x,
                 marriageRoute.attachmentSegment.end.x);
 
-            // A middle symbol makes the new standard auto route a top bridge. The
-            // family source must come from that route's canonical attachment segment,
-            // not the old archBarY derivation.
+            // A middle symbol does not change the standard auto route. The family
+            // source must still come from that direct route's canonical attachment.
             const bridgeDad = new Person({ id: 'bridge-route-dad', x: 240, y: 720,
                 gender: 'male', name: '橋接父親' });
             const bridgeBlocker = new Person({ id: 'bridge-route-blocker', x: 500, y: 720,
@@ -258,17 +257,12 @@ function isCleanOrthogonalPath(path) {
             data.sourceOnMarriageAttachment,
             JSON.stringify({ source: data.familySource,
                 attachment: data.marriageRoute.attachmentSegment }));
-        check('bridge-family source uses the canonical bridge attachment, not legacy arch state',
+        check('blocked auto-family source uses the canonical direct attachment',
             data.bridge.config.isArch !== true
-                && data.bridge.config.needsBridge === true
-                && ['bridge-near', 'bridge-middle', 'bridge-far']
-                    .includes(data.bridge.route.candidateName)
-                && !['under', 'inner', 'outer-left', 'outer-right']
-                    .includes(data.bridge.route.candidateName)
-                && data.bridge.route.points[0].x === data.bridge.dadTop.x
-                && data.bridge.route.points[0].y === data.bridge.dadTop.y
-                && data.bridge.route.points.at(-1).x === data.bridge.momTop.x
-                && data.bridge.route.points.at(-1).y === data.bridge.momTop.y
+                && data.bridge.config.isBridge !== true
+                && data.bridge.config.needsBridge !== true
+                && data.bridge.route.candidateName === 'direct'
+                && data.bridge.route.points.length === 2
                 && data.bridge.sourceOnCanonicalAttachment,
             JSON.stringify(data.bridge));
         check('family route contains only finite points',

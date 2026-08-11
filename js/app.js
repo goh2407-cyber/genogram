@@ -5204,27 +5204,10 @@ class GenogramApp {
     updateRoutingWarning() {
         const node = this.elements.routingWarning;
         if (!node) return;
-        const sources = [
-            this.canvas.labelRoutingWarnings,
-            this.canvas.marriageRoutingWarnings
-        ];
-        const seenWarnings = new Set();
-        const count = sources.flatMap(warnings => Array.isArray(warnings) ? warnings : [])
-            .filter((warning, index) => {
-                const entityKind = Object.hasOwn(warning, 'personId')
-                    ? 'person' : Object.hasOwn(warning, 'relationshipId')
-                        ? 'relationship' : 'unknown';
-                const entityId = entityKind === 'person' ? warning.personId
-                    : entityKind === 'relationship' ? warning.relationshipId : index;
-                const key = `${entityKind}:${typeof entityId}:${String(entityId)}:${warning.reason || ''}`;
-                if (seenWarnings.has(key)) return false;
-                seenWarnings.add(key);
-                return true;
-            }).length;
-        node.hidden = count === 0;
-        node.textContent = count === 0
-            ? ''
-            : `${count} 項文字與關係線空間不足，請調整文字位置、移動人物或改用手動繞線。`;
+        // 重疊資訊只保留為內部幾何診斷，不在編輯器顯示文字警告。
+        // 預設允許文字壓線，使用者可透過人物屬性的八方向按鈕自行微調。
+        node.hidden = true;
+        node.textContent = '';
     }
 
     resetTransientStateForHistory() {

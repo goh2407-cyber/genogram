@@ -433,11 +433,10 @@ const path = require('path');
                     && under.pencil && under.pencilCanonicalRoute && under.dateOnCanonicalRoute && under.attachmentOnCanonicalRoute
             },
             auto: {
-                noUnderCandidate: !['under', 'inner', 'outer-left', 'outer-right'].includes(auto.route.candidateName)
-                    && eq(auto.route.points[0], auto.from.getConnectionPoint('top'))
-                    && eq(auto.route.points.at(-1), auto.to.getConnectionPoint('top')),
-                topBridgeOnly: ['bridge-near', 'bridge-middle', 'bridge-far'].includes(auto.route.candidateName)
-                    && auto.route.points.every(point => point.y <= auto.from.y),
+                directOnly: auto.route.candidateName === 'direct'
+                    && auto.route.points.length === 2
+                    && eq(auto.route.points[0], auto.from.getConnectionPoint('right'))
+                    && eq(auto.route.points.at(-1), auto.to.getConnectionPoint('left')),
                 pencilCanonicalRoute: auto.pencilCanonicalRoute,
                 canonical: auto.pathMatchesRoute && auto.hit === 'auto'
                     && auto.pencil && auto.pencilCanonicalRoute && auto.dateOnCanonicalRoute && auto.attachmentOnCanonicalRoute
@@ -450,10 +449,8 @@ const path = require('path');
         routeModeEdges.over.topOnly, JSON.stringify(routeModeEdges.over));
     check('under 走法才使用下方 cardinal ports',
         routeModeEdges.under.bottomOnly, JSON.stringify(routeModeEdges.under));
-    check('auto 遇夾者不選 bottom under candidate',
-        routeModeEdges.auto.noUnderCandidate, JSON.stringify(routeModeEdges.auto));
-    check('auto 遇夾者的整段路徑只走上方 bridge',
-        routeModeEdges.auto.topBridgeOnly, JSON.stringify(routeModeEdges.auto));
+    check('auto 遇夾者仍維持標準側接直線',
+        routeModeEdges.auto.directOnly, JSON.stringify(routeModeEdges.auto));
     check('四種婚姻走法的鉛筆錨點均來自 canonical route',
         Object.values(routeModeEdges).every(mode => mode.pencilCanonicalRoute), JSON.stringify(routeModeEdges));
     check('四種婚姻走法的命中、鉛筆、日期均共用 canonical route',

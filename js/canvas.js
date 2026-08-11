@@ -1444,11 +1444,9 @@ class GenogramCanvas {
         // 走廊障礙（自動越障 + 手動 under 都會用到）。橫桿須越過配偶與被夾者的
         // 「姓名(+備註)文字」下緣，否則 ㄩ 下折只 +符號底緣太淺、會壓在姓名文字上。
         let botMost = Math.max(this._labelBottomY(p1), this._labelBottomY(p2));
-        let hasObstacle = false;
         if (Math.abs(p1.y - p2.y) <= 1) {
             const obstacles = this._marriageCorridorObstacles(p1, p2);
             if (obstacles.length > 0) {
-                hasObstacle = true;
                 for (const o of obstacles) botMost = Math.max(botMost, this._labelBottomY(o));
             }
         }
@@ -1473,18 +1471,8 @@ class GenogramCanvas {
                 needsBridge: false, archBarY: underBarY, routeMode };
         }
 
-        // routeMode === 'auto'：系統自動判斷
-        if (level > 0) {
-            // 同側多婚 → 上折天橋
-            return { level, bridgeY, isBridge: true, isArch: false,
-                needsBridge: false, archBarY: null, routeMode };
-        }
-        if (hasObstacle) {
-            // 同列夾人 → 標準上橋。底部下繞只保留給明確的 manual under 模式。
-            return { level, bridgeY, isBridge: true, isArch: false,
-                needsBridge: true, archBarY: null, routeMode };
-        }
-        // 同列淨空 / 跨列 → 直線 / 正交（由 getMarriageGeometry 決定）
+        // routeMode === 'auto'：保持標準側接線。人物或文字即使位於走廊內，
+        // 也不自動改成上橋、下繞或外側大矩形；需要繞線時由使用者明確選 over/under。
         return { level, bridgeY, isBridge: false, isArch: false,
             needsBridge: false, archBarY: null, routeMode };
     }
@@ -1748,8 +1736,9 @@ class GenogramCanvas {
                 if (routeMode === 'straight') {
                     geometry = this.getMarriageGeometry(from, to, config);
                 } else if (routeMode === 'under') {
-                    candidates = this._underMarriageCandidates(from, to,
-                        config.archBarY, obstacles);
+                    // 手動 under 必須忠實維持所選的標準四點 ㄩ；不再由評分器
+                    // 擴成超出端點的 outer-left / outer-right 大矩形。
+                    geometry = this.getMarriageGeometry(from, to, config);
                 } else if (routeMode === 'over') {
                     // Explicit over keeps its existing configured bridge height exactly.
                     geometry = this.getMarriageGeometry(from, to, config);

@@ -1,7 +1,7 @@
 /**
  * [Phase 2A.0/2A.1/2A.2] 婚姻線幾何回歸：主線 / 高亮 / hit-test 共用 getMarriageGeometry。
- * 涵蓋：① 跨列正交三折　② 同列直線　③ 同側多婚天橋（2A.2：只同側才架）
- *       ④ 同列走廊夾人 → 有限上橋避讓（自動模式不可下繞）
+ * 涵蓋：① 跨列正交三折　② 同列直線　③ 同側多婚 auto 仍維持直線
+ *       ④ 同列走廊夾人 → auto 仍維持標準側接直線
  * 用法：NODE_PATH=$HOME/.cache/pw-smoke/node_modules node refactor/verify_marriage_geom.js
  */
 const { chromium } = require('playwright');
@@ -38,14 +38,14 @@ const path = require('path');
         const relC1 = new Relationship({ id: 'rC1', fromPersonId: 'cW1', toPersonId: 'cM', type: 'married', date: '2010-01-01' });
         const relC2 = new Relationship({ id: 'rC2', fromPersonId: 'cW2', toPersonId: 'cM', type: 'divorced', date: '2000-01-01' });
 
-        // D：同列婚姻、中間夾人。自動模式只能選擇有限的上橋候選。
+        // D：同列婚姻、中間夾人。auto 不自動改線，仍維持標準側接直線。
         const dH = new Person({ id: 'dH', x: 300, y: 480, gender: 'male', name: '', age: 62,
             notes: '雙相情緒障礙症\n（精神中度障礙）' });
         const dMid = new Person({ id: 'dMid', x: 500, y: 480, gender: 'female', name: '',
             notes: '中間人物文字也必須避開\n第二行備註' });
         const dW = new Person({ id: 'dW', x: 700, y: 480, gender: 'female', name: '妻3' });
         const relD = new Relationship({ id: 'rD', fromPersonId: 'dH', toPersonId: 'dW', type: 'married' });
-        // 上代親子主幹會穿過橋候選；無安全候選時必須留下 editor warning。
+        // 上代親子主幹存在，但不應迫使 auto 改成大範圍繞線。
         const familyParent = new Person({ id: 'family-parent', x: 200, y: 325,
             gender: 'male', name: '' });
         const familyChild = new Person({ id: 'family-child', x: 800, y: 545,
@@ -70,46 +70,32 @@ const path = require('path');
         const pathB = c.getRelationshipPath(b1, b2, relB, allRels);
         const hitStraightMid = c.isPointOnRelationship(390, 650, b1, b2, relB, 10, allRels);
 
-        // C：cW2-cM 應為天橋；cW1-cM 應為直線(level 0)
+        // C：auto 不因同側多婚自行架橋。
         const cfgC2 = c.getMarriageConfiguration(cW2, cM, relC2, allRels);
         const geomC2 = c.getMarriageGeometry(cW2, cM, cfgC2);
         const pathC2 = c.getRelationshipPath(cW2, cM, relC2, allRels);
         const cfgC1 = c.getMarriageConfiguration(cW1, cM, relC1, allRels);
-        const bridgeBarY = geomC2.points[1].y;
-        const bridgeMidX = (geomC2.points[1].x + geomC2.points[2].x) / 2;
-        const hitBridge = c.isPointOnRelationship(bridgeMidX, bridgeBarY, cW2, cM, relC2, 10, allRels);
+        const farMidX = (geomC2.points[0].x + geomC2.points[1].x) / 2;
+        const hitFarDirect = c.isPointOnRelationship(
+            farMidX, geomC2.points[0].y, cW2, cM, relC2, 10, allRels);
 
-        // D：auto bridge
+        // D：auto direct
         const cfgD = c.getMarriageConfiguration(dH, dW, relD, allRels);
         const geomD = c.getMarriageRoute(dH, dW, relD, allRels);
         const pathD = c.getRelationshipPath(dH, dW, relD, allRels);
         const textObstacles = c.getPersonRouteObstacles(app.persons)
             .filter(rect => rect.kind === 'text');
-        const bridgeCandidates = c._getBridgeMarriageCandidates(dH, dW);
         const familySegments = c._getFamilyOccupiedSegments(app.persons, allRels, relD.id);
-        const naiveBridge = bridgeCandidates.find(candidate => candidate.name === 'bridge-near');
-        const selectedScore = c._marriageCandidateScore(
-            { name: geomD.candidateName, points: geomD.points },
-            c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments);
-        const naiveScore = c._marriageCandidateScore(
-            naiveBridge, c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments);
-        const bridgeCandidateScores = bridgeCandidates.map(candidate => ({
-            name: candidate.name,
-            score: c._marriageCandidateScore(candidate,
-                c.getPersonRouteObstacles(app.persons), [], dH, dW, familySegments),
-            familyCrossings: FamilyRoutePlanner.polylineCrossingCount(
-                candidate.points, familySegments)
-        }));
         const attachment = geomD.attachmentSegment;
-        const dBridgeBarY = attachment.start.y;
-        const dBridgeMidX = (attachment.start.x + attachment.end.x) / 2;
-        const hitBridgeD = c.isPointOnRelationship(dBridgeMidX, dBridgeBarY, dH, dW, relD, 10, allRels);
-        const onMidNode = c.isPointOnRelationship(500, 480, dH, dW, relD, 10, allRels); // 夾者中心不該命中
+        const dDirectMidX = (attachment.start.x + attachment.end.x) / 2;
+        const hitDirectD = c.isPointOnRelationship(
+            dDirectMidX, attachment.start.y, dH, dW, relD, 10, allRels);
+        const onMidNode = c.isPointOnRelationship(500, 480, dH, dW, relD, 10, allRels);
         const textHits = FamilyRoutePlanner.pathIntersectionCount(geomD.points, textObstacles);
         const dHLabelPlacement = c.getPersonLabelGeometry(dH,
             { showNames: true, showNotes: true }).placement;
-        const dHTop = dH.getConnectionPoint('top');
-        const dWTop = dW.getConnectionPoint('top');
+        const dHSide = dH.getConnectionPoint('right');
+        const dWSide = dW.getConnectionPoint('left');
 
         // 確定性
         const snapshots = [];
@@ -123,25 +109,13 @@ const path = require('path');
             cfgC2_isBridge: cfgC2.isBridge, cfgC1_isBridge: cfgC1.isBridge,
             cfgD_isArch: cfgD.isArch,
             cfgD_isBridge: cfgD.isBridge,
-            hitStraightMid, hitBridge, hitBridgeD, onMidNode,
-            bridgeFromX: geomC2.points[0].x, bridgeToX: geomC2.points[3].x, cW2x: cW2.x, cMx: cM.x,
+            hitStraightMid, hitFarDirect, hitDirectD, onMidNode,
             textHits,
             dHLabelPlacement,
             attachment,
-            dHTop,
-            dWTop,
-            bridgeCandidates,
+            dHSide,
+            dWSide,
             familySegments,
-            naiveScore,
-            selectedScore,
-            bridgeCandidateScores,
-            selectedFamilyCrossings: FamilyRoutePlanner.polylineCrossingCount(
-                geomD.points, familySegments),
-            naiveFamilyCrossings: FamilyRoutePlanner.polylineCrossingCount(
-                naiveBridge.points, familySegments),
-            familyWarnings: c.labelRoutingWarnings.filter(warning =>
-                warning.relationshipId === relD.id
-                && warning.reason === 'marriage-route-collision'),
             detEqual: new Set(snapshots).size === 1,
         };
     });
@@ -157,56 +131,41 @@ const path = require('path');
     check('B hit-test == 主線幾何', eq(r.pathB, r.geomB.points), '');
     check('B 同列婚姻中點可命中', r.hitStraightMid === true, `hit=${r.hitStraightMid}`);
 
-    check('C [2A.2] 同側較遠婚姻段=天橋', r.cfgC2_isBridge === true, `isBridge=${r.cfgC2_isBridge}`);
-    check('C [2A.2] 同側較近婚姻段=直線(非天橋)', r.cfgC1_isBridge === false, `isBridge=${r.cfgC1_isBridge}`);
-    check('C 天橋主線 4 點ㄇ形', r.geomC2.points.length === 4, `points=${r.geomC2.points.length}`);
+    check('C 同側多婚的 auto 仍為直線',
+        r.cfgC2_isBridge === false && r.cfgC1_isBridge === false
+            && r.geomC2.points.length === 2,
+        JSON.stringify({ farBridge: r.cfgC2_isBridge, nearBridge: r.cfgC1_isBridge,
+            points: r.geomC2.points }));
     check('C hit-test == 主線幾何', eq(r.pathC2, r.geomC2.points), '');
-    check('C 天橋垂直腿 X = 節點中心', r.bridgeFromX === r.cW2x && r.bridgeToX === r.cMx, `from=${r.bridgeFromX}(want ${r.cW2x}) to=${r.bridgeToX}(want ${r.cMx})`);
-    check('C 天橋橫段中點可命中', r.hitBridge === true, `hit=${r.hitBridge}`);
+    check('C 較遠 auto 直線中點可命中', r.hitFarDirect === true, `hit=${r.hitFarDirect}`);
 
-    check('D 夾人 auto 設為 needsBridge 而非 isArch',
-        r.cfgD_isBridge === true && r.cfgD_isArch === false,
+    check('D 夾人 auto 不設 bridge/arch',
+        r.cfgD_isBridge === false && r.cfgD_isArch === false,
         JSON.stringify({ isBridge: r.cfgD_isBridge, isArch: r.cfgD_isArch }));
-    check('D auto bridge is a clean four-point top path',
-        r.geomD.points.length === 4
-            && eq(r.geomD.points[0], r.dHTop)
-            && eq(r.geomD.points.at(-1), r.dWTop),
+    check('D auto is the standard two-point side path',
+        r.geomD.candidateName === 'direct' && r.geomD.points.length === 2
+            && eq(r.geomD.points[0], r.dHSide)
+            && eq(r.geomD.points.at(-1), r.dWSide),
         JSON.stringify(r.geomD.points));
-    check('D attachment bar is horizontal and above both endpoints',
+    check('D attachment is the horizontal direct segment',
         r.attachment.start.y === r.attachment.end.y
-            && r.attachment.start.y < r.dHTop.y
-            && r.attachment.start.y < r.dWTop.y,
-        JSON.stringify({ attachment: r.attachment, dHTop: r.dHTop, dWTop: r.dWTop }));
-    check('D bridge preserves the default label position for manual adjustment',
+            && eq(r.attachment.start, r.dHSide)
+            && eq(r.attachment.end, r.dWSide),
+        JSON.stringify({ attachment: r.attachment, dHSide: r.dHSide, dWSide: r.dWSide }));
+    check('D direct route preserves the default label position for manual adjustment',
         r.dHLabelPlacement.side === 'below'
             && r.dHLabelPlacement.offsetX === 0 && r.dHLabelPlacement.offsetY === 0,
         JSON.stringify({ placement: r.dHLabelPlacement, hits: r.textHits }));
     check('D hit-test == 主線幾何', eq(r.pathD, r.geomD.points), '');
-    check('D bridge 橫桿可命中', r.hitBridgeD === true, `hit=${r.hitBridgeD}`);
-    check('D 夾者中心不再命中婚姻線（線已離開符號）', r.onMidNode === false, `onMid=${r.onMidNode}`);
-    check('D 標準 auto 夾人路由使用上橋而非底部 under',
-        r.cfgD_isBridge === true
-            && !['under', 'inner', 'outer-left', 'outer-right'].includes(r.geomD.candidateName)
-            && eq(r.geomD.points[0], r.dHTop)
-            && eq(r.geomD.points.at(-1), r.dWTop),
-        JSON.stringify({ config: { isArch: r.cfgD_isArch, isBridge: r.cfgD_isBridge },
-            candidateName: r.geomD.candidateName, points: r.geomD.points }));
+    check('D direct segment can be hit', r.hitDirectD === true, `hit=${r.hitDirectD}`);
+    check('D auto intentionally allows overlap instead of detouring',
+        r.onMidNode === true, `onMid=${r.onMidNode}`);
     check('D family occupancy exposes finite parent-child trunk segments',
         r.familySegments.length >= 1
             && r.familySegments.every(segment => segment.kind === 'family'
                 && [segment.start.x, segment.start.y, segment.end.x, segment.end.y]
                     .every(Number.isFinite)),
         JSON.stringify(r.familySegments));
-    check('D family crossing is scored separately and never remains unmarked',
-        r.naiveFamilyCrossings > 0 && r.selectedFamilyCrossings > 0
-            && r.selectedScore[1] > 0 && r.familyWarnings.length === 1
-            && r.familyWarnings[0].collisions >= r.selectedScore[1],
-        JSON.stringify({ naive: r.naiveScore, selected: r.selectedScore,
-            naiveFamilyCrossings: r.naiveFamilyCrossings,
-            selectedFamilyCrossings: r.selectedFamilyCrossings,
-            warnings: r.familyWarnings,
-            candidates: r.bridgeCandidateScores }));
-
     check('確定性：canonical route 強制重算 3 次相同', r.detEqual === true, `detEqual=${r.detEqual}`);
 
     await browser.close();

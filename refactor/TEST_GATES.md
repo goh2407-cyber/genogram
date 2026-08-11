@@ -62,6 +62,7 @@
 ```powershell
 node refactor/verify_label_routing.js
 node refactor/verify_marriage_geom.js
+node refactor/verify_standard_default_routes.js
 node refactor/verify_family_routing.js
 node refactor/verify_relationship_edges.js
 node refactor/verify_view_export.js
@@ -71,10 +72,13 @@ node refactor/verify_mirror_sync.js
 node refactor/smoke_visual.js
 ```
 
-- `auto` 同列淨空使用左右側接水平線；中間有符號時只可選有限的上方 bridge，
-  **不得**自動使用底部 U／`under` 候選。
+- `auto` 一律保持標準左右側接線，不因中間人物、文字或多段婚姻自動改成
+  上橋、底部 U 或外側大矩形；需要繞線時由使用者明確選擇。
 - `under` 是關係編輯器中使用者明確選擇的手動走法；只有它可使用下方 cardinal
-  ports。`straight`、`over` 的既有手動語意維持不變。
+  ports，且固定為四點小 U，端點底部第一段必須垂直、不得多出小橫條。
+  `straight`、`over` 的既有手動語意維持不變。
+- 重疊診斷可留在記憶體供測試使用，但編輯器不得顯示文字警告；人物文字只由
+  屬性面板的八方向按鈕手動微調。
 - 匯出（PNG/JPEG 與例外 finally）必須回復原畫面的 canonical route、
   `attachmentSegment`、標籤位置與家庭線快取 identity；視覺匯出不得混入 warning DOM。
 - Golden 15/16/17 只可在人工逐張核可後更新；三副本 JS 的 raw MD5 必須一致，

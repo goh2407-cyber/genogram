@@ -480,8 +480,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const standardLabelHits = FamilyRoutePlanner.pathIntersectionCount(
             standardRoute.points, [standardLabelLeft.bounds, standardLabelRight.bounds]);
 
-        // Standard auto marriage with a symbol in the middle must bridge above;
-        // the current under route is deliberately retained here as a RED contract.
+        // Standard auto marriage with a symbol in the middle remains direct;
+        // overlap is intentional until the user chooses another route mode.
         const bridgeLeft = new Person({ id: 'bridge-left', x: 120, y: 1440,
             gender: 'male', name: '左側配偶' });
         const bridgeBlocker = new Person({ id: 'bridge-blocker', x: 500, y: 1440,
@@ -887,10 +887,13 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && result.underRoute.points.at(-1).x === result.rightNear.x
             && result.underRoute.points.at(-1).y === result.rightNear.y + result.half,
         JSON.stringify(result.underRoute.points));
-    check('under route adds side doglegs instead of label-crossing center legs',
-        result.underRoute.points.length >= 8,
+    check('under route is a compact four-point U with no endpoint ledges',
+        result.underRoute.points.length === 4
+            && result.underRoute.points[0].x === result.underRoute.points[1].x
+            && result.underRoute.points[2].x === result.underRoute.points[3].x,
         JSON.stringify(result.underRoute.points));
-    check('safe under route has zero text intersections', result.underTextHits === 0,
+    check('under route may cross text until the user manually moves the label',
+        result.underTextHits > 0,
         `hits=${result.underTextHits}`);
     check('attachment segment is the actual under-route bar',
         result.underRoute.attachmentSegment.start.y
@@ -943,8 +946,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('clear direct remains the lexicographic auto winner',
         result.clearAutoRoute.candidateName === 'direct',
         JSON.stringify(result.clearAutoRoute));
-    check('text-only route collision shows a current label warning, not a persisted route warning',
-        result.textOnlyWarning.visible.visible
+    check('text-only route collision remains diagnostic-only and shows no editor warning',
+        !result.textOnlyWarning.visible.visible
             && result.textOnlyWarning.visible.labelWarnings.length === 1
             && result.textOnlyWarning.visible.marriageWarnings.length === 0,
         JSON.stringify(result.textOnlyWarning.visible));
@@ -967,32 +970,34 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('standard clear auto side-port route does not cross either label block',
         result.standardAuto.labelHits === 0,
         `labelHits=${result.standardAuto.labelHits}`);
-    check('middle-symbol auto route is never an automatic bottom under route',
-        !['under', 'inner', 'outer-left', 'outer-right']
-            .includes(result.bridgeAuto.route.candidateName)
+    check('middle-symbol auto route stays direct instead of choosing any detour',
+        result.bridgeAuto.route.candidateName === 'direct'
+            && result.bridgeAuto.route.points.length === 2
             && result.bridgeAuto.config.isArch !== true
+            && result.bridgeAuto.config.isBridge !== true
             && JSON.stringify(result.bridgeAuto.route.points[0])
                 !== JSON.stringify(result.bridgeAuto.bottomEndpoints[0])
             && JSON.stringify(result.bridgeAuto.route.points.at(-1))
                 !== JSON.stringify(result.bridgeAuto.bottomEndpoints[1]),
         JSON.stringify(result.bridgeAuto));
-    check('middle-symbol auto route records a label-safe non-under candidate',
+    check('middle-symbol auto direct route does not move the existing label block',
         result.bridgeAuto.textHits === 0,
         JSON.stringify(result.bridgeAuto));
-    check('auto same-row obstacle becomes a top bridge candidate',
-        result.archAuto.config.needsBridge
+    check('auto same-row obstacle does not create a bridge candidate',
+        !result.archAuto.config.needsBridge
             && result.archAuto.config.isArch === false
-            && ['bridge-near', 'bridge-middle', 'bridge-far']
-                .includes(result.archAuto.route.candidateName),
+            && result.archAuto.config.isBridge === false
+            && result.archAuto.route.candidateName === 'direct',
         JSON.stringify(result.archAuto));
-    check('auto bridge candidate uses top cardinal ports',
-        result.archAuto.route.points[0].x === result.archAuto.left.x
-            && result.archAuto.route.points[0].y === result.archAuto.left.y - result.half
-            && result.archAuto.route.points.at(-1).x === result.archAuto.right.x
-            && result.archAuto.route.points.at(-1).y === result.archAuto.right.y - result.half,
+    check('auto obstacle route uses left/right side ports',
+        result.archAuto.route.points.length === 2
+            && result.archAuto.route.points[0].x === result.archAuto.left.x + result.half
+            && result.archAuto.route.points[0].y === result.archAuto.left.y
+            && result.archAuto.route.points.at(-1).x === result.archAuto.right.x - result.half
+            && result.archAuto.route.points.at(-1).y === result.archAuto.right.y,
         JSON.stringify(result.archAuto.route));
-    check('default below label overlap remains unmoved but shows a manual-adjust warning',
-        result.warning.visible && result.warning.text.includes('調整文字位置')
+    check('default below label overlap remains unmoved and shows no text warning',
+        !result.warning.visible && result.warning.text === ''
             && result.warning.targetWarnings.length === 1,
         JSON.stringify(result.warning));
     check('manual label nudge clears its overlap warning without moving the person or route',
@@ -1017,13 +1022,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('visible warning does not alter exported PNG pixels',
         result.warningExportDataUrl === result.hiddenWarningExportDataUrl,
         `${result.warningExportDataUrl.length} !== ${result.hiddenWarningExportDataUrl.length}`);
-    check('routing warning dedupes typed entity warnings with neutral item wording',
-        result.mixedWarning.visible
-            && result.mixedWarning.text.includes('3 項文字與關係線')
-            && !result.mixedWarning.text.includes('位成員'),
+    check('routing diagnostics stay hidden even when multiple internal items exist',
+        !result.mixedWarning.visible && result.mixedWarning.text === '',
         JSON.stringify(result.mixedWarning));
-    check('unresolved auto route keeps the editor warning visible',
-        result.warningHiddenAfterAuto === false, `hidden=${result.warningHiddenAfterAuto}`);
+    check('unresolved auto route does not show an editor text warning',
+        result.warningHiddenAfterAuto === true, `hidden=${result.warningHiddenAfterAuto}`);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL LABEL ROUTING CHECKS PASSED');
 })().catch(error => {
