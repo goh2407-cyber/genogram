@@ -1799,12 +1799,41 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
     .canvas-tool-dock { left: calc(50% - 36px); }
 }
 
+/* 1024px 以下改為真正重排（原本是固定 1024 版面 + 水平捲動）。
+   瀏覽器縮放到 125% / 150% 時 CSS 視窗就會掉進這個區間，不能只靠水平捲動。 */
 @media (max-width: 1023px) {
     html,
     body {
         overflow-x: auto;
         overflow-y: hidden;
     }
+    .app-container { min-width: 0; }
+    .global-bar {
+        gap: var(--space-2);
+        padding: 0 var(--space-3);
+    }
+    /* 工具列脫離絕對置中，改當一般 flex 項目排隊，塞不下時自己橫向捲動 */
+    .canvas-tool-dock {
+        position: static;
+        left: auto;
+        top: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+        overflow-x: auto;
+        overflow-y: hidden;
+        transform: none;
+        box-shadow: none;
+        scrollbar-width: thin;
+    }
+    .canvas-tool-dock::-webkit-scrollbar { height: 4px; }
+    .global-actions { flex: 0 0 auto; margin-left: 0; }
+}
+
+/* 更窄時只留品牌 logo，把寬度全讓給工具按鈕（h1 帶 inline display:flex，不能整個藏） */
+@media (max-width: 860px) {
+    .brand-lockup .app-title-text { display: none; }
+    .global-bar { padding: 0 var(--space-2); }
 }
 
 @media (prefers-reduced-motion: reduce) {

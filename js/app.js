@@ -175,6 +175,8 @@ class GenogramApp {
         'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
         'engaged-separated', 'engaged-cohabiting'
     ];
+    // 縮放級距：瀏覽器式固定階梯，涵蓋 canvas.minScale(0.25) ~ maxScale(3)，必含 1
+    static ZOOM_STEPS = Object.freeze([0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]);
     static LABEL_NUDGE_DISTANCE = 12;
     static LABEL_NUDGE_DIRECTIONS = Object.freeze({
         upLeft: [-1, -1], up: [0, -1], upRight: [1, -1],
@@ -679,8 +681,8 @@ class GenogramApp {
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
         // 縮放控制
-        this.elements.zoomIn.addEventListener('click', () => this.zoom(1.1));
-        this.elements.zoomOut.addEventListener('click', () => this.zoom(0.9));
+        this.elements.zoomIn.addEventListener('click', () => this.zoomStep(1));
+        this.elements.zoomOut.addEventListener('click', () => this.zoomStep(-1));
         this.elements.fitView.addEventListener('click', () => this.fitToView());
         this.elements.zoomReset.addEventListener('click', () => this.resetZoom());
 
@@ -1840,10 +1842,8 @@ class GenogramApp {
     handleWheel(e) {
         if (e.ctrlKey) {
             e.preventDefault();
-            const factor = e.deltaY > 0 ? 0.9 : 1.1;
-            // 以滑鼠位置為中心縮放
-            // 這裡簡化處理，還是以中心縮放
-            this.zoom(factor);
+            // 滾輪走同一組級距，才不會滾出 97%、103% 這種停不回來的值
+            this.zoomStep(e.deltaY > 0 ? -1 : 1);
         } else {
             // 平移
             e.preventDefault(); // 防止瀏覽器頁面滾動
@@ -4678,6 +4678,24 @@ class GenogramApp {
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         this.canvas.setScale(this.canvas.scale * factor, centerX, centerY);
+        this.updateZoomDisplay();
+        this.render();
+    }
+
+    /**
+     * 按鈕縮放走固定級距（瀏覽器式），確保 100% 一定回得去。
+     * 乘除法級距（如 ×1.1 / ×0.9）互不相反，來回幾次就再也停不到 100%。
+     */
+    zoomStep(direction) {
+        const steps = GenogramApp.ZOOM_STEPS;
+        const current = this.canvas.scale;
+        const epsilon = 0.001;
+        const next = direction > 0
+            ? steps.find(step => step > current + epsilon) ?? steps[steps.length - 1]
+            : [...steps].reverse().find(step => step < current - epsilon) ?? steps[0];
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        this.canvas.setScale(next, centerX, centerY);
         this.updateZoomDisplay();
         this.render();
     }

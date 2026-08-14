@@ -312,12 +312,36 @@ async function checkIconOnlyAccessibility(page) {
         await toggle.click();
         await settleResponsiveLayout(page);
 
-        await page.setViewportSize({ width: 1023, height: 768 });
-        await settleResponsiveLayout(page);
-        const belowMinimum = await shellMetrics(page);
-        check('1023px keeps a 1024px minimum layout with horizontal scrolling',
-            belowMinimum.app?.width >= 1024 && belowMinimum.scrollWidth >= 1024 && belowMinimum.compact,
-            JSON.stringify(belowMinimum));
+        // 1024px 以下改為真正重排：版面收進視窗，不再靠水平捲動找按鈕
+        // （瀏覽器縮放 125%/150% 會讓 CSS 視窗掉進這一段）
+        for (const narrowWidth of [1023, 900, 800]) {
+            await page.setViewportSize({ width: narrowWidth, height: 768 });
+            await settleResponsiveLayout(page);
+            const narrow = await shellMetrics(page);
+            check(`${narrowWidth}px reflows into the viewport instead of forcing a 1024px canvas`,
+                narrow.app?.width <= narrowWidth + 1 && narrow.compact,
+                JSON.stringify(narrow));
+            const reach = await page.locator('#globalBar button').evaluateAll((buttons, width) => buttons
+                .filter(button => button.getClientRects().length > 0)
+                .map(button => {
+                    const rect = button.getBoundingClientRect();
+                    // 停靠列自己可橫向捲動，其中的按鈕不要求全部同時可見
+                    const inScroller = Boolean(button.closest('.canvas-tool-dock'));
+                    return {
+                        id: button.id,
+                        inScroller,
+                        withinViewport: rect.left >= -1 && rect.right <= width + 1,
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height)
+                    };
+                }), narrowWidth);
+            check(`${narrowWidth}px keeps every toolbar button reachable at 36px or larger`,
+                reach.length > 0
+                    && reach.every(target => target.width >= 36 && target.height >= 36)
+                    && reach.filter(target => !target.inScroller)
+                        .every(target => target.withinViewport),
+                JSON.stringify(reach.filter(target => !target.withinViewport || target.width < 36)));
+        }
 
         await page.setViewportSize({ width: 1181, height: 820 });
         await settleResponsiveLayout(page);
