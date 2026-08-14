@@ -739,56 +739,119 @@ body {
 .label-position-popover {
     position: absolute;
     z-index: 7;
-    width: 172px;
-    padding: 10px;
+    padding: 6px;
     border: 1px solid var(--border-color);
-    border-radius: 9px;
+    border-radius: 50%;
     background: rgba(255, 255, 255, 0.97);
     box-shadow: 0 12px 30px rgba(23, 31, 45, 0.18), 0 2px 8px rgba(23, 31, 45, 0.08);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    transition: opacity 140ms ease;
 }
 
-.label-position-popover-title {
-    margin: 0 0 8px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
+/* 文字被移到面板底下時淡出讓路，滑過可暫時恢復 */
+.label-position-popover.is-behind-text {
+    opacity: 0.35;
 }
 
-.label-nudge-grid {
+.label-position-popover.is-behind-text:hover {
+    opacity: 1;
+}
+
+/* 拖曳中手就壓在搖桿上，hover 不得把面板叫回來遮住文字 */
+.label-position-popover.is-behind-text.is-dragging {
+    opacity: 0.35;
+}
+
+/* 十字拉桿：四向箭頭（點一下 12px、按住連續移動）+ 中央搖桿（拖曳自由移動、點一下重置） */
+.label-joystick {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%,
+        rgba(237, 18, 97, 0.04) 0%, rgba(237, 18, 97, 0.09) 100%);
+}
+
+.label-joystick-arrow {
+    position: absolute;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-}
-
-.label-nudge-grid button {
-    min-height: 32px;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 5px;
+    border-radius: 50%;
     color: var(--text-primary);
     background: #fff;
     font: inherit;
+    font-size: 13px;
+    line-height: 1;
     cursor: pointer;
-    transition: border-color 120ms ease, color 120ms ease, background 120ms ease,
-        transform 120ms ease;
+    touch-action: none;
+    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
-.label-nudge-grid button:hover {
+.label-joystick-arrow.is-up { top: 0; left: 34px; }
+.label-joystick-arrow.is-down { bottom: 0; left: 34px; }
+.label-joystick-arrow.is-left { left: 0; top: 34px; }
+.label-joystick-arrow.is-right { right: 0; top: 34px; }
+
+.label-joystick-arrow:hover,
+.label-joystick-arrow:active {
     border-color: var(--brand);
     color: var(--brand-active);
     background: var(--brand-light);
-    transform: translateY(-1px);
 }
 
-.label-nudge-grid button:focus-visible {
+.label-joystick-knob {
+    position: absolute;
+    left: 31px;
+    top: 31px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 2px solid var(--brand);
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 34%, #fff 0%, var(--brand-light) 100%);
+    box-shadow: 0 2px 6px rgba(23, 31, 45, 0.18);
+    cursor: grab;
+    touch-action: none;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--brand-active);
+    display: grid;
+    place-items: center;
+}
+
+/* 有手動位移時，搖桿顯示重置符號，提示「點一下可還原」 */
+.label-joystick-knob::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--brand);
+}
+
+.label-joystick-knob.can-reset::before {
+    content: '⟲';
+    width: auto;
+    height: auto;
+    background: none;
+    color: var(--brand);
+    font-size: 15px;
+}
+
+.label-joystick-knob.is-dragging {
+    cursor: grabbing;
+    box-shadow: 0 4px 12px rgba(237, 18, 97, 0.35);
+}
+
+.label-joystick-arrow:focus-visible,
+.label-joystick-knob:focus-visible {
     outline: 2px solid var(--brand);
-    outline-offset: 1px;
-}
-
-.label-nudge-grid .label-reset {
-    font-size: 12px;
-    font-weight: 600;
+    outline-offset: 2px;
 }
 
 .checkbox-group {

@@ -32,7 +32,8 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 direction: button.dataset.labelNudge,
                 ariaLabel: button.getAttribute('aria-label')
             })),
-            hasReset: Boolean(document.querySelector('#resetPersonLabelPosition'))
+            hasKnob: Boolean(document.querySelector('#labelJoystickKnob')),
+            knobLabel: document.querySelector('#labelJoystickKnob')?.getAttribute('aria-label')
         };
     });
     check('default label remains at its original below zero-offset placement despite a crossing route',
@@ -40,15 +41,18 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && initial.geometry.placement.offsetX === 0
             && initial.geometry.placement.offsetY === 0,
         JSON.stringify(initial.geometry.placement));
-    check('label text selection exposes eight accessible text-position nudge buttons plus reset',
-        initial.controls.length === 8
+    check('label text selection exposes four accessible cross arrows plus a labelled joystick knob',
+        initial.controls.length === 4
+            && ['up', 'down', 'left', 'right'].every(direction =>
+                initial.controls.some(control => control.direction === direction))
             && initial.controls.every(control => control.direction && control.ariaLabel)
-            && initial.hasReset,
-        JSON.stringify(initial.controls));
+            && initial.hasKnob
+            && Boolean(initial.knobLabel),
+        JSON.stringify(initial));
 
     const controlsAvailable = await page.locator('#labelNudgeUp').count() > 0
-        && await page.locator('#labelNudgeDownRight').count() > 0
-        && await page.locator('#resetPersonLabelPosition').count() > 0;
+        && await page.locator('#labelNudgeRight').count() > 0
+        && await page.locator('#labelJoystickKnob').count() > 0;
     const beforeUp = await page.evaluate(() => {
         const app = window.app;
         const person = app.personMap.get('label-target');
@@ -105,17 +109,79 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                     - rows[index - 1].lineHeight) < 0.000001)),
         JSON.stringify(afterUp?.geometry.rows));
 
-    if (controlsAvailable) await page.locator('#labelNudgeDownRight').click();
-    const afterDownRight = controlsAvailable ? await page.evaluate(() => {
-        const person = window.app.personMap.get('label-target');
-        return { placement: person.labelPlacement, geometry: window.app.canvas.getPersonLabelGeometry(person) };
-    }) : null;
-    check('diagonal nudge adjusts both label offsets without rotating text',
-        afterDownRight?.placement?.offsetX === 12 && afterDownRight?.placement?.offsetY === 0
-            && afterDownRight.geometry.rows.every(row => row.x === afterDownRight.geometry.rows[0].x),
-        JSON.stringify(afterDownRight));
+    // 斜向移動改由中央搖桿拖曳達成：文字 1:1 跟著指標，放開後搖桿彈回中心
+    const knobBox = controlsAvailable
+        ? await page.locator('#labelJoystickKnob').boundingBox() : null;
+    const dragBy = { x: 36, y: 48 };
+    if (knobBox) {
+        const originX = knobBox.x + knobBox.width / 2;
+        const originY = knobBox.y + knobBox.height / 2;
+        await page.mouse.move(originX, originY);
+        await page.mouse.down();
+        await page.mouse.move(originX + dragBy.x, originY + dragBy.y, { steps: 6 });
+        const midDrag = await page.evaluate(() => ({
+            transform: document.querySelector('#labelJoystickKnob').style.transform,
+            dragging: window.app.labelJoystickDragging
+        }));
+        await page.mouse.up();
+        const afterDrag = await page.evaluate(() => {
+            const person = window.app.personMap.get('label-target');
+            return {
+                placement: person.labelPlacement,
+                scale: window.app.canvas.scale,
+                geometry: window.app.canvas.getPersonLabelGeometry(person),
+                transform: document.querySelector('#labelJoystickKnob').style.transform,
+                dragging: window.app.labelJoystickDragging
+            };
+        });
+        check('dragging the joystick moves text diagonally and springs the knob back to centre',
+            afterDrag.placement?.offsetX === Math.round(dragBy.x / afterDrag.scale)
+                && afterDrag.placement?.offsetY === Math.round(-12 + dragBy.y / afterDrag.scale)
+                && afterDrag.geometry.rows.every(row => row.x === afterDrag.geometry.rows[0].x)
+                && midDrag.dragging === true
+                && midDrag.transform !== ''
+                && afterDrag.dragging === false
+                && afterDrag.transform === '',
+            JSON.stringify({ midDrag, afterDrag }));
+    } else {
+        check('dragging the joystick moves text diagonally and springs the knob back to centre',
+            false, 'joystick knob not found');
+    }
 
-    if (controlsAvailable) await page.locator('#resetPersonLabelPosition').click();
+    // 文字壓到面板底下時面板淡出讓路，移開後恢復（opacity 有 140ms 轉場，需等它收斂）
+    const readFadeState = () => page.evaluate(() => {
+        const app = window.app;
+        const popover = document.querySelector('.label-position-popover');
+        const canvasRect = document.querySelector('#genogramCanvas').getBoundingClientRect();
+        const label = app.canvas.getPersonLabelGeometry(
+            app.personMap.get('label-target'), app.viewOptions).bounds;
+        return {
+            behind: popover.classList.contains('is-behind-text'),
+            opacity: Number(getComputedStyle(popover).opacity),
+            labelRight: canvasRect.left + label.right * app.canvas.scale + app.canvas.offsetX,
+            popoverLeft: popover.getBoundingClientRect().left
+        };
+    });
+    const settleFade = () => page.waitForTimeout(260);
+    await page.evaluate(() => window.app.setSelectedPersonLabelOffset(0, 0));
+    await settleFade();
+    const fadeClear = await readFadeState();
+    // 把文字推到面板正下方
+    await page.evaluate(gap => window.app.setSelectedPersonLabelOffset(
+        gap / window.app.canvas.scale + 40, 0),
+    fadeClear.popoverLeft - fadeClear.labelRight);
+    await settleFade();
+    const fadeCovered = await readFadeState();
+    await page.evaluate(() => window.app.setSelectedPersonLabelOffset(0, 0));
+    await settleFade();
+    const fadeRestored = await readFadeState();
+    check('the panel fades out only while the text sits underneath it',
+        fadeClear.behind === false && fadeClear.opacity === 1
+            && fadeCovered.behind === true && fadeCovered.opacity < 0.5
+            && fadeRestored.behind === false && fadeRestored.opacity === 1,
+        JSON.stringify({ fadeClear, fadeCovered, fadeRestored }));
+
+    if (controlsAvailable) await page.locator('#labelJoystickKnob').click();
     const afterReset = controlsAvailable ? await page.evaluate(() => {
         const person = window.app.personMap.get('label-target');
         const screen = window.app.canvas.getPersonLabelGeometry(person,
@@ -221,7 +287,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         afterLabelClick.selectedPersonId === 'label-click-target'
             && afterLabelClick.labelEditingPersonId === 'label-click-target'
             && afterLabelClick.quickDrawCount === 0
-            && afterLabelClick.controls === 8
+            && afterLabelClick.controls === 4
             && afterLabelClick.controlsVisible
             && !afterLabelClick.personFormVisible
             && /文字旁/.test(afterLabelClick.status)
