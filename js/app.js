@@ -181,6 +181,18 @@ class GenogramApp {
         left: [-1, 0], right: [1, 0],
         downLeft: [-1, 1], down: [0, 1], downRight: [1, 1]
     });
+    // 方向鍵按住連續移動：先等 320ms 才起跑，之後每步加速，最快 60ms 一步
+    static LABEL_NUDGE_REPEAT_DELAY = 320;
+    static LABEL_NUDGE_REPEAT_MIN_INTERVAL = 60;
+    static LABEL_NUDGE_REPEAT_ACCEL = 0.82;
+    // 搖桿：視覺偏移上限（超出後文字仍 1:1 跟著指標），與點擊/拖曳判定門檻
+    static LABEL_JOYSTICK_MAX_DEFLECTION = 22;
+    static LABEL_JOYSTICK_DRAG_SLOP = 3;
+    static LABEL_JOYSTICK_KEYS = Object.freeze({
+        ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right'
+    });
+    // 面板與文字之間的距離：需大於單步 12px，文字往面板方向移動時才不會立刻被壓住
+    static LABEL_POPOVER_GAP = 32;
     constructor() {
         // 資料
         this.persons = [];
@@ -198,6 +210,7 @@ class GenogramApp {
         this.currentTool = 'select'; // select, addMale, addFemale, connect, boxSelect, household
         this.selectedPersonId = null;
         this.labelEditingPersonId = null; // 純 UI 暫態：直接點姓名／備註時隱藏人物快速功能圈
+        this.labelJoystickDragging = false; // 純 UI 暫態：文字拉桿拖曳中，期間不隱藏面板
         this.selectedRelationshipId = null;
         this.editingRelationshipId = null; // 正在編輯的關係線 ID (用於修改關係類型)
         this.selectedHouseholdId = null; // 選中的圈選框 ID
@@ -3198,18 +3211,27 @@ class GenogramApp {
         this.setupPropertyFormEvents();
     }
 
-    adjustSelectedPersonLabel(direction) {
+    adjustSelectedPersonLabel(direction, options = {}) {
         const delta = GenogramApp.LABEL_NUDGE_DIRECTIONS[direction];
         const person = this.personMap.get(this.selectedPersonId);
         if (!person || !delta) return;
         const current = person.labelPlacement || { offsetX: 0, offsetY: 0 };
-        const next = {
-            offsetX: current.offsetX + delta[0] * GenogramApp.LABEL_NUDGE_DISTANCE,
-            offsetY: current.offsetY + delta[1] * GenogramApp.LABEL_NUDGE_DISTANCE
-        };
-        this.saveState();
-        person.labelPlacement = next.offsetX || next.offsetY ? next : null;
+        // 按住連續移動時只在第一步記 history，整段按住合併成一次 undo
+        if (options.recordHistory !== false) this.saveState();
+        this.setSelectedPersonLabelOffset(
+            current.offsetX + delta[0] * GenogramApp.LABEL_NUDGE_DISTANCE,
+            current.offsetY + delta[1] * GenogramApp.LABEL_NUDGE_DISTANCE);
         this.autoSave();
+    }
+
+    /**
+     * 直接寫入文字位移並重畫（不碰 history，由呼叫端決定何時記錄）。
+     */
+    setSelectedPersonLabelOffset(offsetX, offsetY) {
+        const person = this.personMap.get(this.selectedPersonId);
+        if (!person) return;
+        const next = { offsetX: Math.round(offsetX), offsetY: Math.round(offsetY) };
+        person.labelPlacement = next.offsetX || next.offsetY ? next : null;
         this.render();
     }
 
@@ -3225,12 +3247,115 @@ class GenogramApp {
     setupLabelPositionPopover() {
         const popover = this.elements.labelPositionPopover;
         if (!popover) return;
-        popover.querySelectorAll('[data-label-nudge]').forEach(button => {
-            button.addEventListener('click', () =>
-                this.adjustSelectedPersonLabel(button.dataset.labelNudge));
+        popover.querySelectorAll('[data-label-nudge]').forEach(button =>
+            this.bindLabelNudgeButton(button));
+        this.bindLabelJoystickKnob(popover.querySelector('#labelJoystickKnob'));
+    }
+
+    /**
+     * 方向鍵：點一下走一格，按住則連續移動（夾娃娃機手感，越按越快）。
+     * 指標操作在 pointerdown 就出手，click 只保留給鍵盤 Enter / Space。
+     */
+    bindLabelNudgeButton(button) {
+        const direction = button.dataset.labelNudge;
+        let repeatTimer = null;
+        const stopRepeat = () => {
+            if (repeatTimer) clearTimeout(repeatTimer);
+            repeatTimer = null;
+        };
+        const scheduleRepeat = delay => {
+            repeatTimer = setTimeout(() => {
+                this.adjustSelectedPersonLabel(direction, { recordHistory: false });
+                scheduleRepeat(Math.max(GenogramApp.LABEL_NUDGE_REPEAT_MIN_INTERVAL,
+                    delay * GenogramApp.LABEL_NUDGE_REPEAT_ACCEL));
+            }, delay);
+        };
+        button.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            this.adjustSelectedPersonLabel(direction);
+            scheduleRepeat(GenogramApp.LABEL_NUDGE_REPEAT_DELAY);
         });
-        popover.querySelector('#resetPersonLabelPosition')?.addEventListener('click', () =>
-            this.resetSelectedPersonLabel());
+        ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach(name =>
+            button.addEventListener(name, stopRepeat));
+        // detail === 0 才是鍵盤 Enter / Space；指標點擊已在 pointerdown 處理過
+        button.addEventListener('click', event => {
+            if (event.detail !== 0) return;
+            this.adjustSelectedPersonLabel(direction);
+        });
+    }
+
+    /**
+     * 中央搖桿：拖曳讓文字 1:1 跟著跑（含斜向），放開彈回中心；點一下則重置。
+     */
+    bindLabelJoystickKnob(knob) {
+        if (!knob) return;
+        let drag = null;
+        const deflect = (dx, dy) => {
+            const max = GenogramApp.LABEL_JOYSTICK_MAX_DEFLECTION;
+            const distance = Math.hypot(dx, dy);
+            const ratio = distance > max ? max / distance : 1;
+            knob.style.transform = distance
+                ? `translate(${(dx * ratio).toFixed(1)}px, ${(dy * ratio).toFixed(1)}px)`
+                : '';
+        };
+        knob.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            const person = this.personMap.get(this.selectedPersonId);
+            if (!person) return;
+            const current = person.labelPlacement || { offsetX: 0, offsetY: 0 };
+            drag = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                baseX: Number.isFinite(current.offsetX) ? current.offsetX : 0,
+                baseY: Number.isFinite(current.offsetY) ? current.offsetY : 0,
+                moved: false
+            };
+            this.labelJoystickDragging = true;
+            knob.classList.add('is-dragging');
+            knob.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+        });
+        knob.addEventListener('pointermove', event => {
+            if (!drag || event.pointerId !== drag.pointerId) return;
+            const dx = event.clientX - drag.startX;
+            const dy = event.clientY - drag.startY;
+            if (!drag.moved) {
+                if (Math.hypot(dx, dy) < GenogramApp.LABEL_JOYSTICK_DRAG_SLOP) return;
+                drag.moved = true;
+                this.saveState(); // 整段拖曳合併成一次 undo
+            }
+            const scale = this.canvas.scale || 1;
+            this.setSelectedPersonLabelOffset(drag.baseX + dx / scale, drag.baseY + dy / scale);
+            deflect(dx, dy);
+        });
+        const endDrag = event => {
+            if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+            const moved = drag.moved;
+            drag = null;
+            this.labelJoystickDragging = false;
+            knob.classList.remove('is-dragging');
+            deflect(0, 0); // 搖桿彈回中心
+            if (moved) {
+                this.autoSave();
+                this.render(); // 清掉拖曳中的淡出狀態並更新重置提示
+            } else {
+                this.resetSelectedPersonLabel();
+            }
+        };
+        knob.addEventListener('pointerup', endDrag);
+        knob.addEventListener('pointercancel', endDrag);
+        // detail === 0 才是鍵盤 Enter / Space；指標的點一下重置已在 pointerup 處理過
+        knob.addEventListener('click', event => {
+            if (event.detail !== 0) return;
+            this.resetSelectedPersonLabel();
+        });
+        knob.addEventListener('keydown', event => {
+            const direction = GenogramApp.LABEL_JOYSTICK_KEYS[event.key];
+            if (!direction) return;
+            event.preventDefault();
+            this.adjustSelectedPersonLabel(direction);
+        });
     }
 
     /**
@@ -3281,8 +3406,10 @@ class GenogramApp {
         const anchor = toScreen(anchorBounds);
         const containerWidth = this.elements.canvasContainer.clientWidth;
         const containerHeight = this.elements.canvasContainer.clientHeight;
-        if (target.right < 0 || target.left > containerWidth
-            || target.bottom < 0 || target.top > containerHeight) {
+        // 拖曳搖桿時不因文字移出畫面而隱藏，否則會失去 pointer capture 讓拖曳中斷
+        if (!this.labelJoystickDragging
+            && (target.right < 0 || target.left > containerWidth
+                || target.bottom < 0 || target.top > containerHeight)) {
             popover.hidden = true;
             outline.hidden = true;
             return;
@@ -3297,18 +3424,29 @@ class GenogramApp {
 
         popover.hidden = false;
         popover.style.visibility = 'hidden';
-        const gap = 12;
+        popover.querySelector('#labelJoystickKnob')
+            ?.classList.toggle('can-reset', Boolean(person.labelPlacement));
+        const gap = GenogramApp.LABEL_POPOVER_GAP;
         const edge = 12;
         let left = anchor.right + gap;
         if (left + popover.offsetWidth > containerWidth - edge) {
             left = anchor.left - popover.offsetWidth - gap;
         }
         left = Math.max(edge, Math.min(left, containerWidth - popover.offsetWidth - edge));
-        let top = anchor.top - 8;
+        // 圓形拉桿垂直置中對齊文字，比切齊上緣看起來穩
+        let top = (anchor.top + anchor.bottom) / 2 - popover.offsetHeight / 2;
         top = Math.max(edge, Math.min(top, containerHeight - popover.offsetHeight - edge));
         popover.style.left = `${Math.round(left)}px`;
         popover.style.top = `${Math.round(top)}px`;
         popover.style.visibility = '';
+        // 文字真的移到面板底下時淡出讓路：滑鼠移上去可暫時恢復，
+        // 但拖曳中維持淡出，否則手正壓在搖桿上就永遠看不到底下的文字
+        const overlapsText = target.right > left
+            && target.left < left + popover.offsetWidth
+            && target.bottom > top
+            && target.top < top + popover.offsetHeight;
+        popover.classList.toggle('is-behind-text', overlapsText);
+        popover.classList.toggle('is-dragging', Boolean(this.labelJoystickDragging));
     }
 
     /**
