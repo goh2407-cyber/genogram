@@ -19,7 +19,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         app.persons = [left, right, target];
         app.relationships = [marriage];
         app._syncPersonMap();
-        app.selectPerson(target.id);
+        app.selectPerson(target.id, { labelEditing: true });
         app.render();
         const geometry = app.canvas.getPersonLabelGeometry(target,
             { showNames: true, showNotes: true });
@@ -40,7 +40,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && initial.geometry.placement.offsetX === 0
             && initial.geometry.placement.offsetY === 0,
         JSON.stringify(initial.geometry.placement));
-    check('person panel exposes eight accessible text-position nudge buttons plus reset',
+    check('label text selection exposes eight accessible text-position nudge buttons plus reset',
         initial.controls.length === 8
             && initial.controls.every(control => control.direction && control.ariaLabel)
             && initial.hasReset,
@@ -212,13 +212,20 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
-        controls: document.querySelectorAll('[data-label-nudge]').length
+        controls: document.querySelectorAll('[data-label-nudge]').length,
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length),
+        status: window.app.elements.statusBar.textContent
     }));
     check('clicking visible name text selects label editing without the quick-add ring',
         afterLabelClick.selectedPersonId === 'label-click-target'
             && afterLabelClick.labelEditingPersonId === 'label-click-target'
             && afterLabelClick.quickDrawCount === 0
-            && afterLabelClick.controls === 8,
+            && afterLabelClick.controls === 8
+            && afterLabelClick.controlsVisible
+            && !afterLabelClick.personFormVisible
+            && /文字旁/.test(afterLabelClick.status)
+            && !/右側/.test(afterLabelClick.status),
         JSON.stringify(afterLabelClick));
 
     await page.mouse.move(labelClickFixture.quickParentScreen.x,
@@ -242,6 +249,46 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && afterLabelNudge.quickDrawCount === 0,
         JSON.stringify(afterLabelNudge));
 
+    // 微調時面板必須留在原地（錨在未微調位置），只有文字與外框跟著移動
+    const popoverAnchorDrift = await page.evaluate(() => {
+        const readRects = () => {
+            const popover = document.querySelector('.label-position-popover')
+                .getBoundingClientRect();
+            const outline = document.querySelector('.label-selection-outline')
+                .getBoundingClientRect();
+            return {
+                popover: { left: Math.round(popover.left), top: Math.round(popover.top) },
+                outline: { left: Math.round(outline.left), top: Math.round(outline.top) }
+            };
+        };
+        const nudge = dir => document.querySelector(`[data-label-nudge="${dir}"]`).click();
+        const before = readRects();
+        nudge('down');
+        nudge('right');
+        const moved = readRects();
+        nudge('up');
+        nudge('left'); // 位移歸零回到 { offsetX: 12, offsetY: 0 }，不影響後續案例
+        const restored = readRects();
+        return {
+            before,
+            moved,
+            restored,
+            placement: window.app.personMap.get('label-click-target').labelPlacement
+        };
+    });
+    check('nudging text keeps the position panel anchored while the text moves',
+        popoverAnchorDrift.moved.popover.left === popoverAnchorDrift.before.popover.left
+            && popoverAnchorDrift.moved.popover.top === popoverAnchorDrift.before.popover.top
+            && popoverAnchorDrift.restored.popover.left === popoverAnchorDrift.before.popover.left
+            && popoverAnchorDrift.restored.popover.top === popoverAnchorDrift.before.popover.top
+            && (popoverAnchorDrift.moved.outline.left !== popoverAnchorDrift.before.outline.left
+                || popoverAnchorDrift.moved.outline.top !== popoverAnchorDrift.before.outline.top)
+            && popoverAnchorDrift.restored.outline.left === popoverAnchorDrift.before.outline.left
+            && popoverAnchorDrift.restored.outline.top === popoverAnchorDrift.before.outline.top
+            && popoverAnchorDrift.placement?.offsetX === 12
+            && popoverAnchorDrift.placement?.offsetY === 0,
+        JSON.stringify(popoverAnchorDrift));
+
     await page.mouse.click(labelClickFixture.blankScreen.x, labelClickFixture.blankScreen.y);
     const afterBlankClick = await page.evaluate(() => ({
         selectedPersonId: window.app.selectedPersonId,
@@ -258,12 +305,16 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     const afterNoteClick = await page.evaluate(() => ({
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
-        quickDrawCount: window.__quickLabelDrawCount
+        quickDrawCount: window.__quickLabelDrawCount,
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length)
     }));
     check('clicking visible notes also enters label editing without the quick-add ring',
         afterNoteClick.selectedPersonId === 'label-click-target'
             && afterNoteClick.labelEditingPersonId === 'label-click-target'
-            && afterNoteClick.quickDrawCount === 0,
+            && afterNoteClick.quickDrawCount === 0
+            && afterNoteClick.controlsVisible
+            && !afterNoteClick.personFormVisible,
         JSON.stringify(afterNoteClick));
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
@@ -306,12 +357,16 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     const afterSymbolClick = await page.evaluate(() => ({
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
-        quickDrawCount: window.__quickLabelDrawCount
+        quickDrawCount: window.__quickLabelDrawCount,
+        controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
+        personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length)
     }));
     check('clicking the person symbol exits label editing and restores the quick-add ring',
         afterSymbolClick.selectedPersonId === 'label-click-target'
             && afterSymbolClick.labelEditingPersonId === null
-            && afterSymbolClick.quickDrawCount > 0,
+            && afterSymbolClick.quickDrawCount > 0
+            && !afterSymbolClick.controlsVisible
+            && afterSymbolClick.personFormVisible,
         JSON.stringify(afterSymbolClick));
 
     await page.evaluate(({ x, y }) => {
