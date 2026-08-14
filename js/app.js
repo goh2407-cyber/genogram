@@ -3233,6 +3233,21 @@ class GenogramApp {
             this.resetSelectedPersonLabel());
     }
 
+    /**
+     * 文字位置面板的錨點：手動微調時回傳「重置後」的文字框，讓面板不隨微調位移。
+     * 沒有手動位移時回傳 null，由呼叫端沿用文字本身的位置。
+     */
+    getLabelPopoverAnchorBounds(person) {
+        const manual = person?.labelPlacement;
+        const hasManual = manual
+            && (Number.isFinite(manual.offsetX) || Number.isFinite(manual.offsetY));
+        if (!hasManual) return null;
+        const side = ['below', 'above', 'left', 'right'].includes(manual.side)
+            ? manual.side : 'below';
+        return this.canvas.getPersonLabelGeometry(person, this.viewOptions,
+            { side, offsetX: 0, offsetY: 0 }).bounds;
+    }
+
     updateLabelPositionPopover() {
         const popover = this.elements.labelPositionPopover;
         const outline = this.elements.labelSelectionOutline;
@@ -3254,12 +3269,16 @@ class GenogramApp {
         }
 
         const scale = this.canvas.scale;
-        const target = {
-            left: geometry.bounds.left * scale + this.canvas.offsetX,
-            right: geometry.bounds.right * scale + this.canvas.offsetX,
-            top: geometry.bounds.top * scale + this.canvas.offsetY,
-            bottom: geometry.bounds.bottom * scale + this.canvas.offsetY
-        };
+        const toScreen = bounds => ({
+            left: bounds.left * scale + this.canvas.offsetX,
+            right: bounds.right * scale + this.canvas.offsetX,
+            top: bounds.top * scale + this.canvas.offsetY,
+            bottom: bounds.bottom * scale + this.canvas.offsetY
+        });
+        const target = toScreen(geometry.bounds);
+        // 面板錨在「未微調」的文字位置：按方向鍵時文字會動，面板留在原地不追著跑
+        const anchorBounds = this.getLabelPopoverAnchorBounds(person) || geometry.bounds;
+        const anchor = toScreen(anchorBounds);
         const containerWidth = this.elements.canvasContainer.clientWidth;
         const containerHeight = this.elements.canvasContainer.clientHeight;
         if (target.right < 0 || target.left > containerWidth
@@ -3280,12 +3299,12 @@ class GenogramApp {
         popover.style.visibility = 'hidden';
         const gap = 12;
         const edge = 12;
-        let left = target.right + gap;
+        let left = anchor.right + gap;
         if (left + popover.offsetWidth > containerWidth - edge) {
-            left = target.left - popover.offsetWidth - gap;
+            left = anchor.left - popover.offsetWidth - gap;
         }
         left = Math.max(edge, Math.min(left, containerWidth - popover.offsetWidth - edge));
-        let top = target.top - 8;
+        let top = anchor.top - 8;
         top = Math.max(edge, Math.min(top, containerHeight - popover.offsetHeight - edge));
         popover.style.left = `${Math.round(left)}px`;
         popover.style.top = `${Math.round(top)}px`;
