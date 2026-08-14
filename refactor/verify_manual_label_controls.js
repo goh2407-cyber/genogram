@@ -28,12 +28,11 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             geometry,
             coordinates: { x: target.x, y: target.y },
             routePoints: route.points,
-            controls: Array.from(document.querySelectorAll('[data-label-nudge]')).map(button => ({
-                direction: button.dataset.labelNudge,
-                ariaLabel: button.getAttribute('aria-label')
-            })),
+            arrowButtons: document.querySelectorAll('[data-label-nudge]').length,
             hasKnob: Boolean(document.querySelector('#labelJoystickKnob')),
-            knobLabel: document.querySelector('#labelJoystickKnob')?.getAttribute('aria-label')
+            knobLabel: document.querySelector('#labelJoystickKnob')?.getAttribute('aria-label'),
+            knobTitle: document.querySelector('#labelJoystickKnob')?.getAttribute('title'),
+            knobIsButton: document.querySelector('#labelJoystickKnob')?.tagName === 'BUTTON'
         };
     });
     check('default label remains at its original below zero-offset placement despite a crossing route',
@@ -41,18 +40,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && initial.geometry.placement.offsetX === 0
             && initial.geometry.placement.offsetY === 0,
         JSON.stringify(initial.geometry.placement));
-    check('label text selection exposes four accessible cross arrows plus a labelled joystick knob',
-        initial.controls.length === 4
-            && ['up', 'down', 'left', 'right'].every(direction =>
-                initial.controls.some(control => control.direction === direction))
-            && initial.controls.every(control => control.direction && control.ariaLabel)
+    check('label text selection exposes only a labelled joystick knob, no arrow buttons',
+        initial.arrowButtons === 0
             && initial.hasKnob
-            && Boolean(initial.knobLabel),
+            && initial.knobIsButton
+            && Boolean(initial.knobLabel)
+            && Boolean(initial.knobTitle),
         JSON.stringify(initial));
 
-    const controlsAvailable = await page.locator('#labelNudgeUp').count() > 0
-        && await page.locator('#labelNudgeRight').count() > 0
-        && await page.locator('#labelJoystickKnob').count() > 0;
+    const controlsAvailable = await page.locator('#labelJoystickKnob').count() > 0;
+    // 方向鍵已移除，離散微調改由搖桿聚焦後按方向鍵完成
+    const knobPress = key => page.locator('#labelJoystickKnob').press(key);
     const beforeUp = await page.evaluate(() => {
         const app = window.app;
         const person = app.personMap.get('label-target');
@@ -65,7 +63,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 relationship, app.relationships).points
         };
     });
-    if (controlsAvailable) await page.locator('#labelNudgeUp').click();
+    if (controlsAvailable) await knobPress('ArrowUp');
     const afterUp = controlsAvailable ? await page.evaluate(() => {
         const app = window.app;
         const canvas = app.canvas;
@@ -148,6 +146,65 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             false, 'joystick knob not found');
     }
 
+    // 拖外環可以把整個面板搬走，之後不再自動跟著文字錨點
+    const popoverBox = await page.locator('.label-position-popover').boundingBox();
+    if (popoverBox) {
+        // 抓外環（避開中央搖桿）：面板上緣往下 8px 處
+        const grabX = popoverBox.x + popoverBox.width / 2;
+        const grabY = popoverBox.y + 8;
+        await page.mouse.move(grabX, grabY);
+        await page.mouse.down();
+        await page.mouse.move(grabX + 120, grabY + 90, { steps: 6 });
+        await page.mouse.up();
+        const movedPanel = await page.evaluate(() => {
+            const app = window.app;
+            const popover = document.querySelector('.label-position-popover');
+            const before = popover.getBoundingClientRect();
+            const placement = app.personMap.get('label-target').labelPlacement;
+            // 面板搬走後，文字微調不得把面板拉回自動位置
+            app.adjustSelectedPersonLabel('right');
+            const after = popover.getBoundingClientRect();
+            return {
+                manual: app.labelPopoverPlacement,
+                textMoved: app.personMap.get('label-target').labelPlacement?.offsetX
+                    !== (placement?.offsetX ?? 0),
+                stayedPut: Math.round(before.left) === Math.round(after.left)
+                    && Math.round(before.top) === Math.round(after.top),
+                left: Math.round(before.left),
+                top: Math.round(before.top)
+            };
+        });
+        check('dragging the pad ring relocates the whole panel and it stays where it was dropped',
+            movedPanel.manual?.personId === 'label-target'
+                && Math.round(popoverBox.x) !== movedPanel.left
+                && Math.round(popoverBox.y) !== movedPanel.top
+                && movedPanel.textMoved === true
+                && movedPanel.stayedPut === true,
+            JSON.stringify({ popoverBox, movedPanel }));
+    } else {
+        check('dragging the pad ring relocates the whole panel and it stays where it was dropped',
+            false, 'popover not found');
+    }
+    // 換人編輯時回到自動定位
+    const autoAgain = await page.evaluate(() => {
+        const app = window.app;
+        app.selectPerson('label-left', { labelEditing: true });
+        app.render();
+        return {
+            manualPersonId: app.labelPopoverPlacement?.personId,
+            editing: app.labelEditingPersonId,
+            usesManual: app.labelPopoverPlacement?.personId === app.labelEditingPersonId
+        };
+    });
+    check('a different label falls back to automatic panel placement',
+        autoAgain.editing === 'label-left' && autoAgain.usesManual === false,
+        JSON.stringify(autoAgain));
+    await page.evaluate(() => {
+        window.app.labelPopoverPlacement = null;
+        window.app.selectPerson('label-target', { labelEditing: true });
+        window.app.render();
+    });
+
     // 文字壓到面板底下時面板淡出讓路，移開後恢復（opacity 有 140ms 轉場，需等它收斂）
     const readFadeState = () => page.evaluate(() => {
         const app = window.app;
@@ -199,7 +256,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             && afterReset.exportBounds.maxY >= afterReset.screen.bounds.bottom,
         JSON.stringify(afterReset));
 
-    if (controlsAvailable) await page.locator('#labelNudgeUp').click();
+    if (controlsAvailable) await knobPress('ArrowUp');
     const undoRedo = controlsAvailable ? await page.evaluate(() => {
         const app = window.app;
         const placement = () => app.personMap.get('label-target').labelPlacement
@@ -278,7 +335,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         selectedPersonId: window.app.selectedPersonId,
         labelEditingPersonId: window.app.labelEditingPersonId,
         quickDrawCount: window.__quickLabelDrawCount,
-        controls: document.querySelectorAll('[data-label-nudge]').length,
+        arrowButtons: document.querySelectorAll('[data-label-nudge]').length,
         controlsVisible: Boolean(document.querySelector('.label-position-popover')?.getClientRects().length),
         personFormVisible: Boolean(document.querySelector('#personForm')?.getClientRects().length),
         status: window.app.elements.statusBar.textContent
@@ -287,7 +344,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         afterLabelClick.selectedPersonId === 'label-click-target'
             && afterLabelClick.labelEditingPersonId === 'label-click-target'
             && afterLabelClick.quickDrawCount === 0
-            && afterLabelClick.controls === 4
+            && afterLabelClick.arrowButtons === 0
             && afterLabelClick.controlsVisible
             && !afterLabelClick.personFormVisible
             && /文字旁/.test(afterLabelClick.status)
@@ -302,7 +359,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         hiddenQuickCursor !== 'pointer', hiddenQuickCursor);
 
     await page.evaluate(() => { window.__quickLabelDrawCount = 0; });
-    await page.locator('#labelNudgeRight').click();
+    await knobPress('ArrowRight');
     const afterLabelNudge = await page.evaluate(() => ({
         labelEditingPersonId: window.app.labelEditingPersonId,
         placement: window.app.personMap.get('label-click-target').labelPlacement,
@@ -327,7 +384,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
                 outline: { left: Math.round(outline.left), top: Math.round(outline.top) }
             };
         };
-        const nudge = dir => document.querySelector(`[data-label-nudge="${dir}"]`).click();
+        const nudge = dir => window.app.adjustSelectedPersonLabel(dir);
         const before = readRects();
         nudge('down');
         nudge('right');

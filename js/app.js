@@ -181,10 +181,6 @@ class GenogramApp {
         left: [-1, 0], right: [1, 0],
         downLeft: [-1, 1], down: [0, 1], downRight: [1, 1]
     });
-    // 方向鍵按住連續移動：先等 320ms 才起跑，之後每步加速，最快 60ms 一步
-    static LABEL_NUDGE_REPEAT_DELAY = 320;
-    static LABEL_NUDGE_REPEAT_MIN_INTERVAL = 60;
-    static LABEL_NUDGE_REPEAT_ACCEL = 0.82;
     // 搖桿：視覺偏移上限（超出後文字仍 1:1 跟著指標），與點擊/拖曳判定門檻
     static LABEL_JOYSTICK_MAX_DEFLECTION = 22;
     static LABEL_JOYSTICK_DRAG_SLOP = 3;
@@ -211,6 +207,7 @@ class GenogramApp {
         this.selectedPersonId = null;
         this.labelEditingPersonId = null; // 純 UI 暫態：直接點姓名／備註時隱藏人物快速功能圈
         this.labelJoystickDragging = false; // 純 UI 暫態：文字拉桿拖曳中，期間不隱藏面板
+        this.labelPopoverPlacement = null; // 純 UI 暫態：使用者手動拖走的拉桿面板位置
         this.selectedRelationshipId = null;
         this.editingRelationshipId = null; // 正在編輯的關係線 ID (用於修改關係類型)
         this.selectedHouseholdId = null; // 選中的圈選框 ID
@@ -3247,41 +3244,45 @@ class GenogramApp {
     setupLabelPositionPopover() {
         const popover = this.elements.labelPositionPopover;
         if (!popover) return;
-        popover.querySelectorAll('[data-label-nudge]').forEach(button =>
-            this.bindLabelNudgeButton(button));
         this.bindLabelJoystickKnob(popover.querySelector('#labelJoystickKnob'));
+        this.bindLabelPopoverDrag(popover);
     }
 
     /**
-     * 方向鍵：點一下走一格，按住則連續移動（夾娃娃機手感，越按越快）。
-     * 指標操作在 pointerdown 就出手，click 只保留給鍵盤 Enter / Space。
+     * 外環拖曳：把整個面板搬到使用者要的位置，之後就不再自動跟著文字錨點跑。
+     * 換人編輯時回到自動定位。
      */
-    bindLabelNudgeButton(button) {
-        const direction = button.dataset.labelNudge;
-        let repeatTimer = null;
-        const stopRepeat = () => {
-            if (repeatTimer) clearTimeout(repeatTimer);
-            repeatTimer = null;
-        };
-        const scheduleRepeat = delay => {
-            repeatTimer = setTimeout(() => {
-                this.adjustSelectedPersonLabel(direction, { recordHistory: false });
-                scheduleRepeat(Math.max(GenogramApp.LABEL_NUDGE_REPEAT_MIN_INTERVAL,
-                    delay * GenogramApp.LABEL_NUDGE_REPEAT_ACCEL));
-            }, delay);
-        };
-        button.addEventListener('pointerdown', event => {
-            if (event.button !== 0) return;
-            this.adjustSelectedPersonLabel(direction);
-            scheduleRepeat(GenogramApp.LABEL_NUDGE_REPEAT_DELAY);
+    bindLabelPopoverDrag(popover) {
+        let drag = null;
+        popover.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.target.closest('#labelJoystickKnob')) return;
+            const container = this.elements.canvasContainer.getBoundingClientRect();
+            drag = {
+                pointerId: event.pointerId,
+                grabX: event.clientX - container.left - popover.offsetLeft,
+                grabY: event.clientY - container.top - popover.offsetTop
+            };
+            popover.classList.add('is-moving');
+            popover.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
         });
-        ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach(name =>
-            button.addEventListener(name, stopRepeat));
-        // detail === 0 才是鍵盤 Enter / Space；指標點擊已在 pointerdown 處理過
-        button.addEventListener('click', event => {
-            if (event.detail !== 0) return;
-            this.adjustSelectedPersonLabel(direction);
+        popover.addEventListener('pointermove', event => {
+            if (!drag || event.pointerId !== drag.pointerId) return;
+            const container = this.elements.canvasContainer.getBoundingClientRect();
+            this.labelPopoverPlacement = {
+                personId: this.labelEditingPersonId,
+                left: event.clientX - container.left - drag.grabX,
+                top: event.clientY - container.top - drag.grabY
+            };
+            this.updateLabelPositionPopover();
         });
+        const endDrag = event => {
+            if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+            drag = null;
+            popover.classList.remove('is-moving');
+        };
+        popover.addEventListener('pointerup', endDrag);
+        popover.addEventListener('pointercancel', endDrag);
     }
 
     /**
@@ -3424,17 +3425,19 @@ class GenogramApp {
 
         popover.hidden = false;
         popover.style.visibility = 'hidden';
-        popover.querySelector('#labelJoystickKnob')
-            ?.classList.toggle('can-reset', Boolean(person.labelPlacement));
         const gap = GenogramApp.LABEL_POPOVER_GAP;
         const edge = 12;
-        let left = anchor.right + gap;
-        if (left + popover.offsetWidth > containerWidth - edge) {
+        // 使用者拖過面板就尊重手動位置，只做邊界夾制；換人編輯才回到自動定位
+        const manual = this.labelPopoverPlacement?.personId === this.labelEditingPersonId
+            ? this.labelPopoverPlacement : null;
+        let left = manual ? manual.left : anchor.right + gap;
+        if (!manual && left + popover.offsetWidth > containerWidth - edge) {
             left = anchor.left - popover.offsetWidth - gap;
         }
         left = Math.max(edge, Math.min(left, containerWidth - popover.offsetWidth - edge));
         // 圓形拉桿垂直置中對齊文字，比切齊上緣看起來穩
-        let top = (anchor.top + anchor.bottom) / 2 - popover.offsetHeight / 2;
+        let top = manual ? manual.top
+            : (anchor.top + anchor.bottom) / 2 - popover.offsetHeight / 2;
         top = Math.max(edge, Math.min(top, containerHeight - popover.offsetHeight - edge));
         popover.style.left = `${Math.round(left)}px`;
         popover.style.top = `${Math.round(top)}px`;
