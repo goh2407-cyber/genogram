@@ -74,6 +74,46 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         JSON.stringify(result.restored));
     check('empty Fit returns 100% and zero offsets', result.empty.scale === 1 && result.empty.fitted === false);
     check('zoom display follows fitted scale', /%$/.test(result.zoomText));
+
+    // 縮放按鈕必須回得到剛好 100%：×1.1 / ×0.9 不是互為反函數（1.1*0.9 = 0.99）
+    const zoomLadder = await page.evaluate(() => {
+        const app = window.app;
+        app.resetZoom();
+        const readings = [];
+        for (let i = 0; i < 4; i += 1) {
+            document.getElementById('zoomIn').click();
+            readings.push(app.canvas.scale);
+        }
+        const peak = app.canvas.scale;
+        for (let i = 0; i < 4; i += 1) {
+            document.getElementById('zoomOut').click();
+            readings.push(app.canvas.scale);
+        }
+        const backHome = app.canvas.scale;
+        // 從非級距值（fit 後的任意 scale）往上也要落在乾淨級距上
+        app.canvas.scale = 0.83;
+        document.getElementById('zoomIn').click();
+        const fromArbitrary = app.canvas.scale;
+        app.resetZoom();
+        // 下限與上限都不得越界
+        for (let i = 0; i < 20; i += 1) document.getElementById('zoomOut').click();
+        const floor = app.canvas.scale;
+        for (let i = 0; i < 40; i += 1) document.getElementById('zoomIn').click();
+        const ceiling = app.canvas.scale;
+        app.resetZoom();
+        return { readings, peak, backHome, fromArbitrary, floor, ceiling,
+            display: document.getElementById('zoomLevel').textContent };
+    });
+    check('zoom in then out returns to exactly 100%',
+        zoomLadder.backHome === 1 && zoomLadder.peak > 1, JSON.stringify(zoomLadder));
+    check('zoom steps land on clean ladder values',
+        zoomLadder.readings.every(scale => [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
+            .some(step => Math.abs(step - scale) < 1e-9)), JSON.stringify(zoomLadder.readings));
+    check('zooming from an arbitrary fitted scale snaps onto the ladder',
+        zoomLadder.fromArbitrary === 1, JSON.stringify(zoomLadder));
+    check('zoom stops at the 25% floor and 300% ceiling',
+        zoomLadder.floor === 0.25 && zoomLadder.ceiling === 3, JSON.stringify(zoomLadder));
+    check('reset restores a 100% readout', zoomLadder.display === '100%', zoomLadder.display);
     check('zero page/console errors', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'ALL FIT VIEW CHECKS PASSED');
 })().catch(error => {

@@ -763,84 +763,53 @@ body {
     opacity: 0.35;
 }
 
-/* 十字拉桿：四向箭頭（點一下 12px、按住連續移動）+ 中央搖桿（拖曳自由移動、點一下重置） */
+/* 十字拉桿：外環拖曳搬動面板本身，中央搖桿拖曳移動文字 */
 .label-joystick {
     position: relative;
-    width: 96px;
-    height: 96px;
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
     background: radial-gradient(circle at 50% 42%,
         rgba(237, 18, 97, 0.04) 0%, rgba(237, 18, 97, 0.09) 100%);
+    cursor: grab;
 }
 
-.label-joystick-arrow {
+.label-position-popover.is-moving .label-joystick {
+    cursor: grabbing;
+}
+
+/* 外環頂端的握把點，提示整個面板可以拖走 */
+.label-joystick-grip {
     position: absolute;
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 50%;
-    color: var(--text-primary);
-    background: #fff;
-    font: inherit;
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
-    touch-action: none;
-    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
-}
-
-.label-joystick-arrow.is-up { top: 0; left: 34px; }
-.label-joystick-arrow.is-down { bottom: 0; left: 34px; }
-.label-joystick-arrow.is-left { left: 0; top: 34px; }
-.label-joystick-arrow.is-right { right: 0; top: 34px; }
-
-.label-joystick-arrow:hover,
-.label-joystick-arrow:active {
-    border-color: var(--brand);
-    color: var(--brand-active);
-    background: var(--brand-light);
+    top: 4px;
+    left: 50%;
+    width: 16px;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 2px;
+    background: rgba(237, 18, 97, 0.35);
 }
 
 .label-joystick-knob {
-    position: absolute;
-    left: 31px;
-    top: 31px;
-    width: 34px;
-    height: 34px;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
     padding: 0;
     border: 2px solid var(--brand);
     border-radius: 50%;
     background: radial-gradient(circle at 50% 34%, #fff 0%, var(--brand-light) 100%);
     box-shadow: 0 2px 6px rgba(23, 31, 45, 0.18);
+    color: var(--brand);
     cursor: grab;
     touch-action: none;
-    font: inherit;
-    font-size: 14px;
-    line-height: 1;
-    color: var(--brand-active);
-    display: grid;
-    place-items: center;
 }
 
-/* 有手動位移時，搖桿顯示重置符號，提示「點一下可還原」 */
-.label-joystick-knob::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--brand);
-}
-
-.label-joystick-knob.can-reset::before {
-    content: '⟲';
-    width: auto;
-    height: auto;
-    background: none;
-    color: var(--brand);
-    font-size: 15px;
+.label-joystick-knob svg {
+    width: 22px;
+    height: 22px;
 }
 
 .label-joystick-knob.is-dragging {
@@ -848,7 +817,6 @@ body {
     box-shadow: 0 4px 12px rgba(237, 18, 97, 0.35);
 }
 
-.label-joystick-arrow:focus-visible,
 .label-joystick-knob:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
@@ -1831,12 +1799,41 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
     .canvas-tool-dock { left: calc(50% - 36px); }
 }
 
+/* 1024px 以下改為真正重排（原本是固定 1024 版面 + 水平捲動）。
+   瀏覽器縮放到 125% / 150% 時 CSS 視窗就會掉進這個區間，不能只靠水平捲動。 */
 @media (max-width: 1023px) {
     html,
     body {
         overflow-x: auto;
         overflow-y: hidden;
     }
+    .app-container { min-width: 0; }
+    .global-bar {
+        gap: var(--space-2);
+        padding: 0 var(--space-3);
+    }
+    /* 工具列脫離絕對置中，改當一般 flex 項目排隊，塞不下時自己橫向捲動 */
+    .canvas-tool-dock {
+        position: static;
+        left: auto;
+        top: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+        overflow-x: auto;
+        overflow-y: hidden;
+        transform: none;
+        box-shadow: none;
+        scrollbar-width: thin;
+    }
+    .canvas-tool-dock::-webkit-scrollbar { height: 4px; }
+    .global-actions { flex: 0 0 auto; margin-left: 0; }
+}
+
+/* 更窄時只留品牌 logo，把寬度全讓給工具按鈕（h1 帶 inline display:flex，不能整個藏） */
+@media (max-width: 860px) {
+    .brand-lockup .app-title-text { display: none; }
+    .global-bar { padding: 0 var(--space-2); }
 }
 
 @media (prefers-reduced-motion: reduce) {

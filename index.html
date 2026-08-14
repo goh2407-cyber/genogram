@@ -42,7 +42,7 @@
                             points="34.59 3.92 28.41 4.29 34.85 5.04 37.77 14.11 36.65 5.1 42.82 4.73 36.39 3.97 34.58 0 34.59 3.92"
                             style="fill:#ed1261; stroke-width:0px;" />
                     </svg>
-                    勵馨家系圖生成器
+                    <span class="app-title-text">勵馨家系圖生成器</span>
                 </h1>
             </div>
             <div class="document-context"><span class="document-name">未命名家系圖</span></div>
@@ -213,11 +213,15 @@
                 <div id="labelPositionPopover" class="label-position-popover" role="group"
                     aria-label="文字位置" hidden>
                     <div class="label-joystick" id="labelJoystick">
-                        <button type="button" id="labelNudgeUp" class="label-joystick-arrow is-up" data-label-nudge="up" aria-label="文字往上移動，按住可連續移動" title="往上移動（按住連續移動）">↑</button>
-                        <button type="button" id="labelNudgeLeft" class="label-joystick-arrow is-left" data-label-nudge="left" aria-label="文字往左移動，按住可連續移動" title="往左移動（按住連續移動）">←</button>
-                        <button type="button" id="labelJoystickKnob" class="label-joystick-knob" aria-label="拖曳搖桿移動文字，點一下重置文字位置" title="拖曳移動文字，點一下重置"></button>
-                        <button type="button" id="labelNudgeRight" class="label-joystick-arrow is-right" data-label-nudge="right" aria-label="文字往右移動，按住可連續移動" title="往右移動（按住連續移動）">→</button>
-                        <button type="button" id="labelNudgeDown" class="label-joystick-arrow is-down" data-label-nudge="down" aria-label="文字往下移動，按住可連續移動" title="往下移動（按住連續移動）">↓</button>
+                        <span class="label-joystick-grip" aria-hidden="true"></span>
+                        <button type="button" id="labelJoystickKnob" class="label-joystick-knob"
+                            aria-label="拖曳搖桿移動文字，可用方向鍵微調，點一下重置文字位置"
+                            title="拖曳移動文字（方向鍵微調、點一下重置）">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 3.5v17M3.5 12h17M12 3.5 9.6 6M12 3.5 14.4 6M12 20.5 9.6 18M12 20.5 14.4 18M3.5 12 6 9.6M3.5 12 6 14.4M20.5 12 18 9.6M20.5 12 18 14.4"/>
+                            </svg>
+                        </button>
                     </div>
                 </div>
                 <div id="routingWarning" class="routing-warning" role="status" aria-live="polite" hidden></div>
