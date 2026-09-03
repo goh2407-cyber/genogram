@@ -420,6 +420,13 @@ class GenogramApp {
             closeHelpBtn: document.getElementById('closeHelp'),
             fileInput: document.getElementById('fileInput'),
 
+            // [2-3] 開啟檔案對話框（最近檔案 / 瀏覽 / 清除本機暫存）
+            openFileModal: document.getElementById('openFileModal'),
+            recentFileList: document.getElementById('recentFileList'),
+            browseFileBtn: document.getElementById('browseFileBtn'),
+            cancelOpenFile: document.getElementById('cancelOpenFile'),
+            clearLocalDataBtn: document.getElementById('clearLocalDataBtn'),
+
             // 圖例面板
             legendPanel: document.getElementById('legendPanel'),
 
@@ -441,6 +448,7 @@ class GenogramApp {
         const registrations = [
             [this.elements.genderModal, () => this.closeGenderModal(), '.gender-btn'],
             [this.elements.relationshipModal, () => this.closeRelationshipModal(), '.rel-btn'],
+            [this.elements.openFileModal, () => this.closeOpenFileModal(), '#browseFileBtn'],
             [this.elements.childrenModal, () => this.closeChildrenModal(), '#skipChildren'],
             [this.elements.helpModal, () => this.closeHelpModal(), '#closeHelp'],
             [this.elements.exportModal, () => this.closeExportModal(), '.export-option-btn']
@@ -695,6 +703,10 @@ class GenogramApp {
         this.elements.saveBtn.addEventListener('click', () => this.saveToFile());
         this.elements.downloadBtn.addEventListener('click', () => this.downloadFile());
         this.elements.loadBtn.addEventListener('click', () => this.handleLoadClick());
+        // [2-3] 開啟檔案對話框
+        this.elements.browseFileBtn?.addEventListener('click', () => { this.closeOpenFileModal(); this.openWithPicker(); });
+        this.elements.cancelOpenFile?.addEventListener('click', () => this.closeOpenFileModal());
+        this.elements.clearLocalDataBtn?.addEventListener('click', () => this.clearLocalData());
         this.elements.fileInput.addEventListener('change', (e) => this.loadFromFile(e));
         if (this.elements.exportBtn) {
             this.elements.exportBtn.addEventListener('click', () => this.showExportModal());
@@ -6097,25 +6109,150 @@ class GenogramApp {
      * 處理載入按鈕點擊
      */
     async handleLoadClick() {
-        // 嘗試使用新的 API 載入
+        // [2-3] 支援 File System Access 的瀏覽器：先開「開啟檔案」對話框（最近檔案 / 瀏覽 / 清除本機暫存）
+        if (window.showOpenFilePicker && this.elements.openFileModal) {
+            await this.showOpenFileModal();
+            return;
+        }
+        // 如果 API 不支援，使用傳統 input 方式
+        this.elements.fileInput.click();
+    }
+
+    /**
+     * 以系統檔案選擇器開啟（原 handleLoadClick 的 picker 路徑）
+     */
+    async openWithPicker() {
         if (window.showOpenFilePicker) {
             try {
                 const data = await this.storage.openFileWithPicker();
                 if (data) {
                     this.loadData(data);
                     this.updateStatus(`已載入檔案: ${this.storage.getOpenFileName()}`, 'success');
-                    return;
-                } else {
-                    // 用戶取消選擇，直接返回，不執行後續的傳統方式
-                    return;
                 }
+                return; // 用戶取消也直接返回，不落到傳統方式
             } catch (err) {
                 console.warn('使用檔案選擇器載入失敗，切換回傳統方式', err);
             }
         }
-
-        // 如果 API 不支援或失敗，使用傳統 input 方式
         this.elements.fileInput.click();
+    }
+
+    /**
+     * [2-3] 開啟檔案對話框：列出最近檔案（IndexedDB 內的 handle）、瀏覽、清除本機暫存
+     */
+    async showOpenFileModal() {
+        this.commitPropertyEditSession();
+        await this.renderRecentFiles();
+        this.modalManager.open(this.elements.openFileModal);
+    }
+
+    closeOpenFileModal() {
+        this.modalManager.close(this.elements.openFileModal);
+    }
+
+    static formatRecentTime(ts) {
+        if (!Number.isFinite(ts)) return '';
+        const d = new Date(ts);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    async renderRecentFiles() {
+        const list = this.elements.recentFileList;
+        if (!list) return;
+        list.replaceChildren();
+        let entries = [];
+        try { entries = await this.storage.listRecentFiles(); } catch (_) { entries = []; }
+        if (!entries.length) {
+            const empty = document.createElement('p');
+            empty.className = 'recent-file-empty';
+            empty.textContent = '尚無最近檔案。用「瀏覽檔案…」開啟或「另存」建立檔案後，會出現在這裡。';
+            list.appendChild(empty);
+            return;
+        }
+        const current = this.storage.getOpenFileName();
+        entries.forEach(entry => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'recent-file-item';
+            item.setAttribute('role', 'listitem');
+            item.dataset.name = entry.name;
+            if (entry.name === current) item.classList.add('is-current');
+            const name = document.createElement('span');
+            name.className = 'recent-file-name';
+            name.textContent = entry.name; // textContent：檔名可能含個案姓名，不走 innerHTML
+            name.title = entry.name;
+            const time = document.createElement('span');
+            time.className = 'recent-file-time';
+            time.textContent = (entry.name === current ? '目前開啟 · ' : '') + GenogramApp.formatRecentTime(entry.openedAt);
+            item.append(name, time);
+            item.addEventListener('click', () => this.openRecentEntry(entry));
+            list.appendChild(item);
+        });
+    }
+
+    async openRecentEntry(entry) {
+        try {
+            const data = await this.storage.openRecentFile(entry);
+            if (!data) {
+                this.updateStatus('未取得檔案存取權限，請改用「瀏覽檔案…」', 'warning');
+                return;
+            }
+            this.closeOpenFileModal();
+            this.loadData(data);
+            this.updateStatus(`已載入檔案: ${this.storage.getOpenFileName()}`, 'success');
+        } catch (err) {
+            console.warn('開啟最近檔案失敗:', err);
+            if (err && err.name === 'NotFoundError') {
+                await this.storage.forgetRecentFile(entry.name);
+                await this.renderRecentFiles();
+                this.updateStatus('找不到該檔案（可能已移動或刪除），已從最近檔案移除', 'error');
+            } else {
+                this.updateStatus('開啟檔案失敗：' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+    }
+
+    /**
+     * [2-3] 清除本機暫存並關閉個案：瀏覽器暫存 + 最近檔案 + 畫布內容 + 歷史，回到空白新個案。
+     * 不會刪除磁碟上的 JSON 檔。給共用電腦離開前使用。
+     */
+    async clearLocalData() {
+        const confirmed = confirm('確定要清除這台電腦上的暫存並關閉目前個案嗎？\n\n會清除：瀏覽器暫存、最近檔案清單、畫布內容與復原紀錄。\n不會刪除你已另存到電腦裡的 JSON 檔案。');
+        if (!confirmed) return;
+        this.closeOpenFileModal();
+        this.commitPropertyEditSession();
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+        this.isLoading = true; // 期間不觸發 autosave 寫回
+        try {
+            await this.storage.clearLocalData();
+        } finally {
+            this.isLoading = false;
+        }
+        this.persons = [];
+        this._syncPersonMap();
+        this.relationships = [];
+        this.households = [];
+        this.lifeCircles = [];
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
+        this.selectedPersonId = null;
+        this.selectedPersonIds = [];
+        this.selectedRelationshipId = null;
+        this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null;
+        this.editingRelationshipId = null;
+        this.history.undoStack = [];
+        this.history.redoStack = [];
+        this._dataVersion++;
+        this.isDirty = false;
+        this.updateDocumentTitle();
+        this.updateToolbar();
+        this.updatePropertyPanel();
+        this.resetZoom();
+        this.render();
+        this.updateStatus('已清除本機暫存並關閉個案', 'success');
     }
 
     /**

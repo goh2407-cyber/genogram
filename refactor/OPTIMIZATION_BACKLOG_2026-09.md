@@ -15,7 +15,7 @@
 | 批次 | 項目數 | 完成 | 說明 |
 |---|---:|---:|---|
 | 第一批：一天內、零臨床風險 | 8 | 8 | 2026-09-02 全部完成，見「完成紀錄」；golden 16/16 |
-| 第二批：個案記錄層 | 4 | 0 | 出生年、匯出頁首、最近檔案、日期文字避讓 |
+| 第二批：個案記錄層 | 4 | 3 | 2026-09-03 完成 2-1 / 2-2 / 2-3；2-4 日期文字避讓待做 |
 | 第三批：需要設計拍板 | 4 | 0 | 去識別化、觸控、LOD、拆檔 |
 
 > ✅ **已拍板（2026-09-02）**：golden `15-maximal`、`16-multifamily` 的基準原停在 2026-07-15，與 2026-08-11「自動模式一律畫字面直線、
@@ -90,27 +90,32 @@
 
 ## 第二批：個案記錄層（roadmap Phase 3）
 
-### 2-1. 出生年月 → 自動年齡
-- [ ] `Person.birthDate`（YYYY 或 YYYY-MM，可空）、`Person.deathDate`；`age` 改為「有 birthDate 就算、否則沿用手填」
-- [ ] 屬性面板：出生年月欄位；有值時年齡欄唯讀顯示計算值
-- [ ] 「基準日」（預設今天）可在檢視分頁調整 → 看「事件當下幾歲」
-- [ ] 舊檔相容：無 birthDate 的人物行為完全不變；`toJSON` 只在有值時寫入
-- 驗證：`verify_roundtrip.js` 加案例；golden 0 差異（無 birthDate 時）
-- 狀態：
+### 2-1. 出生年月 → 自動年齡 ✅
+- [x] `Person.birthDate` / `deathDate`（YYYY | YYYY-MM | YYYY-MM-DD，`normalizeDateString` 正規化，接受 1985/6、1985年6月）
+- [x] `getDisplayAge(ref)`：在世依基準日計算；過世有死亡年月 → 享年；否則沿用手填 `age`。canvas.drawPerson 與匯出同用
+- [x] 屬性面板：出生年月 / 死亡年月（過世才顯示）；有計算值時年齡欄唯讀 + 提示；格式錯誤標紅不寫入、不推 history
+- [x] 檢視分頁「年齡基準日」（session-only，不進 JSON）
+- [x] 舊檔相容：`toJSON` 只在有值時寫入，無 birthDate 者逐 byte 不變
+- 驗證：新測試 `verify_birthdate.js` 32/32；golden 16/16；run_all 全綠
+- 狀態：完成 2026-09-03（commit 24c5f98）
 
-### 2-2. 匯出頁首 / 頁尾
-- [ ] 匯出對話框加「標題 / 案號 / 日期 / 繪製者」可選欄位（session 記憶、不進 JSON 或另存 `meta`）
-- [ ] PNG/JPEG/SVG/PDF 一致加頁首；PDF 加 A4 / A3 直橫向選項
-- [ ] 複製圖片同步
-- 驗證：`verify_view_export.js` 擴充；肉眼比對四格式
-- 狀態：
+### 2-2. 匯出頁首 ✅
+- [x] 匯出對話框「加上頁首」：標題 / 案號 / 繪製者 / 日期；標題・案號・繪製者屬個案內容 → 存進 JSON `meta`（只在有值時，舊檔不變），日期預設今天不存
+- [x] PNG / JPEG / SVG(內嵌 PNG) / PDF 共用 `drawExportHeader`；無頁首時輸出逐 byte 不變
+- [x] PDF 紙張 A4 / A3、方向 自動/橫/直（`storage.exportPDF(options)`）
+- [x] 決定：「複製圖片」不加頁首（快速貼上用途），對話框內有註明
+- [x] 「加上頁首」勾選、紙張、繪製者預設 記在 localStorage 偏好；meta 隨 loadData / 暫存恢復 / 清空 同步；`migrate()` 保留 meta
+- 驗證：新測試 `verify_export_header.js` 19/19；肉眼確認頁首排版
+- 狀態：完成 2026-09-03（commit 6e942ce + migrate 修正）
 
-### 2-3. 多個案：最近檔案 + 清除本機暫存
-- [ ] File System Access handle 存 IndexedDB → 「最近檔案」清單（重整後可一鍵重開、Ctrl+S 直接寫回）
-- [ ] 「關閉個案並清除本機暫存」按鈕（共用電腦隱私），有二次確認
-- [ ] autosave 改為 per-file key（以檔名/handle 區分），避免換案覆蓋
-- 驗證：新測試 `verify_recent_files.js`；`verify_roundtrip.js`
-- 狀態：
+### 2-3. 多個案：最近檔案 + 清除本機暫存 ✅
+- [x] `storage` 以 IndexedDB 存 FileSystemFileHandle（最多 8 筆，只存 handle 與檔名，不存內容）；開檔 / 另存 自動記錄
+- [x] 「載入」改為先開「開啟檔案」對話框：最近檔案清單（點一下重開並連結，需要時請求權限）、「瀏覽檔案…」、「清除本機暫存並關閉個案」
+- [x] 清除本機暫存：瀏覽器暫存 + 最近檔案 + 畫布 + 歷史 + meta → 空白新個案；有二次確認；不刪磁碟 JSON
+- [x] 檔案不存在 → 自動從清單移除；權限被拒 → 提示改用瀏覽；無 FS API 的瀏覽器退回原本 file input
+- [ ] ~~autosave 改 per-file key~~ **決定不做**：暫存槽只放「最後一次工作階段」；per-file 會把多個個案內容都留在 localStorage，隱私更差。換案問題已由最近檔案清單解決
+- 驗證：新測試 `verify_recent_files.js` 16/16；run_all 全綠
+- 狀態：完成 2026-09-03
 
 ### 2-4. 婚姻線日期文字避開被夾者符號（低）
 - [ ] 自動直線穿過中間人物時，日期/說明文字目前印在該人物符號上（見 golden 15/16）；改為沿線找不與符號重疊的位置，或退到線的另一側
@@ -162,3 +167,6 @@
 | 2026-09-02 | 1-7 說明文件 | 肉眼 + 自訂 1 項 | 說明視窗 ×3、使用說明.txt、README |
 | 2026-09-02 | 1-8 run_all / sync_mirrors | run_all 30/31（golden 15/16 基準過舊，同日拍板更新後 31/31） | refactor/README、CLAUDE.md、AGENTS.md |
 | 2026-09-02 | golden 15/16 基準更新 | `--update` 後重跑 16/16 = 0 差異 | 使用者決定維持 8 月直線走法，程式不動 |
+| 2026-09-03 | 2-1 出生年月自動年齡 | verify_birthdate 32/32；golden 16/16 | Person.birthDate/deathDate、getDisplayAge、檢視分頁基準日 |
+| 2026-09-03 | 2-2 匯出頁首 + meta + PDF 紙張 | verify_export_header 19/19 | drawExportHeader；migrate 保留 meta |
+| 2026-09-03 | 2-3 最近檔案 + 清除本機暫存 | verify_recent_files 16/16 | IndexedDB handle；開啟檔案對話框；per-file autosave 決定不做 |

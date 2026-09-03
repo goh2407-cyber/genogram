@@ -1629,6 +1629,37 @@ body {
     accent-color: var(--brand);
 }
 
+/* [2-3] 開啟檔案對話框：最近檔案清單 */
+.open-file-hint { margin: 0 0 10px; font-size: 13px; color: var(--ink-muted); line-height: 1.5; }
+.open-file-privacy { margin: 12px 0 0; }
+.recent-file-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+.recent-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.recent-file-item:hover { background: var(--bg-light); border-color: #c3ccd9; }
+.recent-file-item.is-current { border-color: var(--brand); }
+.recent-file-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-file-time { flex: none; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+.recent-file-empty { margin: 0; padding: 10px 0; font-size: 13px; color: var(--ink-muted); }
+.open-file-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.modal-actions-spacer { flex: 1; }
+.btn-danger-text { color: #b42318; border-color: #f3c7c3; }
+.btn-danger-text:hover { background: #fff5f4; border-color: #e5a29b; }
+
 /* [2-2] 匯出頁首欄位 + PDF 紙張 */
 .export-header-settings { margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px; }
 .export-header-fields:not([hidden]) { display: grid; gap: 8px; margin-top: 10px; }

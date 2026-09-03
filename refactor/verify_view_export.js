@@ -305,8 +305,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         return {
             pngCalls: pngCalls.length,
             jpegCalls: jpegCalls.length,
-            pngThreaded: pngCalls.every(args => args[args.length - 1] === app.viewOptions),
-            jpegThreaded: jpegCalls.every(args => args[args.length - 1] === app.viewOptions)
+            // [2-2] exportTo* 尾端多了 header 參數：改以「有轉傳同一個 viewOptions 物件」判定，不綁最後一個位置
+            pngThreaded: pngCalls.every(args => args.includes(app.viewOptions)),
+            jpegThreaded: jpegCalls.every(args => args.includes(app.viewOptions))
         };
     });
     check('PNG-backed App paths all forward viewOptions',
