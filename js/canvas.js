@@ -4488,7 +4488,7 @@ class GenogramCanvas {
                 .filter(m => m)
                 .map(m => m.y);
             const ySpan = memberYs.length ? Math.max(...memberYs) - Math.min(...memberYs) : 0;
-            const isDogBone = aspectRatio > 1.2 && ySpan < 60;
+            const isDogBone = aspectRatio > 1.2 && ySpan < 60 && bounds.dogBoneAllowed !== false; // [HH-5]
 
             // 繪製狗骨頭形狀（膠囊狀，上下平直）
             const drawDogBone = () => {
@@ -4668,19 +4668,39 @@ class GenogramCanvas {
 
         });
 
-        // 1.5 [HH-1] 每位成員符號下方保留一段「固定文字區」，框線不再切到預設位置的姓名。
-        // 守 2026-08-11 靜態外框規格：只用符號座標 + 常數，不讀 getPersonLabelGeometry、
-        // 不受文字位置／寬度影響（文字微調時框線完全不動，verify_hh_lc H7）。
-        // 高度 = 8 + 姓名列；有備註者再加固定兩行備註高度（是否有備註是資料，不是位置）。
-        members.forEach(m => {
-            const nameZone = 8 + this.fontSize + 4;
-            const noteZone = m.notes ? (this.fontSize * 0.8 + 2) * 2 : 0;
-            const bottom = m.y + personRadius + nameZone + noteZone + padding * 0.6;
-            const halfW = personRadius + padding * 0.6;
-            [[m.x - halfW, bottom], [m.x, bottom], [m.x + halfW, bottom]].forEach(([px, py]) => {
-                if (!isNaN(px) && !isNaN(py)) points.push({ x: px, y: py });
+        // [HH-5] 非成員 = 障礙物：框線不得把不在框內的人包進去。
+        // 做法：(a) 成員之間以最小生成樹連通，走廊遇到障礍物就繞道；(b) 所有取樣點剔除落在障礙物
+        //       排除半徑內者；(c) 凹包由 100 逐步收緊到 40，直到沒有任何障礙物中心在框內。
+        // 只依人物符號座標（守 2026-08-11 靜態外框規格），文字位置不影響。
+        const memberIds = new Set(members.map(m => m.id));
+        const obstacles = (Array.isArray(persons) ? persons : [])
+            .filter(p => p && !memberIds.has(p.id) && typeof p.x === 'number' && typeof p.y === 'number' && !isNaN(p.x) && !isNaN(p.y));
+        const corridorHalf = padding * 0.7;
+        const exclusion = personRadius + corridorHalf + 6; // 障礙物中心到任何取樣點的最小距離
+        const clearance = exclusion + corridorHalf + 4;   // 走廊中心線繞道時與障礙物中心的距離
+
+        // 1.5 [HH-5] 成員連通走廊（MST），遇障礙物繞道
+        if (members.length >= 2) {
+            const centroid = members.reduce((acc, m) => ({ x: acc.x + m.x / members.length, y: acc.y + m.y / members.length }), { x: 0, y: 0 });
+            const edges = this._householdSpanningEdges(members);
+            edges.forEach(([a, b]) => {
+                const path = this._routeAroundObstacles({ x: a.x, y: a.y }, { x: b.x, y: b.y }, obstacles, clearance, centroid, 0);
+                for (let i = 0; i + 1 < path.length; i++) {
+                    const p = path[i], q = path[i + 1];
+                    const len = Math.hypot(q.x - p.x, q.y - p.y);
+                    if (len < 1e-6) continue;
+                    const nx = -(q.y - p.y) / len, ny = (q.x - p.x) / len;
+                    const steps = Math.max(1, Math.ceil(len / 16));
+                    for (let s = 0; s <= steps; s++) {
+                        const t = s / steps;
+                        const cx = p.x + (q.x - p.x) * t, cy = p.y + (q.y - p.y) * t;
+                        points.push({ x: cx, y: cy });
+                        points.push({ x: cx + nx * corridorHalf, y: cy + ny * corridorHalf });
+                        points.push({ x: cx - nx * corridorHalf, y: cy - ny * corridorHalf });
+                    }
+                }
             });
-        });
+        }
 
         // 2. 加入成員間的連接線點 (User Request: 泡泡要包住連接線)
         relationships.forEach(rel => {
@@ -4706,27 +4726,116 @@ class GenogramCanvas {
             }
         });
 
-        if (points.length === 0) return null;
+        // [HH-5] 剔除落在障礙物排除半徑內的取樣點（不論來源）
+        const filtered = obstacles.length
+            ? points.filter(pt => !obstacles.some(o => Math.hypot(pt.x - o.x, pt.y - o.y) < exclusion))
+            : points;
+        const samples = filtered.length >= 3 ? filtered : points;
+        if (samples.length === 0) return null;
 
-        // 計算凹包 (Concave Hull) 產生「縮腰」效果
-        const hullPoints = this.getConcaveHull(points, 100);
+        // 計算凹包 (Concave Hull) 產生「縮腰」效果；[HH-5] 有障礙物被包住就逐步收緊
+        let hullPoints = this.getConcaveHull(samples, 100);
+        let enclosed = obstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints));
+        for (let concavity = 85; enclosed.length && concavity >= 40; concavity -= 15) {
+            const candidate = this.getConcaveHull(samples, concavity);
+            const stillEnclosed = obstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, candidate));
+            if (stillEnclosed.length <= enclosed.length) {
+                hullPoints = candidate;
+                enclosed = stillEnclosed;
+            }
+        }
 
         // 計算外接矩形 (用於相容性或快速檢測)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        points.forEach(p => {
+        samples.forEach(p => {
             minX = Math.min(minX, p.x);
             maxX = Math.max(maxX, p.x);
             minY = Math.min(minY, p.y);
             maxY = Math.max(maxY, p.y);
         });
 
+        // [HH-5] 膠囊（狗骨頭）會把整個外接框包起來：有障礙物落在外接框內就不允許用膠囊
+        const dogBoneAllowed = !obstacles.some(o =>
+            o.x > minX - 8 && o.x < maxX + 8 && o.y > minY - 8 && o.y < maxY + 8);
+
         return {
-            points,
+            points: samples,
             hullPoints,
             minX, minY, maxX, maxY,
             width: maxX - minX,
-            height: maxY - minY
+            height: maxY - minY,
+            dogBoneAllowed,
+            enclosedObstacles: enclosed.map(o => o.id)
         };
+    }
+
+    /**
+     * [HH-5] 成員中心的最小生成樹（Prim）：讓多成員同住框一定連通，且走廊最短
+     * @returns {Array<[Person, Person]>}
+     */
+    _householdSpanningEdges(members) {
+        const sorted = [...members].sort((a, b) => (a.y - b.y) || (a.x - b.x) || String(a.id).localeCompare(String(b.id)));
+        const inTree = [sorted[0]];
+        const rest = sorted.slice(1);
+        const edges = [];
+        while (rest.length) {
+            let best = null;
+            for (const t of inTree) {
+                for (const r of rest) {
+                    const d = Math.hypot(t.x - r.x, t.y - r.y);
+                    if (!best || d < best.d) best = { d, t, r };
+                }
+            }
+            edges.push([best.t, best.r]);
+            inTree.push(best.r);
+            rest.splice(rest.indexOf(best.r), 1);
+        }
+        return edges;
+    }
+
+    /**
+     * [HH-5] 走廊 A→B 遇到障礙物（距線段 < clearance）時，在障礙物旁插入繞道點；遞迴處理兩段，最多 4 層。
+     * 繞道方向：障礙物在線段哪一側就往另一側推；障礙物恰好在線上時往成員質心那側。
+     * 純函數、確定性（同輸入同輸出），供 draw / hit-test / 匯出共用。
+     */
+    _routeAroundObstacles(a, b, obstacles, clearance, centroid, depth) {
+        if (depth > 4 || !obstacles.length) return [a, b];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < 1e-6) return [a, b];
+        let hit = null;
+        obstacles.forEach(o => {
+            const t = ((o.x - a.x) * dx + (o.y - a.y) * dy) / len2;
+            if (t <= 0.02 || t >= 0.98) return; // 端點附近（成員本身）不算
+            const fx = a.x + dx * t, fy = a.y + dy * t;
+            const d = Math.hypot(o.x - fx, o.y - fy);
+            if (d < clearance && (!hit || t < hit.t)) hit = { o, t, fx, fy, d };
+        });
+        if (!hit) return [a, b];
+        const len = Math.sqrt(len2);
+        let nx = -dy / len, ny = dx / len; // 單位法向
+        const side = (hit.fx - hit.o.x) * nx + (hit.fy - hit.o.y) * ny; // 線段在障礙物的哪一側
+        if (Math.abs(side) < 1e-6) {
+            const toC = (centroid.x - hit.o.x) * nx + (centroid.y - hit.o.y) * ny;
+            if (toC < 0) { nx = -nx; ny = -ny; }
+        } else if (side < 0) {
+            nx = -nx; ny = -ny;
+        }
+        const w = { x: hit.o.x + nx * clearance, y: hit.o.y + ny * clearance };
+        const left = this._routeAroundObstacles(a, w, obstacles, clearance, centroid, depth + 1);
+        const right = this._routeAroundObstacles(w, b, obstacles, clearance, centroid, depth + 1);
+        return left.slice(0, -1).concat(right);
+    }
+
+    /** 射線法：點是否在多邊形內 */
+    static pointInPolygon(x, y, poly) {
+        if (!Array.isArray(poly) || poly.length < 3) return false;
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+            if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+        }
+        return inside;
     }
 
     /**
@@ -4880,7 +4989,7 @@ class GenogramCanvas {
             .filter(m => m)
             .map(m => m.y);
         const ySpan = memberYs.length ? Math.max(...memberYs) - Math.min(...memberYs) : 0;
-        const isDogBone = aspectRatio > 1.2 && ySpan < 60;
+        const isDogBone = aspectRatio > 1.2 && ySpan < 60 && bounds.dogBoneAllowed !== false; // [HH-5]
 
         if (isDogBone) {
             const padding = 8; // 與 drawHouseholds 的 drawDogBone 一致

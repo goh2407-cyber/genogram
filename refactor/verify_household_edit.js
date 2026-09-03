@@ -49,26 +49,17 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
             return ok;
         };
         const out = { ok: true, misses: [] };
+        // [HH-5] 成員符號中心都在框內；非成員（父 d 夾在母與弟之間、同居人 bf）都不在框內
         for (const id of hh.ids) {
             const p = app.personMap.get(id);
-            const g = c.getPersonLabelGeometry(p, app.viewOptions);
-            if (!g.bounds) continue;
-            // 規格：框幾何不得讀文字位置/寬度 → 只驗「符號寬度內」的姓名/備註底邊在框內
-            const half = c.personSize / 2;
-            const corners = [
-                { x: p.x - half, y: g.bounds.bottom }, { x: p.x + half, y: g.bounds.bottom },
-                { x: p.x, y: g.bounds.bottom + 4 }
-            ];
-            for (const pt of corners) {
-                if (!inside(pt, b.hullPoints)) { out.ok = false; out.misses.push({ id, pt }); }
-            }
+            if (!inside({ x: p.x, y: p.y }, b.hullPoints)) { out.ok = false; out.misses.push(id); }
         }
-        // 非成員（父、同居人）的符號中心不在框內
         out.outsiderInside = ['d', 'bf'].filter(id => { const p = app.personMap.get(id); return inside({ x: p.x, y: p.y }, b.hullPoints); });
+        out.enclosed = b.enclosedObstacles;
         return out;
     });
-    check('HH-1 成員姓名與備註（預設位置、符號寬度內）底邊全在凹包內', hh1.ok, JSON.stringify(hh1.misses));
-    check('HH-1 非成員符號中心不被包進框', hh1.outsiderInside.length === 0, JSON.stringify(hh1.outsiderInside));
+    check('HH-5 成員符號中心全在凹包內', hh1.ok, JSON.stringify(hh1.misses));
+    check('HH-5 非成員（夾在成員之間的父、同居人）不被包進框', hh1.outsiderInside.length === 0 && hh1.enclosed.length === 0, JSON.stringify(hh1));
 
     // ---- HH-2 名稱顯示 + 圖例 ----
     await page.evaluate(() => { const app = window.app; app.selectedHouseholdId = 'hh1'; app.updatePropertyPanel(); app.render(); });
