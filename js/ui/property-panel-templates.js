@@ -31,6 +31,13 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                     <button type="button" class="segmented-btn" data-route-mode="straight" title="一 直線">一</button>
                     <button type="button" class="segmented-btn" data-route-mode="under" title="ㄩ 下折">ㄩ</button>
                 </div>
+                <div class="route-lift" id="relationshipLiftRow" title="ㄇ 天橋抬高 / ㄩ 下折加深；也可直接在畫布上按住橫桿上下拖動">
+                    <span class="route-lift-label">橫桿距離</span>
+                    <button type="button" class="segmented-btn" data-lift="-15" aria-label="橫桿靠近人物">－</button>
+                    <span class="route-lift-value" id="relationshipLiftValue">0</span>
+                    <button type="button" class="segmented-btn" data-lift="15" aria-label="橫桿遠離人物">＋</button>
+                    <button type="button" class="segmented-btn" data-lift="reset">重設</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="relationshipDate">時間/說明 (顯示於線上)</label>

@@ -47,7 +47,7 @@ const genoIndex = fs.readFileSync(genoIndexPath, 'utf8');
 const rootIndexText = fs.readFileSync(rootIndex, 'utf8');
 const requiredIds = ['viewContent', 'fitView', 'zoomReset'];
 check('geno keeps local jsPDF', genoIndex.includes('js/vendor/jspdf.umd.min.js'));
-check('geno keeps local dagre', genoIndex.includes('js/vendor/dagre.min.js'));
+check('geno has no dagre (layout engine is in-house since 2026-09-03) and no CDN script', !genoIndex.includes('dagre') && !genoIndex.includes('unpkg.com'));
 check('geno has no remote asset URL', !/(?:src|href)=["']https?:\/\//i.test(genoIndex));
 for (const id of requiredIds) {
     check('root contains #' + id, rootIndexText.includes('id="' + id + '"'));

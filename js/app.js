@@ -121,6 +121,7 @@ class GenogramApp {
         this.selectedLifeCircleId = null;   // 選中的生活圈 ID
         this.lifeCircleMousePos = null;     // 繪製時的滑鼠位置（用於預覽線）
         this.lcVertexDrag = null;           // [LC-1] 拖曳中的生活圈頂點 {lc, index}
+        this.liftDrag = null;               // [R-1] 拖曳中的婚姻線橫桿 {rel, startLift, startY, dir}
         this.lcPress = null;                // [LC-2] 生活圈工具按下未放開 {start, moved}
         this.ellipsePreview = null;         // [LC-2] 拖拉橢圓預覽 {start, current}
         // [3-2] 觸控：手指追蹤（pointerId → client 座標）、雙指縮放狀態、放開一指後忽略剩餘手指直到全部放開
@@ -832,6 +833,7 @@ class GenogramApp {
             this.canvas.draggedLifeCircle = null; // [Fix] 漏清會劫持下一次拖曳
         }
         this.lcVertexDrag = null;   // [LC-1]
+        this.liftDrag = null;       // [R-1]
         this.lcPress = null;        // [LC-2]
         this.ellipsePreview = null; // [LC-2]
 
@@ -1200,6 +1202,16 @@ class GenogramApp {
                             this.showRelationshipEditModal();
                             return;
                         }
+                        // [R-1] 橫桿（ㄇ 天橋頂 / ㄩ 下折底）：按住可上下拖動，調整橫桿距離；人物不動
+                        const bar = this.canvas.getMarriageBarAt(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships);
+                        if (bar) {
+                            this.dragStartSnapshot = this.getState();
+                            this.liftDrag = { rel: selectedRel, startLift: selectedRel.routeLift || 0, startY: point.y, dir: bar.dir };
+                            this.canvas.isDragging = true;
+                            this.canvas.dragStart = { x: point.x, y: point.y };
+                            this.canvas.canvas.style.cursor = 'ns-resize';
+                            return;
+                        }
                     }
                 }
             }
@@ -1502,6 +1514,18 @@ class GenogramApp {
             let dx = point.x - this.canvas.dragStart.x;
             let dy = point.y - this.canvas.dragStart.y;
 
+            // [R-1] 婚姻線橫桿拖曳：只改 routeLift（dir=-1 橫桿在上 → 往上拖變大；dir=+1 在下 → 往下拖變大）
+            if (this.liftDrag) {
+                const d = this.liftDrag;
+                const next = Math.max(0, Math.min(600, Math.round(d.startLift + d.dir * (point.y - d.startY))));
+                if (next !== (d.rel.routeLift || 0)) {
+                    d.rel.routeLift = next;
+                    this._dataVersion++;
+                    this.render();
+                }
+                return;
+            }
+
             // [LC-1] 生活圈單一頂點拖曳
             if (this.lcVertexDrag) {
                 const { lc, index } = this.lcVertexDrag;
@@ -1659,6 +1683,8 @@ class GenogramApp {
                         this.canvas.isPointOnSwapButton(point.x, point.y, selRel, fp, tp, this.relationships)
                     )) {
                         this.canvas.canvas.style.cursor = 'pointer';
+                    } else if (fp && tp && this.canvas.getMarriageBarAt(point.x, point.y, selRel, fp, tp, this.relationships)) {
+                        this.canvas.canvas.style.cursor = 'ns-resize'; // [R-1] 橫桿可上下拖
                     }
                 }
             }
@@ -1708,6 +1734,25 @@ class GenogramApp {
                 this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成；Backspace 退回上一點');
                 this.render();
             }
+            return;
+        }
+        // [R-1] 橫桿拖曳結束：有變動才寫一筆 history（以拖曳前的值存 snapshot，語意同 saveState-before-mutation）
+        if (this.liftDrag) {
+            const d = this.liftDrag;
+            this.liftDrag = null;
+            this.canvas.isDragging = false;
+            this.dragStartSnapshot = null;
+            const finalLift = d.rel.routeLift || 0;
+            if (finalLift !== d.startLift) {
+                d.rel.routeLift = d.startLift;
+                this.saveState();
+                d.rel.routeLift = finalLift;
+                this._dataVersion++;
+                this.updateStatus(`橫桿距離：${finalLift}px`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
+                this.autoSave();
+            }
+            this.updatePropertyPanel();
+            this.render();
             return;
         }
         // [LC-1] 頂點拖曳結束：清除頂點狀態，後面走一般拖曳 commit（dragStartSnapshot → history）
@@ -3366,6 +3411,22 @@ class GenogramApp {
                         this.updatePropertyPanel();
                     });
                 });
+                // [R-1] 橫桿距離：只有 ㄇ / ㄩ 有橫桿可調；auto / 一 停用
+                const liftRow = routeGroup.querySelector('#relationshipLiftRow');
+                if (liftRow) {
+                    const hasBar = currentRoute === 'over' || currentRoute === 'under';
+                    const lift = relationship.routeLift || 0;
+                    liftRow.querySelector('#relationshipLiftValue').textContent = String(lift);
+                    liftRow.querySelectorAll('[data-lift]').forEach(btn => {
+                        btn.disabled = !hasBar;
+                        if (!hasBar) btn.title = '先選 ㄇ 或 ㄩ 走法，才有橫桿可調';
+                        btn.addEventListener('click', () => {
+                            const v = btn.dataset.lift === 'reset' ? 0 : lift + Number(btn.dataset.lift);
+                            this.setRouteLiftById(relationship.id, v);
+                            this.updatePropertyPanel();
+                        });
+                    });
+                }
             }
 
             this.bindPropertyEdit(root.querySelector('#relationshipDate'), e => {
@@ -4342,6 +4403,25 @@ class GenogramApp {
         this._dataVersion++; // 繞線變動 → 快取失效
         const label = { auto: '自動', over: 'ㄇ 上折', straight: '一 直線', under: 'ㄩ 下折' }[mode] || mode;
         this.updateStatus('婚姻線走法：' + label, 'info');
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * [R-1] 設定婚姻線橫桿距離（px, 0～600，四捨五入）。ㄇ：天橋抬高；ㄩ：下折加深；
+     * auto / 一：值保留但不影響幾何（面板會停用控制項）。
+     * @param {string} id
+     * @param {number} lift
+     */
+    setRouteLiftById(id, lift) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel) return;
+        const next = Math.max(0, Math.min(600, Math.round(Number(lift) || 0)));
+        if ((rel.routeLift || 0) === next) return;
+        this.saveState();
+        rel.routeLift = next;
+        this._dataVersion++; // 幾何變動 → 快取失效
+        this.updateStatus(`橫桿距離：${next}px`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
         this.autoSave();
         this.render();
     }
@@ -7178,12 +7258,7 @@ class GenogramApp {
             return;
         }
 
-        // 檢查 Dagre 是否載入
-        if (typeof dagre === 'undefined') {
-            console.error('Dagre.js not loaded');
-            this.updateStatus('佈局引擎載入失敗，請檢查網路連線', 'error');
-            return;
-        }
+        // [L-1] 佈局引擎已改為自家的家系圖分層佈局，不再依賴 dagre
 
         // 使用新的佈局引擎
         const layout = new GenogramLayout(this.persons, this.relationships, {
@@ -7197,7 +7272,7 @@ class GenogramApp {
         // 套用新座標
         result.positions.forEach((pos, personId) => {
             const person = this.personMap.get(personId);
-            if (person) {
+            if (person && !pos.keep) { // keep = 沒有任何關係的獨立人物，原地不動也不吸附
                 person.x = this.snapToGrid(pos.x, 'x');
                 person.y = this.snapToGrid(pos.y, 'y');
             }

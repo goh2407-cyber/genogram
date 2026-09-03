@@ -1494,6 +1494,8 @@ class GenogramCanvas {
         const baseY = Math.min(p1Top, p2Top) - 20;
         const step = 30; // 每層高度 30px
         const bridgeY = baseY - (level * step);
+        // [R-1] 使用者手動加高（ㄇ）/ 加深（ㄩ）的橫桿距離；只影響 over / under。
+        const lift = Math.max(0, Number(rel.routeLift) || 0);
 
         // 走廊障礙（自動越障 + 手動 under 都會用到）。橫桿須越過配偶與被夾者的
         // 「姓名(+備註)文字」下緣，否則 ㄩ 下折只 +符號底緣太淺、會壓在姓名文字上。
@@ -1515,20 +1517,45 @@ class GenogramCanvas {
         }
         if (routeMode === 'over') {
             // ㄇ：強制上折（頂端連接天橋）。無多婚層級時抬一層；有則沿用層級高度。
-            const overY = baseY - step * Math.max(level, 1);
+            const overY = baseY - step * Math.max(level, 1) - lift;
             return { level: Math.max(level, 1), bridgeY: overY, isBridge: true,
                 isArch: false, needsBridge: false, archBarY: null, routeMode };
         }
         if (routeMode === 'under') {
             // ㄩ：強制下折（底部連接、越過被夾者）。
             return { level, bridgeY, isBridge: false, isArch: true,
-                needsBridge: false, archBarY: underBarY, routeMode };
+                needsBridge: false, archBarY: underBarY + lift, routeMode };
         }
 
         // routeMode === 'auto'：保持標準側接線。人物或文字即使位於走廊內，
         // 也不自動改成上橋、下繞或外側大矩形；需要繞線時由使用者明確選 over/under。
         return { level, bridgeY, isBridge: false, isArch: false,
             needsBridge: false, archBarY: null, routeMode };
+    }
+
+    /**
+     * [R-1] 命中婚姻線的「橫桿」（ㄇ 天橋頂 / ㄩ 下折底）。選取婚姻線後可直接上下拖動橫桿調整距離。
+     * 回傳 { barY, dir }（dir = -1 橫桿在人物上方、+1 在下方）；未命中或該線沒有橫桿回傳 null。
+     * 只看與人物不同高的水平段；跨列婚姻的中段（在兩列之間）不算橫桿。
+     */
+    getMarriageBarAt(x, y, rel, fromPerson, toPerson, allRels) {
+        const cat = typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type);
+        if (cat !== 'marriage') return null;
+        const route = this.getMarriageRoute(fromPerson, toPerson, rel, allRels);
+        const pts = route && route.points;
+        if (!pts || pts.length < 4) return null;
+        const rowY = (fromPerson.y + toPerson.y) / 2;
+        const tol = 8 * this.hudUnit();
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1];
+            if (Math.abs(a.y - b.y) > 0.5) continue;                     // 只看水平段
+            if (Math.abs(a.y - rowY) < this.personSize / 2 + 12) continue; // 與人物同高的側接段、貼著符號頂/底的短水平段不算
+            const x0 = Math.min(a.x, b.x) - tol, x1 = Math.max(a.x, b.x) + tol;
+            if (x >= x0 && x <= x1 && Math.abs(y - a.y) <= tol) {
+                return { barY: a.y, dir: a.y < rowY ? -1 : 1 };
+            }
+        }
+        return null;
     }
 
     /**
@@ -3382,7 +3409,7 @@ class GenogramCanvas {
         const relationshipData = (Array.isArray(relationships) ? relationships : [])
             .map(rel => [
                 String(rel.id), rel.type, rel.fromPersonId, rel.toPersonId,
-                rel.linkType || '', rel.routeMode || ''
+                rel.linkType || '', rel.routeMode || '', rel.routeLift || 0
             ])
             .sort((a, b) => a[0].localeCompare(b[0]));
         return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
@@ -3399,7 +3426,7 @@ class GenogramCanvas {
             .filter(rel => Relationship.getCategory(rel.type) === 'marriage')
             .map(rel => [
                 String(rel.id), rel.type, rel.fromPersonId, rel.toPersonId,
-                rel.routeMode || ''
+                rel.routeMode || '', rel.routeLift || 0
             ])
             .sort((a, b) => a[0].localeCompare(b[0]));
         return JSON.stringify([

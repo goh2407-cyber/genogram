@@ -25,6 +25,9 @@
 
 - `js/canvas.js` 畫布 draw core；`js/canvas-export.js` 匯出層（PNG/JPEG/頁首/匯出圖例/匯出期間衍生狀態，
   以 `Object.assign(GenogramCanvas.prototype, {...})` 掛上）。**載入順序：canvas.js → canvas-export.js**。
+- `js/layout.js` 自動排列引擎：2026-09-03 起為自家分層佈局（Sugiyama-lite），**不依賴 dagre**（三份
+  index.html 已移除 dagre script）。語意：配偶同列相鄰、同一父母子女同列、手足長→幼、多婚依婚期、
+  獨立人物不動。回歸：`verify_auto_layout.js`。婚姻線橫桿距離 `Relationship.routeLift`（R-1）。
 - `js/ui/property-panel-templates.js` 屬性面板靜態模板（`PROPERTY_PANEL_TEMPLATES`），**必須在 app.js 之前載入**。
 - 三份 `index.html` 的 `<script>` 順序必須一致（`verify_mirror_sync` 只比 js/css；順序靠 smoke／run_all 守）。
 

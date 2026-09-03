@@ -252,6 +252,10 @@ class Relationship {
         // 僅對 marriage 類有意義；預設 auto = 系統自動判斷（同列直線、夾人下折、同側多婚上折天橋）。
         // 舊資料無此欄位即視為 auto。
         this.routeMode = data.routeMode || 'auto';
+        // [R-1] 婚姻線橫桿距離（px, ≥0）：ㄇ 天橋再抬高 / ㄩ 下折再加深；0 = 預設高度。
+        // 僅對 over / under 走法影響幾何；auto / straight 保留值但不改線。舊資料無此欄位即 0。
+        const lift = Number(data.routeLift);
+        this.routeLift = Number.isFinite(lift) && lift > 0 ? Math.round(lift) : 0;
     }
 
     /**
@@ -351,7 +355,7 @@ class Relationship {
      * @returns {Object}
      */
     toJSON() {
-        return {
+        const json = {
             id: this.id,
             fromPersonId: this.fromPersonId,
             toPersonId: this.toPersonId,
@@ -361,6 +365,8 @@ class Relationship {
             linkType: this.linkType,
             routeMode: this.routeMode
         };
+        if (this.routeLift > 0) json.routeLift = this.routeLift; // 只在有值時寫入，舊檔格式不變
+        return json;
     }
 
     /**
