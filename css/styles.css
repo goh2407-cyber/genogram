@@ -1329,6 +1329,25 @@ body {
 .segmented-btn:hover { background: var(--bg-light); }
 .segmented-btn.is-active { background: var(--brand); color: #fff; font-weight: 600; }
 
+/* [2-1] 出生年月 → 自動年齡：唯讀計算值 / 格式錯誤 / 檢視分頁基準日 */
+.property-form input.is-computed { background: var(--bg-light); color: var(--text-secondary); }
+.property-form input.is-invalid { border-color: #dc3545 !important; }
+.view-age-ref { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.view-age-ref label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.view-age-ref-row { display: flex; gap: 8px; align-items: center; }
+.view-age-ref-row input[type="date"] {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: #fff;
+}
+.view-age-ref .view-options-hint { margin: 8px 0 0; }
+
 /* ===================================
    性別選擇對話框
    =================================== */

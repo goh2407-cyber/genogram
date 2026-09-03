@@ -85,6 +85,7 @@ class GenogramCanvas {
         this.fontSize = 14;
         this.fontFamily = 'Noto Sans TC, sans-serif';
         this.suppressQuickAddButtons = false;
+        this.ageReferenceDate = null; // [2-1] 年齡基準日（null = 今天），由 App.render 注入；匯出同用
 
         // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
         this._familyRoutePlans = [];
@@ -903,7 +904,10 @@ class GenogramCanvas {
     drawPerson(person, isSelected = false, isConnecting = false, isHighlighted = false,
         viewOptions = this.viewOptions) {
         const view = this.normalizeViewOptions(viewOptions);
-        const { x, y, gender, age, isDeceased, isIdentifiedPatient, medical, transgender } = person;
+        const { x, y, gender, isDeceased, isIdentifiedPatient, medical, transgender } = person;
+        // [2-1] 有出生年月者依基準日自動算年齡；ghost 預覽等純物件沿用 age 欄位
+        const age = typeof person.getDisplayAge === 'function'
+            ? person.getDisplayAge(this.ageReferenceDate) : person.age;
         const size = this.personSize;
         const halfSize = size / 2;
         const S = GenogramCanvas.DRAW_PERSON_STYLES; // shorthand

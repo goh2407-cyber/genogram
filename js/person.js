@@ -50,6 +50,102 @@ class Person {
         // [Phase 1] 生育結果：null(正常) / 'miscarriage'(流產, 小實心圓點) / 'abortion'(人工流產, X)
         // 註：死產(stillbirth) 已移除；舊資料若有此值會被當正常人物渲染。
         this.lossType = data.lossType || null;
+        // [2-1] 出生 / 死亡年月（'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD'，可空）。
+        // 有出生年月時年齡改為自動計算（getDisplayAge）；未填則沿用手填 age，舊檔行為完全不變。
+        this.birthDate = Person.normalizeDateString(data.birthDate);
+        this.deathDate = Person.normalizeDateString(data.deathDate);
+    }
+
+    /**
+     * [2-1] 正規化日期字串：接受 1985、1985-6、1985/06、1985.06.15、1985年6月 等，
+     * 回傳 'YYYY' / 'YYYY-MM' / 'YYYY-MM-DD'；無法解析或範圍不合理回 null。
+     * @param {*} value
+     * @returns {string|null}
+     */
+    static normalizeDateString(value) {
+        if (value === null || value === undefined) return null;
+        const s = String(value).trim().replace(/[./年月]/g, '-').replace(/日/g, '').replace(/-+$/, '');
+        const m = /^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(s);
+        if (!m) return null;
+        const y = Number(m[1]);
+        const mo = m[2] !== undefined ? Number(m[2]) : null;
+        const d = m[3] !== undefined ? Number(m[3]) : null;
+        if (y < 1000 || y > 9999) return null;
+        if (mo !== null && (mo < 1 || mo > 12)) return null;
+        if (d !== null && (d < 1 || d > 31)) return null;
+        let out = String(y);
+        if (mo !== null) out += '-' + String(mo).padStart(2, '0');
+        if (d !== null) out += '-' + String(d).padStart(2, '0');
+        return out;
+    }
+
+    /**
+     * [2-1] 拆成 {y, m, d}（m/d 可能為 null）
+     */
+    static parseDateParts(value) {
+        const n = Person.normalizeDateString(value);
+        if (!n) return null;
+        const [y, m, d] = n.split('-').map(Number);
+        return { y, m: Number.isFinite(m) ? m : null, d: Number.isFinite(d) ? d : null };
+    }
+
+    /**
+     * [2-1] 依出生日期與基準日算年齡。只有年份時 = 年差；有月（日）時未過生日減 1。
+     * @param {string} birth
+     * @param {Date|string|null} reference - null = 今天
+     * @returns {number|null}
+     */
+    static computeAge(birth, reference = null) {
+        const b = Person.parseDateParts(birth);
+        if (!b) return null;
+        let r;
+        if (reference instanceof Date) {
+            r = { y: reference.getFullYear(), m: reference.getMonth() + 1, d: reference.getDate() };
+        } else if (reference) {
+            r = Person.parseDateParts(reference);
+            if (!r) return null;
+        } else {
+            const t = new Date();
+            r = { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() };
+        }
+        let age = r.y - b.y;
+        if (b.m !== null && r.m !== null) {
+            if (r.m < b.m) age -= 1;
+            else if (r.m === b.m && b.d !== null && r.d !== null && r.d < b.d) age -= 1;
+        }
+        return age < 0 ? null : age;
+    }
+
+    /**
+     * [2-1] 畫面顯示用年齡：
+     *   在世 + 有出生年月 → 依基準日（預設今天）計算
+     *   過世 + 有出生與死亡年月 → 享年（死亡時年齡）
+     *   其餘 → 手填 age
+     * @param {Date|string|null} referenceDate
+     * @returns {number|null}
+     */
+    getDisplayAge(referenceDate = null) {
+        if (this.birthDate) {
+            if (this.isDeceased) {
+                if (this.deathDate) {
+                    const atDeath = Person.computeAge(this.birthDate, this.deathDate);
+                    if (atDeath !== null) return atDeath;
+                }
+                return this.age;
+            }
+            const computed = Person.computeAge(this.birthDate, referenceDate);
+            if (computed !== null) return computed;
+        }
+        return this.age;
+    }
+
+    /**
+     * [2-1] 目前顯示的年齡是否為自動計算（供屬性面板決定年齡欄唯讀）
+     */
+    isAgeComputed(referenceDate = null) {
+        if (!this.birthDate) return false;
+        if (this.isDeceased) return Boolean(this.deathDate) && Person.computeAge(this.birthDate, this.deathDate) !== null;
+        return Person.computeAge(this.birthDate, referenceDate) !== null;
     }
 
     /**
@@ -146,6 +242,9 @@ class Person {
         if (this.labelPlacement) {
             json.labelPlacement = { ...this.labelPlacement };
         }
+        // [2-1] 只在有值時寫入，舊檔 load→save 逐 byte 不變
+        if (this.birthDate) json.birthDate = this.birthDate;
+        if (this.deathDate) json.deathDate = this.deathDate;
         return json;
     }
 

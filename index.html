@@ -292,6 +292,14 @@
                         <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住框</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
                     </div>
+                    <div class="panel-content view-age-ref" id="viewAgeRef">
+                        <label for="ageReferenceDate">年齡基準日</label>
+                        <div class="view-age-ref-row">
+                            <input type="date" id="ageReferenceDate" aria-describedby="ageReferenceHint">
+                            <button type="button" class="btn-cancel btn-compact" id="ageReferenceToday">今天</button>
+                        </div>
+                        <p class="view-options-hint" id="ageReferenceHint">有填出生年月的人物，年齡依此日期自動計算；預設為今天，不會寫入檔案。</p>
+                    </div>
                 </section>
             </aside>
         </main>

@@ -85,6 +85,17 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                     </select>
                 </div>
             </div>
+            <div class="form-group-row">
+                <div class="form-group">
+                    <label for="personBirthDate">出生年月</label>
+                    <input type="text" id="personBirthDate" placeholder="例：1985 或 1985-06" inputmode="numeric" autocomplete="off">
+                </div>
+                <div class="form-group" id="personDeathDateGroup" hidden>
+                    <label for="personDeathDate">死亡年月</label>
+                    <input type="text" id="personDeathDate" placeholder="例：2020-03" inputmode="numeric" autocomplete="off">
+                </div>
+            </div>
+            <p class="property-help" id="personAgeHint" hidden></p>
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="personDeceased">
@@ -272,6 +283,8 @@ class GenogramApp {
         this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
         // [1-2] 文件狀態：isDirty = 有變更尚未寫入檔案（另存 / Ctrl+S 寫回檔案後清除）
         this.isDirty = false;
+        // [2-1] 年齡基準日（'YYYY-MM-DD' 或 null = 今天）。session-only，不進 JSON / history。
+        this.ageReferenceDate = null;
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -605,6 +618,12 @@ class GenogramApp {
                 nextTab.focus();
             });
         });
+        // [2-1] 年齡基準日（檢視分頁；session-only，不進 JSON）
+        const ageRefInput = document.getElementById('ageReferenceDate');
+        if (ageRefInput) ageRefInput.addEventListener('change', e => this.setAgeReferenceDate(e.target.value || null));
+        const ageRefToday = document.getElementById('ageReferenceToday');
+        if (ageRefToday) ageRefToday.addEventListener('click', () => this.setAgeReferenceDate(null));
+
         document.querySelectorAll('[data-view-option]').forEach(control => {
             control.addEventListener('change', event => {
                 this.setViewOption(event.currentTarget.dataset.viewOption, event.currentTarget.checked);
@@ -927,6 +946,59 @@ class GenogramApp {
     /**
      * 更新工具列狀態
      */
+    /**
+     * [2-1] 設定年齡基準日（'YYYY-MM-DD' 或 null=今天），重繪並更新屬性面板年齡欄。
+     * 只影響「有出生年月」的人物；不寫入檔案。
+     */
+    setAgeReferenceDate(value, { render = true } = {}) {
+        const normalized = value ? Person.normalizeDateString(value) : null;
+        this.ageReferenceDate = normalized && normalized.length === 10 ? normalized : null;
+        const input = document.getElementById('ageReferenceDate');
+        if (input) input.value = this.ageReferenceDate || '';
+        if (render) this.render();
+        const person = this.personMap.get(this.selectedPersonId);
+        if (person) this.refreshPersonAgeFields(this.elements.propertyContent, person);
+    }
+
+    /**
+     * [2-1] 依人物的出生/死亡年月狀態更新屬性面板：
+     *   有計算值 → 年齡欄唯讀顯示計算值 + 提示；否則可手填。過世才顯示死亡年月欄。
+     */
+    refreshPersonAgeFields(root, person) {
+        if (!root || !person) return;
+        const ageInput = root.querySelector('#personAge');
+        const hint = root.querySelector('#personAgeHint');
+        const deathGroup = root.querySelector('#personDeathDateGroup');
+        if (deathGroup) deathGroup.hidden = !person.isDeceased;
+        const computed = typeof person.isAgeComputed === 'function' && person.isAgeComputed(this.ageReferenceDate);
+        if (ageInput) {
+            if (computed) {
+                ageInput.value = person.getDisplayAge(this.ageReferenceDate);
+                ageInput.readOnly = true;
+                ageInput.classList.add('is-computed');
+                ageInput.title = '依出生年月自動計算；清空出生年月可改回手動輸入';
+            } else {
+                ageInput.readOnly = false;
+                ageInput.classList.remove('is-computed');
+                ageInput.title = '';
+                if (document.activeElement !== ageInput) ageInput.value = person.age ?? '';
+            }
+        }
+        if (!hint) return;
+        if (computed) {
+            hint.hidden = false;
+            hint.textContent = person.isDeceased
+                ? '年齡依出生／死亡年月自動計算（享年）'
+                : `年齡依出生年月自動計算，基準日：${this.ageReferenceDate || '今天'}（可在「檢視」分頁調整）`;
+        } else if (person.birthDate && person.isDeceased && !person.deathDate) {
+            hint.hidden = false;
+            hint.textContent = '已過世但未填死亡年月：年齡沿用手動輸入的享年';
+        } else {
+            hint.hidden = true;
+            hint.textContent = '';
+        }
+    }
+
     /**
      * [1-2] 標記「有變更尚未寫入檔案」並更新標題列。載入中不標記。
      */
@@ -3255,6 +3327,8 @@ class GenogramApp {
         const valueById = {
             personName: person.name || '',
             personAge: person.age ?? '',
+            personBirthDate: person.birthDate || '',
+            personDeathDate: person.deathDate || '',
             personNotes: person.notes || '',
             personGender: person.gender,
             personLossType: person.lossType || '',
@@ -3285,6 +3359,7 @@ class GenogramApp {
         }
         root.querySelector('#twinSettingsHost').appendChild(this.createTwinSettingsElement(person));
         this.setupPropertyFormEvents();
+        this.refreshPersonAgeFields(root, person); // [2-1]
     }
 
     adjustSelectedPersonLabel(direction, options = {}) {
@@ -3661,11 +3736,34 @@ class GenogramApp {
             person.name = e.target.value;
         });
 
-        // 年齡
+        // 年齡（有出生年月時欄位唯讀、顯示計算值，不會觸發此 handler）
         this.bindPropertyEdit(document.getElementById('personAge'), e => {
             const raw = e.target.value;
             person.age = raw === '' ? null : Number(raw);
         });
+
+        // [2-1] 出生年月 / 死亡年月：change 時才套用（避免輸入中途年齡欄閃動）；格式錯誤不寫入並標紅
+        const bindDateField = (id, key) => {
+            const field = document.getElementById(id);
+            if (!field) return;
+            this.bindPropertyEdit(field, e => {
+                const raw = e.target.value.trim();
+                const normalized = raw ? Person.normalizeDateString(raw) : null;
+                const invalid = raw !== '' && normalized === null;
+                field.classList.toggle('is-invalid', invalid);
+                field.setAttribute('aria-invalid', String(invalid));
+                if (invalid) {
+                    this.updateStatus('日期格式請用 YYYY、YYYY-MM 或 YYYY-MM-DD（例：1985-06）', 'error',
+                        { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert });
+                    return;
+                }
+                person[key] = normalized;
+                if (normalized) e.target.value = normalized;
+                this.refreshPersonAgeFields(form, person);
+            }, { eventName: 'change', commitOnChange: true });
+        };
+        bindDateField('personBirthDate', 'birthDate');
+        bindDateField('personDeathDate', 'deathDate');
 
         // 備註（最多 2 行）
         this.bindPropertyEdit(document.getElementById('personNotes'), e => {
@@ -3683,6 +3781,7 @@ class GenogramApp {
         // 過世
         this.bindPropertyEdit(document.getElementById('personDeceased'), e => {
             person.isDeceased = e.target.checked;
+            this.refreshPersonAgeFields(form, person); // [2-1] 顯示/隱藏死亡年月、重算享年
         }, { eventName: 'change', commitOnChange: true });
 
         // 案主
@@ -4807,6 +4906,7 @@ class GenogramApp {
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
         this.canvas.viewOptions = this.viewOptions;
+        this.canvas.ageReferenceDate = this.ageReferenceDate; // [2-1]
         if (this.labelEditingPersonId !== this.selectedPersonId
             || !this.personMap.has(this.labelEditingPersonId)) {
             this.labelEditingPersonId = null;
@@ -5145,7 +5245,9 @@ class GenogramApp {
         const legend = document.getElementById('legendContent')?.textContent || '';
         // Canvas text fields: person name/age/notes, relationship notes/date, and life-circle labels.
         // Medical markers are vector/ASCII symbols and do not contribute arbitrary font glyphs.
-        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes]).filter(Boolean);
+        const personText = this.persons.flatMap(person => [person.name,
+            typeof person.getDisplayAge === 'function' ? person.getDisplayAge(this.ageReferenceDate) : person.age,
+            person.notes]).filter(Boolean);
         const relationshipText = this.relationships.flatMap(rel => [rel.notes, rel.date]).filter(Boolean);
         const lifeCircleText = (this.lifeCircles || []).map(lc => lc.label).filter(Boolean);
         return [legend, ...personText, ...relationshipText, ...lifeCircleText].join('\n');
