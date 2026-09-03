@@ -936,14 +936,11 @@ class GenogramApp {
                     this.createHousehold();
                     return;
                 }
-                // 只選 1 人 → 先放進選取清單，讓使用者繼續點人或按 Enter
-                if (this.selectedPersonIds.length === 0 && this.selectedPersonId) {
-                    this.selectedPersonIds = [this.selectedPersonId];
-                    this.selectedPersonId = null;
-                    this.updatePropertyPanel();
-                }
-                statusText = this.selectedPersonIds.length > 0
-                    ? `已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框（再點人可增減）`
+                // 只選 1 人 → 不動選取狀態（切工具不得改變選取，見 verify_manual_label_controls），
+                // Enter 會直接用該人建框；再點其他人時由 pointerdown 把他一起納入
+                const preselected = this.selectedPersonIds.length || (this.selectedPersonId ? 1 : 0);
+                statusText = preselected > 0
+                    ? `已選取 ${preselected} 位成員，按 Enter 建立同住框（再點人可增減）`
                     : '同住圈選：點選角色加入選取，按 Enter 建立';
                 break;
             }
@@ -1268,6 +1265,11 @@ class GenogramApp {
         if (this.currentTool === 'household') {
             const clickedPerson = this.getPersonAt(point.x, point.y);
             if (clickedPerson) {
+                // [HH-4] 進入工具前若只單選了一人，第一次點人時把他一起納入清單
+                if (this.selectedPersonIds.length === 0 && this.selectedPersonId && this.selectedPersonId !== clickedPerson.id) {
+                    this.selectedPersonIds = [this.selectedPersonId];
+                    this.selectedPersonId = null;
+                }
                 // Toggle 選取狀態
                 const index = this.selectedPersonIds.indexOf(clickedPerson.id);
                 if (index > -1) {

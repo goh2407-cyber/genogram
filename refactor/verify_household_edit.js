@@ -132,8 +132,8 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
     await page.evaluate(() => { const app = window.app; app.clearAllSelections(); app.selectPerson('bf'); app.render(); });
     await page.keyboard.press('h');
     await page.waitForTimeout(80);
-    ui = await page.evaluate(() => ({ count: window.app.households.length, tool: window.app.currentTool, pre: window.app.selectedPersonIds, status: document.getElementById('statusBar').textContent }));
-    check('HH-4 只選 1 人按 H → 進入同住工具並預選該人，不自動建框', ui.count === 1 && ui.tool === 'household' && JSON.stringify(ui.pre) === JSON.stringify(['bf']) && /1 位成員/.test(ui.status), JSON.stringify(ui));
+    ui = await page.evaluate(() => ({ count: window.app.households.length, tool: window.app.currentTool, single: window.app.selectedPersonId, pre: window.app.selectedPersonIds, status: document.getElementById('statusBar').textContent }));
+    check('HH-4 只選 1 人按 H → 進入同住工具、選取不變、提示 1 位成員、不自動建框', ui.count === 1 && ui.tool === 'household' && ui.single === 'bf' && ui.pre.length === 0 && /1 位成員/.test(ui.status), JSON.stringify(ui));
     await page.keyboard.press('Enter');
     await page.waitForTimeout(80);
     ui = await page.evaluate(() => ({ count: window.app.households.length, tool: window.app.currentTool }));
