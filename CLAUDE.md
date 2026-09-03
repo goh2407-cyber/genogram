@@ -21,6 +21,13 @@
   （`from=parent, to=child`）。**不得**以 Y 座標推斷親屬方向。
 - 舊資料方向由 `App.migrateRelationships()` 在載入時正規化。
 
+## 檔案結構（2026-09-03 拆檔後）
+
+- `js/canvas.js` 畫布 draw core；`js/canvas-export.js` 匯出層（PNG/JPEG/頁首/匯出圖例/匯出期間衍生狀態，
+  以 `Object.assign(GenogramCanvas.prototype, {...})` 掛上）。**載入順序：canvas.js → canvas-export.js**。
+- `js/ui/property-panel-templates.js` 屬性面板靜態模板（`PROPERTY_PANEL_TEMPLATES`），**必須在 app.js 之前載入**。
+- 三份 `index.html` 的 `<script>` 順序必須一致（`verify_mirror_sync` 只比 js/css；順序靠 smoke／run_all 守）。
+
 ## 三副本同步
 
 根 `/`、`geno/`、`refactor/app/` 三份 js 副本必須 md5 一致。

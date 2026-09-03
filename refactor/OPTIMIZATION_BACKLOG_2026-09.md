@@ -16,7 +16,7 @@
 |---|---:|---:|---|
 | 第一批：一天內、零臨床風險 | 8 | 8 | 2026-09-02 全部完成，見「完成紀錄」；golden 16/16 |
 | 第二批：個案記錄層 | 4 | 4 | 2026-09-03 全部完成（含 2-4 日期文字避讓） |
-| 第三批：需要設計拍板 | 4 | 3 | 3-1 去識別化、3-2 雙指、3-3 定位案主/LOD 完成；3-4 拆檔進行中 |
+| 第三批：需要設計拍板 | 4 | 4 | 2026-09-03 全部完成（3-4 拆檔第一階段） |
 | 第四批：同住框與生活圈 | 7 | 7 | 2026-09-03 全部完成 |
 
 > ✅ **已拍板（2026-09-02）**：golden `15-maximal`、`16-multifamily` 的基準原停在 2026-07-15，與 2026-08-11「自動模式一律畫字面直線、
@@ -148,10 +148,13 @@
 - 驗證：新測試 `verify_locate_lod.js` 9/9
 - 狀態：完成 2026-09-03
 
-### 3-4. 拆檔（不用 bundler）
-- 沿 `js/domain/`、`js/ui/` 先例，從 `app.js` / `canvas.js` 拆出：匯出、屬性面板、放置（placement）、快速新增
-- 每拆一塊跑 `run_all.js`；三份 `index.html` 同步 `<script>` 順序
-- 狀態：
+### 3-4. 拆檔（不用 bundler）✅（第一階段）
+- [x] `js/canvas-export.js`：exportToPNG/JPEG、頁首、匯出圖例、drawLifeCirclesExport/drawPersonForExport、匯出期間衍生狀態捕捉/還原（11 個方法 + EXPORT_HEADER），以 prototype mixin 掛回 GenogramCanvas；canvas.js 6376→5976 行
+- [x] `js/ui/property-panel-templates.js`：PROPERTY_PANEL_TEMPLATES（181 行）自 app.js 抽出
+- [x] 三份 index.html 加 `<script>`（順序見 CLAUDE.md）；sync_mirrors 自動帶新檔
+- [ ] 後續可再拆：放置（placement）、快速新增、開啟檔案／最近檔案（storage 已獨立）— 視需要
+- 驗證：run_all 全綠、golden 16/16（純搬移零行為變更）
+- 狀態：第一階段完成 2026-09-03
 
 ---
 
@@ -222,3 +225,4 @@
 | 2026-09-03 | 3-3 定位案主 + LOD | verify_locate_lod 9/9 | LOD 只影響螢幕 |
 | 2026-09-03 | 3-2 雙指縮放/平移 | verify_pinch 9/9 | touch-action none |
 | 2026-09-03 | 3-1 去識別化匯出 | verify_deidentify 11/11 | 只動輸出 |
+| 2026-09-03 | 3-4 拆檔第一階段 | run_all 全綠、golden 16/16 | canvas-export.js、property-panel-templates.js |

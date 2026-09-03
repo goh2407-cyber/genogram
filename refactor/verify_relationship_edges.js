@@ -390,8 +390,10 @@ const path = require('path');
                     && JSON.stringify(call.path) === JSON.stringify(route.points)
                     && pointOnPath(call.point, route.points)),
                 dateAnchor,
-                dateOnCanonicalRoute: eq(dateAnchor, route.decoration)
-                    && pointOnPath(dateAnchor, route.points),
+                // [2-4] 夾人時日期文字會沿裝飾所在的水平線段滑動避開符號：錨點仍須在 canonical route 上，
+                // 且與裝飾點同一水平高度（不夾人時仍等於裝飾點）
+                dateOnCanonicalRoute: pointOnPath(dateAnchor, route.points)
+                    && (eq(dateAnchor, route.decoration) || Math.abs(dateAnchor.y - route.decoration.y) < 0.5),
                 attachmentOnCanonicalRoute: pointOnPath(attachment.start, route.points)
                     && pointOnPath(attachment.end, route.points)
             };

@@ -33,4 +33,6 @@ node refactor/sync_mirrors.js
 node refactor/sync_mirrors.js --dry-run
 ```
 
-- `OPTIMIZATION_BACKLOG_2026-09.md`: 2026-09 體檢後的優化工作清單（三批次）與完成紀錄。
+- `OPTIMIZATION_BACKLOG_2026-09.md`: 2026-09 體檢後的優化工作清單（四批次）與完成紀錄。
+- 拆檔（3-4，2026-09-03）：`js/canvas-export.js`（匯出層 mixin，載於 canvas.js 之後）、`js/ui/property-panel-templates.js`
+  （面板模板，載於 app.js 之前）。不用 bundler；新增檔案後跑 `sync_mirrors.js` 讓 geno/、refactor/app/ 一併取得。
