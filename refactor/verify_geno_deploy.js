@@ -31,7 +31,7 @@ const path = require('path');
     const r = await page.evaluate(async () => {
         const app = window.app;
         // 本地函式庫
-        const hasDagre = typeof window.dagre !== 'undefined';
+        const hasLayout = typeof GenogramLayout !== 'undefined' && typeof window.dagre === 'undefined'; // layout engine is in-house since 2026-09-03
         const hasJspdf = (typeof window.jspdf !== 'undefined') || (typeof window.jsPDF !== 'undefined');
         // 字體（嘗試載入 Noto Sans TC）
         let fontOk = false;
@@ -47,7 +47,7 @@ const path = require('path');
             new Relationship({ id: 'p2', fromPersonId: 'W', toPersonId: 'C', type: 'parent-child' }),
         ];
         app._syncPersonMap(); app.render();
-        return { hasDagre, hasJspdf, fontOk, persons: app.persons.length };
+        return { hasLayout, hasJspdf, fontOk, persons: app.persons.length };
     });
 
     await page.screenshot({ path: path.join(__dirname, 'golden', 'current', '_geno_smoke.png') });
@@ -56,7 +56,7 @@ const path = require('path');
     const out = [];
     const ck = (n, c, d) => out.push(`${c ? 'PASS' : 'FAIL'} | ${n}${c ? '' : ' — ' + d}`);
     ck('geno 載入後 window.app 就緒', r.persons === 3, 'persons=' + r.persons);
-    ck('dagre 本地載入（window.dagre）', r.hasDagre, 'hasDagre=' + r.hasDagre);
+    ck('layout engine in-house (GenogramLayout loaded, no dagre)', r.hasLayout, 'hasLayout=' + r.hasLayout);
     ck('jspdf 本地載入（window.jspdf）', r.hasJspdf, 'hasJspdf=' + r.hasJspdf);
     ck('Noto Sans TC 本地字體可用', r.fontOk, 'fontOk=' + r.fontOk);
     ck('封鎖外部後仍 0 console/page error', errors.length === 0, errors.join(' | '));

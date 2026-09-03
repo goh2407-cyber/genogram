@@ -339,6 +339,7 @@ body {
 #genogramCanvas {
     display: block;
     cursor: default;
+    touch-action: none; /* [3-2] 雙指縮放/平移由程式處理，不讓瀏覽器搶手勢 */
 }
 
 .routing-warning {
@@ -361,7 +362,8 @@ body {
 /* 狀態提示條 */
 .status-bar {
     position: absolute;
-    top: 14px;
+    top: auto;
+    bottom: 76px; /* [1-3] 移到畫布底部、縮放列與排列預覽列之上；不再遮住上排人物 */
     left: 50%;
     transform: translateX(-50%);
     padding: 8px 22px;
@@ -402,7 +404,7 @@ body {
 .status-bar.hidden {
     opacity: 0;
     visibility: hidden;
-    transform: translate(-50%, -6px);
+    transform: translate(-50%, 6px);
 }
 
 /* 縮放控制 */
@@ -1203,6 +1205,25 @@ body {
     width: 60px;
 }
 
+/* [1-5] 關係類型對話框：加寬 + 三欄，38 種類型少捲一半；窄視窗退回兩欄 */
+.modal--wide {
+    max-width: 680px;
+}
+
+.modal--wide .btn-grid {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 1023px) {
+    .modal--wide .btn-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.recent-relationship-group h4 {
+    color: var(--brand);
+}
+
 .help-modal-content {
     line-height: 1.65;
 }
@@ -1286,6 +1307,47 @@ body {
     background: var(--bg-light);
     border-color: #c3ccd9;
 }
+
+/* [1-4] 關係屬性面板：類型列 + 分段按鈕（子女線型 / 婚姻線走法） */
+/* 作者樣式的 display 會蓋過 UA 的 [hidden]，面板群組用 hidden 切換時必須明確關掉 */
+.property-form .form-group[hidden] { display: none !important; }
+.relationship-type-row { display: flex; align-items: center; gap: 8px; }
+.relationship-type-chip { flex: 1; min-width: 0; padding: 8px; background: var(--bg-light); border-radius: 4px; }
+.btn-compact { padding: 6px 10px; font-size: 12.5px; white-space: nowrap; }
+.segmented { display: flex; border: 1.5px solid var(--border-color); border-radius: var(--border-radius-sm); overflow: hidden; }
+.segmented-btn {
+    flex: 1;
+    padding: 7px 6px;
+    background: #fff;
+    border: 0;
+    border-left: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.segmented-btn:first-child { border-left: 0; }
+.segmented-btn:hover { background: var(--bg-light); }
+.segmented-btn.is-active { background: var(--brand); color: #fff; font-weight: 600; }
+
+/* [2-1] 出生年月 → 自動年齡：唯讀計算值 / 格式錯誤 / 檢視分頁基準日 */
+.property-form input.is-computed { background: var(--bg-light); color: var(--text-secondary); }
+.property-form input.is-invalid { border-color: #dc3545 !important; }
+.view-age-ref { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.view-age-ref label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.view-age-ref-row { display: flex; gap: 8px; align-items: center; }
+.view-age-ref-row input[type="date"] {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: #fff;
+}
+.view-age-ref .view-options-hint { margin: 8px 0 0; }
 
 /* ===================================
    性別選擇對話框
@@ -1568,6 +1630,110 @@ body {
     accent-color: var(--brand);
 }
 
+/* [HH-2/HH-3] 同住框：圖例虛線框樣本、成員標籤、加入列 */
+.legend-extra { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.legend-swatch-household {
+    display: inline-block;
+    width: 40px;
+    height: 14px;
+    box-sizing: border-box;
+    border: 2px dashed #333;
+    border-radius: 6px;
+}
+.household-members { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; background: var(--bg-light); border-radius: 4px; font-size: 13px; min-height: 34px; }
+.household-member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px 3px 9px;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 12.5px;
+    line-height: 1.3;
+}
+.chip-remove {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+}
+.chip-remove::before { content: '\2715'; }
+.chip-remove:hover { background: #fde8ee; color: var(--brand); }
+.household-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.household-add-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    background: #fff;
+}
+
+/* [2-3] 開啟檔案對話框：最近檔案清單 */
+.open-file-hint { margin: 0 0 10px; font-size: 13px; color: var(--ink-muted); line-height: 1.5; }
+.open-file-privacy { margin: 12px 0 0; }
+.recent-file-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+.recent-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.recent-file-item:hover { background: var(--bg-light); border-color: #c3ccd9; }
+.recent-file-item.is-current { border-color: var(--brand); }
+.recent-file-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-file-time { flex: none; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+.recent-file-empty { margin: 0; padding: 10px 0; font-size: 13px; color: var(--ink-muted); }
+.open-file-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.modal-actions-spacer { flex: 1; }
+.btn-danger-text { color: #b42318; border-color: #f3c7c3; }
+.btn-danger-text:hover { background: #fff5f4; border-color: #e5a29b; }
+
+/* [2-2] 匯出頁首欄位 + PDF 紙張 */
+.export-header-settings { margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px; }
+.export-header-fields:not([hidden]) { display: grid; gap: 8px; margin-top: 10px; }
+.export-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.export-field-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.export-field-row input {
+    padding: 7px 9px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: #fff;
+}
+.export-field-hint { margin: 0; font-size: 12px; color: var(--ink-muted); line-height: 1.5; }
+.export-pdf-settings { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.export-pdf-settings select {
+    padding: 6px 8px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    background: #fff;
+}
+
 .export-options {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -1656,6 +1822,7 @@ body {
     border-left: 1px solid var(--line-ui);
 }
 .document-name { color: var(--ink-muted); font-size: 13px; font-weight: 500; }
+.document-dirty { margin-left: 6px; color: var(--brand); font-size: 11px; line-height: 1; vertical-align: 1px; cursor: help; }
 
 .global-actions { margin-left: auto; }
 .global-actions .tool-group { display: flex; gap: var(--space-1); }
@@ -1844,3 +2011,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
         animation-iteration-count: 1 !important;
     }
 }
+
+/* [R-1] 婚姻線橫桿距離（屬性面板） */
+.route-lift { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.route-lift-label { font-size: 12px; color: var(--text-muted, #6b7280); margin-right: 2px; }
+.route-lift-value { min-width: 34px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.route-lift .segmented-btn { flex: 0 0 auto; padding: 4px 10px; }
+.route-lift .segmented-btn[disabled] { opacity: .45; cursor: not-allowed; }

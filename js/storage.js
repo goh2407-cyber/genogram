@@ -25,9 +25,9 @@ class StorageManager {
      * @param {Array} households
      * @returns {Promise<boolean>} 是否成功儲存到檔案
      */
-    async saveToFile(persons, relationships, households = [], lifeCircles = []) {
+    async saveToFile(persons, relationships, households = [], lifeCircles = [], extra = {}) {
         // 也保存到 localStorage 作為備份
-        this.autoSave(persons, relationships, households, lifeCircles);
+        this.autoSave(persons, relationships, households, lifeCircles, {}, extra);
 
         // 如果有開啟的檔案 handle，直接寫入
         if (this.currentFileHandle) {
@@ -38,7 +38,8 @@ class StorageManager {
                     persons: persons.map(p => p.toJSON()),
                     relationships: relationships.map(r => r.toJSON()),
                     households: households || [],
-                    lifeCircles: lifeCircles || []
+                    lifeCircles: lifeCircles || [],
+                    ...(extra || {}) // [2-2] 文件 meta（標題/案號/繪製者），只在有值時存在
                 };
                 const jsonStr = JSON.stringify(data, null, 2);
 
@@ -61,14 +62,15 @@ class StorageManager {
      * @param {Array} households
      * @param {string} filename
      */
-    async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json') {
+    async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json', extra = {}) {
         const data = {
             version: '1.0',
             createdAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
             households: households || [],
-            lifeCircles: lifeCircles || []
+            lifeCircles: lifeCircles || [],
+            ...(extra || {}) // [2-2]
         };
 
         const jsonStr = JSON.stringify(data, null, 2);
@@ -90,6 +92,7 @@ class StorageManager {
                 // 建立連結：讓「儲存」按鈕之後可以直接寫入
                 this.currentFileHandle = handle;
                 this.currentFileName = handle.name;
+                this.rememberRecentFile(handle); // [2-3]
                 return true;
             } catch (err) {
                 if (err.name === 'AbortError') return false; // 用戶取消
@@ -129,6 +132,8 @@ class StorageManager {
             households: Array.isArray(data.households) ? data.households : [],
             lifeCircles: Array.isArray(data.lifeCircles) ? data.lifeCircles : []
         };
+        // [2-2] 文件 meta（標題/案號/繪製者）原樣帶過，不然三條檔案開啟路徑都會把它丟掉
+        if (data.meta && typeof data.meta === 'object') result.meta = data.meta;
 
         // 這裡可以根據版本進行具體欄位轉換
         // 例如：0.1 -> 1.0 的轉換邏輯
@@ -171,7 +176,7 @@ class StorageManager {
                     const households = data.households || [];
                     const lifeCircles = data.lifeCircles || [];
 
-                    resolve({ persons, relationships, households, lifeCircles });
+                    resolve({ persons, relationships, households, lifeCircles, meta: data.meta || null });
                 } catch (err) {
                     reject(new Error('檔案解析失敗，請確認檔案格式是否正確: ' + err.message));
                 }
@@ -214,19 +219,138 @@ class StorageManager {
             // 記住 handle 以便後續存檔
             this.currentFileHandle = handle;
             this.currentFileName = file.name;
+            this.rememberRecentFile(handle); // [2-3] 進最近檔案（非同步，失敗不影響載入）
 
             const persons = data.persons.map(p => Person.fromJSON(p));
             const relationships = data.relationships.map(r => Relationship.fromJSON(r));
             const households = data.households || [];
             const lifeCircles = data.lifeCircles || [];
 
-            return { persons, relationships, households, lifeCircles };
+            return { persons, relationships, households, lifeCircles, meta: data.meta || null };
         } catch (err) {
             if (err.name === 'AbortError') {
                 return null; // 用戶取消
             }
             throw new Error('無法載入檔案: ' + err.message);
         }
+    }
+
+    // ===================================================================
+    // [2-3] 最近檔案：FileSystemFileHandle 可結構化複製，存 IndexedDB；重整後可直接重開並寫回。
+    // 只存 handle 與檔名，不存個案內容。清除本機暫存時一併清空。
+    // ===================================================================
+    static RECENT_DB = 'genogram-files';
+    static RECENT_STORE = 'recent';
+    static RECENT_MAX = 8;
+
+    _openRecentDb() {
+        return new Promise(resolve => {
+            try {
+                if (typeof indexedDB === 'undefined') return resolve(null);
+                const req = indexedDB.open(StorageManager.RECENT_DB, 1);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(StorageManager.RECENT_STORE)) {
+                        db.createObjectStore(StorageManager.RECENT_STORE, { keyPath: 'name' });
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+                req.onblocked = () => resolve(null);
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    }
+
+    _recentTx(mode, fn) {
+        return this._openRecentDb().then(db => {
+            if (!db) return null;
+            return new Promise(resolve => {
+                let out = null;
+                try {
+                    const tx = db.transaction(StorageManager.RECENT_STORE, mode);
+                    const store = tx.objectStore(StorageManager.RECENT_STORE);
+                    const req = fn(store);
+                    if (req && 'onsuccess' in req) req.onsuccess = () => { out = req.result; };
+                    tx.oncomplete = () => { db.close(); resolve(out); };
+                    tx.onerror = () => { db.close(); resolve(null); };
+                    tx.onabort = () => { db.close(); resolve(null); };
+                } catch (_) {
+                    db.close();
+                    resolve(null);
+                }
+            });
+        });
+    }
+
+    /** @returns {Promise<Array<{name:string, handle:any, openedAt:number}>>} 最近開啟優先 */
+    async listRecentFiles() {
+        const rows = await this._recentTx('readonly', store => store.getAll());
+        return (Array.isArray(rows) ? rows : [])
+            .filter(r => r && typeof r.name === 'string')
+            .sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
+    }
+
+    async rememberRecentFile(handle) {
+        if (!handle || typeof handle.name !== 'string') return;
+        try {
+            await this._recentTx('readwrite', store => store.put({ name: handle.name, handle, openedAt: Date.now() }));
+            const rows = await this.listRecentFiles();
+            const extra = rows.slice(StorageManager.RECENT_MAX);
+            for (const row of extra) await this.forgetRecentFile(row.name);
+        } catch (err) {
+            console.warn('記錄最近檔案失敗:', err);
+        }
+    }
+
+    async forgetRecentFile(name) {
+        await this._recentTx('readwrite', store => store.delete(name));
+    }
+
+    async clearRecentFiles() {
+        await this._recentTx('readwrite', store => store.clear());
+    }
+
+    /**
+     * 由最近檔案清單開啟：確認/請求權限（需使用者手勢）→ 讀檔 → 遷移 → 連結 handle。
+     * @returns {Promise<{persons, relationships, households, lifeCircles, meta}|null>} null = 使用者拒絕權限
+     */
+    async openRecentFile(entry) {
+        const handle = entry && entry.handle;
+        if (!handle) throw new Error('此紀錄沒有可用的檔案存取權');
+        let permission = 'granted';
+        if (typeof handle.queryPermission === 'function') {
+            permission = await handle.queryPermission({ mode: 'readwrite' });
+            if (permission !== 'granted' && typeof handle.requestPermission === 'function') {
+                permission = await handle.requestPermission({ mode: 'readwrite' });
+            }
+        }
+        if (permission !== 'granted') return null;
+        const file = await handle.getFile();
+        let data = JSON.parse(await file.text());
+        data = this.migrate(data);
+        if (!data) throw new Error('無效的檔案格式');
+        this.currentFileHandle = handle;
+        this.currentFileName = file.name || handle.name;
+        this.rememberRecentFile(handle);
+        return {
+            persons: data.persons.map(p => Person.fromJSON(p)),
+            relationships: data.relationships.map(r => Relationship.fromJSON(r)),
+            households: data.households || [],
+            lifeCircles: data.lifeCircles || [],
+            meta: data.meta || null
+        };
+    }
+
+    /**
+     * [2-3] 清除這台電腦上的個案痕跡：瀏覽器暫存 + 最近檔案清單 + 目前檔案連結。
+     * 不刪使用者磁碟上的 JSON 檔。
+     */
+    async clearLocalData() {
+        this.clearAutoSave();
+        this.clearOpenFile();
+        await this.clearRecentFiles();
     }
 
     /**
@@ -260,7 +384,7 @@ class StorageManager {
      * @param {Array} households
      * @param {Object} options - 額外視圖選項
      */
-    autoSave(persons, relationships, households = [], lifeCircles = [], options = {}) {
+    autoSave(persons, relationships, households = [], lifeCircles = [], options = {}, extra = {}) {
         try {
             const data = {
                 version: '1.0',
@@ -270,7 +394,8 @@ class StorageManager {
                 households: households || [],
                 lifeCircles: lifeCircles || [],
                 filename: this.currentFileName, // 紀錄檔名
-                view: options || {} // 儲存縮放與位移
+                view: options || {}, // 儲存縮放與位移
+                ...(extra || {}) // [2-2] 文件 meta
             };
             localStorage.setItem(this.localStorageKey, JSON.stringify(data));
         } catch (err) {
@@ -297,7 +422,7 @@ class StorageManager {
             const view = data.view || null;
             this.currentFileName = data.filename || null; // 還原檔名
 
-            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt };
+            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt, meta: data.meta || null };
         } catch (err) {
             console.warn('載入自動儲存失敗:', err);
             return null;
@@ -378,7 +503,7 @@ class StorageManager {
      * @param {number} height - 圖片高度
      * @param {string} filename
      */
-    exportPDF(dataUrl, width, height, filename = 'genogram.pdf') {
+    exportPDF(dataUrl, width, height, filename = 'genogram.pdf', options = {}) {
         if (!dataUrl) {
             alert('沒有內容可匯出');
             return;
@@ -392,13 +517,17 @@ class StorageManager {
 
         const { jsPDF } = window.jspdf;
 
-        // 根據圖片尺寸決定方向
-        const orientation = width > height ? 'l' : 'p';
+        // [2-2] 紙張 / 方向：預設 A4、依圖片比例自動決定方向；可由匯出對話框指定 A3 或強制直橫
+        const format = ['a4', 'a3'].includes(options.format) ? options.format : 'a4';
+        const orientation = options.orientation === 'l' || options.orientation === 'p'
+            ? options.orientation
+            : (width > height ? 'l' : 'p');
 
         // 建立 PDF，使用 mm 單位
         const pdf = new jsPDF({
             orientation: orientation,
-            unit: 'mm'
+            unit: 'mm',
+            format
         });
 
         // 取得 PDF 頁面尺寸
@@ -426,14 +555,15 @@ class StorageManager {
      * @param {Array} lifeCircles
      * @param {string} filename
      */
-    exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json') {
+    exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json', extra = {}) {
         const data = {
             version: '1.0',
             exportedAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
             households: households || [],
-            lifeCircles: lifeCircles || []
+            lifeCircles: lifeCircles || [],
+            ...(extra || {}) // [2-2]
         };
 
         const jsonStr = JSON.stringify(data, null, 2);

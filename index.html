@@ -45,7 +45,7 @@
                     <span class="app-title-text">勵馨家系圖生成器</span>
                 </h1>
             </div>
-            <div class="document-context"><span class="document-name">未命名家系圖</span></div>
+            <div class="document-context"><span class="document-name" id="documentName">未命名家系圖</span><span class="document-dirty" id="documentDirty" hidden aria-label="有變更尚未儲存至檔案">●</span></div>
             <nav class="canvas-tool-dock" id="canvasToolDock" aria-label="畫布工具">
                 <div class="tool-group generation-group">
                     <button class="tool-btn primary" id="addPerson" title="新增角色 (N)" aria-label="新增角色 (N)">
@@ -111,6 +111,7 @@
                             </svg></span>
                         <span class="tool-label">刪除 (Del)</span>
                     </button>
+                    <div class="tool-divider" aria-hidden="true"></div>
                     <button class="tool-btn danger" id="clearAllBtn" title="清空畫布" aria-label="清空畫布">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -235,6 +236,9 @@
                     <button class="zoom-btn" id="fitView" type="button" title="符合全圖" aria-label="符合全圖">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg>
                     </button>
+                    <button class="zoom-btn" id="locateIP" type="button" title="定位案主（回到 100% 並置中；多位案主時輪流）" aria-label="定位案主">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22"/><circle cx="12" cy="12" r="7.5"/></svg>
+                    </button>
                     <button class="zoom-btn" id="zoomReset" title="重置縮放">⊙</button>
                 </div>
                 <!-- [NEW - G 方案] 自動排列預覽確認浮動欄 -->
@@ -290,6 +294,14 @@
                         <label class="view-option"><input type="checkbox" data-view-option="showEmotionalRelationships" checked><span>情感關係線</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住框</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
+                    </div>
+                    <div class="panel-content view-age-ref" id="viewAgeRef">
+                        <label for="ageReferenceDate">年齡基準日</label>
+                        <div class="view-age-ref-row">
+                            <input type="date" id="ageReferenceDate" aria-describedby="ageReferenceHint">
+                            <button type="button" class="btn-cancel btn-compact" id="ageReferenceToday">今天</button>
+                        </div>
+                        <p class="view-options-hint" id="ageReferenceHint">有填出生年月的人物，年齡依此日期自動計算；預設為今天，不會寫入檔案。</p>
                     </div>
                 </section>
             </aside>
@@ -388,10 +400,14 @@
 
         <!-- 關係選擇對話框 -->
         <div class="modal-overlay" id="relationshipModal" hidden inert aria-hidden="true">
-            <div class="modal" role="dialog" aria-modal="true"
+            <div class="modal modal--wide" role="dialog" aria-modal="true"
                 aria-labelledby="relationshipModalTitle" tabindex="-1">
                 <h3 class="modal-title" id="relationshipModalTitle">選擇關係類型</h3>
                 <div class="modal-content">
+                    <div class="relationship-type-group recent-relationship-group" id="recentRelationshipGroup" hidden>
+                        <h4>最近使用</h4>
+                        <div class="btn-grid" id="recentRelationshipGrid"></div>
+                    </div>
                     <div class="relationship-type-group">
                         <h4>親屬/結構關係</h4>
                         <div class="btn-grid">
@@ -508,6 +524,25 @@
         </div>
     </div>
 
+    <!-- [2-3] 開啟檔案對話框：最近檔案 / 瀏覽 / 清除本機暫存 -->
+    <div class="modal-overlay" id="openFileModal" hidden inert aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true"
+            aria-labelledby="openFileModalTitle" tabindex="-1">
+            <h3 class="modal-title" id="openFileModalTitle">開啟檔案</h3>
+            <div class="modal-content">
+                <p class="open-file-hint">最近開過的檔案（點一下直接開啟並連結，之後 Ctrl+S 會直接寫回；瀏覽器可能會再確認一次存取權限）。</p>
+                <div id="recentFileList" class="recent-file-list" role="list" aria-label="最近檔案"></div>
+                <p class="open-file-hint open-file-privacy">共用電腦提醒：最近檔案清單與瀏覽器暫存都留在這台電腦上。離開前可按「清除本機暫存並關閉個案」，不會刪除你另存的 JSON 檔。</p>
+            </div>
+            <div class="modal-actions open-file-actions">
+                <button class="btn-cancel btn-danger-text" id="clearLocalDataBtn" type="button">清除本機暫存並關閉個案</button>
+                <span class="modal-actions-spacer" aria-hidden="true"></span>
+                <button class="btn-cancel" id="cancelOpenFile" type="button">取消</button>
+                <button class="btn-primary" id="browseFileBtn" type="button">瀏覽檔案…</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 使用說明對話框 -->
     <div class="modal-overlay" id="helpModal" hidden inert aria-hidden="true">
         <div class="modal" style="max-width: 650px;" role="dialog" aria-modal="true"
@@ -517,30 +552,38 @@
                 <div class="help-section">
                     <h4>如何啟動程式</h4>
                     <ul>
-                        <li><strong>離線使用：</strong>直接使用瀏覽器開啟此資料夾中的 <strong>index.html</strong>。</li>
-                        <li><strong>安裝為 App：</strong>若已部署於網路 (HTTPS)，點擊網址列右側的<strong>「安裝」</strong>圖示，即可將其化身為桌面
-                            App，並支援完全離線使用。</li>
-                        <li>建議使用 <strong>Chrome</strong> 或 <strong>Edge</strong> 瀏覽器。</li>
+                        <li><strong>線上版：</strong>以 Chrome 或 Edge 開啟專屬網址即可使用。</li>
+                        <li><strong>離線臨床版：</strong>直接雙擊 <strong>geno/index.html</strong>（字型與程式資產皆在本機，全程零網路請求，適合敏感個案與斷網環境）。</li>
+                        <li>個案資料只存在瀏覽器暫存與您指定的 JSON 檔案，不會上傳任何伺服器。</li>
                     </ul>
                 </div>
                 <div class="help-section">
                     <h4>基本操作</h4>
                     <ul>
-                        <li><strong>新增人物：</strong>點擊「新增角色(N)」按鈕，選擇性別後自動放置。</li>
-                        <li><strong>修改內容：</strong>使用「選取(V)」工具點擊人物或關係線。</li>
-                        <li><strong>編輯人物：</strong>選取後在右側面板修改姓名、備註、是否死亡。</li>
-                        <li><strong>建立關係：</strong>使用「連接(C)」工具，先點擊第一個人，再點擊第二個。</li>
-                        <li><strong>修改關係：</strong>滑鼠移到關係線上出現藍色編輯按鈕，點擊可快速修改或刪除。</li>
-                        <li><strong>生活圈：</strong>使用「生活圈(L)」工具點擊畫布繪製多邊形區域。</li>
-                        <li><strong>其他工具：</strong>支援「複製圖片」與「清空畫布」功能。</li>
+                        <li><strong>新增人物：</strong>點擊「新增角色 (N)」選擇性別後，畫布會顯示半透明格位預覽，點擊放置（按住 <strong>Alt</strong> 可精準落點，Esc 取消）。</li>
+                        <li><strong>快速新增親屬：</strong>選取人物後，周圍出現「父母 / 手足 / 伴侶 / 兒子 / 女兒 / 懷孕」按鈕，一鍵新增並自動連線。</li>
+                        <li><strong>編輯人物：</strong>選取後在右側「屬性」修改姓名、年齡、性別、已過世、案主、生育結果（流產 / 人工流產）、備註、醫學標記；同父母的手足可設定多胞胎與同卵。填「出生年月」後年齡會自動計算（過世者再填死亡年月即為享年）。</li>
+                        <li><strong>調整文字位置：</strong>點人物的姓名文字會出現位置搖桿，可拖曳微調姓名與備註的擺放。</li>
+                        <li><strong>建立關係：</strong>使用「連接 (C)」先點第一個人再點第二個人，從清單選擇類型；親子線可選 <strong>親生 / 收養 / 寄養</strong>。</li>
+                        <li><strong>修改關係：</strong>用「選取 (V)」點關係線，線旁出現鉛筆（改類型）、⇄（對調方向）；右側面板也可直接改類型、子女線型與婚姻線走法。</li>
+                        <li><strong>婚姻線走法：</strong>選取婚姻線後，鉛筆旁有「自 / ㄇ / 一 / ㄩ」四個走法鈕；預設自動：同列淨空走直線、中間夾人時下折 ㄩ 避開。</li>
+                        <li><strong>橫桿距離：</strong>選 ㄇ 或 ㄩ 走法後，面板可用 ＋／－ 調整橫桿與人物的距離，或直接在畫布上按住橫桿上下拖動；多段婚姻的天橋卡到上方人物時用這個調開。</li>
+                        <li><strong>同住框：</strong>用「範圍圈選 (B)」或 Shift 多選成員後按「同住 (H)」即建框；框可整體拖曳。選取框後右側可命名（顯示在框上）、用 ✕ 移出成員或從下拉加入成員；框線會自動繞開不在框內的人，不必手動微調位置。</li>
+                        <li><strong>生活圈：</strong>用「生活圈 (L)」按住拖曳直接拉出橢圓，或逐點點頂點（Backspace 退回上一點）、雙擊或 Enter 完成。選取後可拖曳頂點改形狀、雙擊邊線新增頂點、Alt＋點頂點刪除；面板可命名、換色、設定名稱位置與說明。</li>
+                        <li><strong>檢視：</strong>右側「檢視」頁籤可暫時隱藏姓名、年齡、備註、醫學標記、情感線、同住框、生活圈（不刪資料，匯出圖片會遵循），並可設定「年齡基準日」看某個時間點的年齡。</li>
+                        <li><strong>自動排列：</strong>依親子關係分輩分列、配偶相鄰、子女置中於父母下方、手足長→幼、多段婚姻依婚期排列（最近一段最靠近本人）；先預覽再「套用」或「取消」，套用後可 Ctrl+Z 復原。沒有任何關係的人物不會被移動。</li>
+                        <li><strong>縮放：</strong>滾輪縮放；右鍵拖曳或空白鍵＋拖曳平移；左下角可「符合全圖」、重設 100%、「定位案主」（回到 100% 並置中案主，多位時輪流）。平板可雙指縮放與平移。縮得很小時姓名會自動放大、備註暫時隱藏（只影響螢幕，匯出不變）。</li>
                     </ul>
                 </div>
                 <div class="help-section">
                     <h4>存檔邏輯 (重要)</h4>
                     <ul>
-                        <li><strong>儲存 (Ctrl+S)：</strong>快速儲存至瀏覽器暫存。如果有連結檔案，則會直接同步。</li>
-                        <li><strong>另存：</strong>將目前進度下載為 JSON 檔案，或是備份到電腦。</li>
-                        <li><strong>同步存檔：</strong>先執行一次「另存」或「載入」建立連結後，按儲存就會直接更新檔案。</li>
+                        <li><strong>標題列：</strong>顯示目前檔名；出現 <strong style="color:#ed1261;">●</strong> 表示有變更尚未寫入檔案。</li>
+                        <li><strong>儲存 (Ctrl+S)：</strong>若已連結檔案（曾「載入」或「另存」），直接寫回該檔；否則先存到瀏覽器暫存，並提醒您另存。</li>
+                        <li><strong>另存：</strong>選擇位置與檔名，匯出 JSON 備份；之後 Ctrl+S 會直接更新這個檔案。</li>
+                        <li><strong>載入：</strong>按「載入」會先列出最近開過的檔案，點一下即可重開並連結；也可「瀏覽檔案…」。載入大型檔案會自動符合全圖。</li>
+                        <li><strong>共用電腦：</strong>「載入」視窗內的「清除本機暫存並關閉個案」會清掉瀏覽器暫存與最近檔案清單，回到空白畫布；不會刪除你另存的 JSON 檔。</li>
+                        <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。勾「去識別化」可把姓名換成代號（案主／男1／女1…）、年齡換成年齡帶、隱藏備註與關係說明，適合交給督導、法院或教學使用，磁碟檔案不變。「複製圖片」可直接貼到 Word / LINE。</li>
                     </ul>
                 </div>
                 <div class="help-section">
@@ -549,7 +592,8 @@
                         <span>N: 新增角色</span> <span>V: 選取</span> <span>C: 連接</span>
                         <span>B: 範圍圈選</span> <span>H: 同住圈選</span> <span>L: 生活圈</span>
                         <span>Del: 刪除</span> <span>Ctrl+Z: 復原</span> <span>Ctrl+Y: 重做</span>
-                        <span>Ctrl+S: 儲存</span> <span>Esc: 取消</span>
+                        <span>Ctrl+S: 儲存</span> <span>Esc: 取消</span> <span>Shift+點擊: 多選</span>
+                        <span>Alt+放置: 精準落點</span> <span>右鍵拖曳: 平移</span> <span>空白鍵+拖曳: 平移</span>
                     </div>
                 </div>
             </div>
@@ -588,6 +632,41 @@
                                 <input type="radio" name="exportResolution" value="1" style="margin-right: 6px;">
                                 <span>標準解析度 (1x)</span>
                             </label>
+                        </div>
+                    </div>
+                    <div class="export-header-settings">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="exportIncludeHeader"
+                                style="margin-right: 8px; width: 18px; height: 18px;">
+                            <span>加上頁首（標題 / 案號 / 日期 / 繪製者）</span>
+                        </label>
+                        <div class="export-header-fields" id="exportHeaderFields" hidden>
+                            <div class="export-field-row">
+                                <label>標題<input type="text" id="exportMetaTitle" placeholder="例：王○○ 家系圖" autocomplete="off"></label>
+                                <label>案號<input type="text" id="exportMetaCaseId" placeholder="例：A-2026-0123" autocomplete="off"></label>
+                            </div>
+                            <div class="export-field-row">
+                                <label>繪製者<input type="text" id="exportMetaAuthor" placeholder="社工姓名" autocomplete="off"></label>
+                                <label>日期<input type="date" id="exportMetaDate"></label>
+                            </div>
+                            <p class="export-field-hint">標題、案號、繪製者會存進這份個案的 JSON 檔；日期預設今天，不存檔。「複製圖片」不加頁首。</p>
+                        </div>
+                        <label style="display: flex; align-items: center; cursor: pointer; margin-top: 10px;">
+                            <input type="checkbox" id="exportDeidentify"
+                                style="margin-right: 8px; width: 18px; height: 18px;">
+                            <span>去識別化（姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性）</span>
+                        </label>
+                        <div class="export-pdf-settings">
+                            <span style="font-size: 13px; font-weight: 600; color: #555;">PDF 紙張：</span>
+                            <select id="exportPdfFormat" aria-label="PDF 紙張大小">
+                                <option value="a4" selected>A4</option>
+                                <option value="a3">A3</option>
+                            </select>
+                            <select id="exportPdfOrientation" aria-label="PDF 方向">
+                                <option value="auto" selected>方向自動（依圖片比例）</option>
+                                <option value="l">橫向</option>
+                                <option value="p">直向</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -658,7 +737,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- Dagre.js for graph layout -->
-    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
 
     <script src="js/person.js"></script>
     <script src="js/layout.js"></script>
@@ -667,8 +745,10 @@
     <script src="js/domain/family-route-planner.js"></script>
     <script src="js/history.js"></script>
     <script src="js/canvas.js"></script>
+    <script src="js/canvas-export.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/ui/modal-manager.js"></script>
+    <script src="js/ui/property-panel-templates.js"></script>
     <script src="js/app.js"></script>
 </body>
 

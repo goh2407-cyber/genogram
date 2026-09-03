@@ -416,6 +416,12 @@ const FIXTURES = [
         await page.evaluate(() => {
             const fitView = document.getElementById('fitView');
             if (fitView) fitView.style.display = 'none';
+            // 狀態膠囊屬 UI chrome（由 verify_status_ux 獨立驗證），與 Fit 鈕同樣排除，
+            // 否則任何提示文字/位置改動都會讓 16 張 golden 全部假陽性。
+            const statusBar = document.getElementById('statusBar');
+            if (statusBar) statusBar.style.display = 'none';
+            const locateIP = document.getElementById('locateIP'); // [3-3] 亦為 UI chrome（verify_locate_lod 驗）
+            if (locateIP) locateIP.style.display = 'none';
         });
         await page.waitForTimeout(150);
         const buf = await page.locator('#genogramCanvas').screenshot();

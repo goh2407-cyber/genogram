@@ -1,135 +1,8 @@
 /**
  * GenogramApp - 主應用程式
  */
-const PROPERTY_PANEL_TEMPLATES = Object.freeze({
-    empty: '<p class="empty-hint">點選成員、關係線或圈選框以編輯屬性</p>',
-    relationship: `
-        <div class="property-form">
-            <div class="form-group">
-                <label>關係類型</label>
-                <div style="padding: 8px; background: var(--bg-light); border-radius: 4px;">
-                    <strong id="relationshipTypeName"></strong>
-                </div>
-                <small id="relationshipEndpoints" style="color: var(--text-secondary); margin-top: 4px; display: block;"></small>
-            </div>
-            <div class="form-group">
-                <label for="relationshipDate">時間/說明 (顯示於線上)</label>
-                <textarea id="relationshipDate" rows="2" placeholder="例如：結婚 2010 (換行) 離婚 2020"></textarea>
-            </div>
-            <div style="margin-top: 12px;">
-                <button class="btn-cancel" id="deleteRelationshipBtn" style="width: 100%;">刪除此關係</button>
-            </div>
-        </div>`,
-    household: `
-        <div class="property-form">
-            <div class="form-group">
-                <label id="householdMemberCount"></label>
-                <div id="householdMembers" style="padding: 8px 12px; background: var(--bg-light); border-radius: 4px; font-size: 13px; line-height: 1.6;"></div>
-            </div>
-            <div class="form-group">
-                <label for="householdNotes">備註</label>
-                <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明"></textarea>
-            </div>
-            <div style="margin-top: 12px;">
-                <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住框</button>
-            </div>
-        </div>`,
-    lifeCircle: `
-        <div class="property-form">
-            <div class="form-group">
-                <label for="lifeCircleLabel">生活圈名稱（顯示於圈上）</label>
-                <input type="text" id="lifeCircleLabel" placeholder="例如：學校、教會、社區據點">
-            </div>
-            <div class="form-group">
-                <label>顏色</label>
-                <div id="lifeCircleSwatches" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
-            </div>
-            <div style="margin-top: 12px;">
-                <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
-            </div>
-        </div>`,
-    person: `
-        <form class="property-form" id="personForm">
-            <div class="form-group">
-                <label for="personName">姓名/稱謂</label>
-                <input type="text" id="personName" placeholder="輸入姓名">
-            </div>
-            <div class="form-group-row">
-                <div class="form-group">
-                    <label for="personAge">年齡</label>
-                    <input type="number" id="personAge" min="0" max="150" placeholder="年齡">
-                </div>
-                <div class="form-group">
-                    <label for="personGender">性別</label>
-                    <select id="personGender">
-                        <option value="male">男性</option>
-                        <option value="female">女性</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="personDeceased">
-                    <label for="personDeceased">已過世</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="personLossType">生育結果</label>
-                <select id="personLossType">
-                    <option value="">正常</option>
-                    <option value="miscarriage">流產（自然）</option>
-                    <option value="abortion">人工流產</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="personIP">
-                    <label for="personIP">案主 / 關注對象</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="personNotes">備註</label>
-                <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
-            </div>
-            <div id="twinSettingsHost"></div>
-            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
-            <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
-            <div class="form-group">
-                <label for="medLeftHalf">生理/心理疾病 (左半部)</label>
-                <select id="medLeftHalf">
-                    <option value="none">無</option>
-                    <option value="striped">疑似 (斜線)</option>
-                    <option value="filled">嚴重/確診 (填滿)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="medBottomHalf">酒精/藥物濫用 (下半部)</label>
-                <select id="medBottomHalf">
-                    <option value="none">無</option>
-                    <option value="striped">疑似 (斜線)</option>
-                    <option value="filled">確診 (填滿)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medSmoker">
-                    <label for="medSmoker">吸菸 (S)</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medObese">
-                    <label for="medObese">肥胖 (O)</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="medLang">
-                    <label for="medLang">語言障礙 (L)</label>
-                </div>
-            </div>
-            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
-            <div style="margin-top: 12px;">
-                <button type="button" class="btn-cancel" id="deletePersonBtn" style="width: 100%;">刪除此成員</button>
-            </div>
-        </form>`
-});
+// [3-4 拆檔] PROPERTY_PANEL_TEMPLATES 已移至 js/ui/property-panel-templates.js（需先於本檔載入）
+
 
 class GenogramApp {
     static STATUS_TIMEOUTS = Object.freeze({
@@ -247,11 +120,25 @@ class GenogramApp {
         this.currentLifeCirclePoints = [];  // 目前繪製中的頂點
         this.selectedLifeCircleId = null;   // 選中的生活圈 ID
         this.lifeCircleMousePos = null;     // 繪製時的滑鼠位置（用於預覽線）
+        this.lcVertexDrag = null;           // [LC-1] 拖曳中的生活圈頂點 {lc, index}
+        this.liftDrag = null;               // [R-1] 拖曳中的婚姻線橫桿 {rel, startLift, startY, dir}
+        this.lcPress = null;                // [LC-2] 生活圈工具按下未放開 {start, moved}
+        this.ellipsePreview = null;         // [LC-2] 拖拉橢圓預覽 {start, current}
+        // [3-2] 觸控：手指追蹤（pointerId → client 座標）、雙指縮放狀態、放開一指後忽略剩餘手指直到全部放開
+        this.touchPointers = new Map();
+        this.pinch = null;
+        this.touchIgnoreUntilEmpty = false;
 
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
         this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
+        // [1-2] 文件狀態：isDirty = 有變更尚未寫入檔案（另存 / Ctrl+S 寫回檔案後清除）
+        this.isDirty = false;
+        // [2-1] 年齡基準日（'YYYY-MM-DD' 或 null = 今天）。session-only，不進 JSON / history。
+        this.ageReferenceDate = null;
+        // [2-2] 文件 meta（標題 / 案號 / 繪製者）：屬於這份個案，存進 JSON（只在有值時）；匯出頁首用
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -324,6 +211,7 @@ class GenogramApp {
                 });
             }
             this.updateToolbar();
+            this.updateDocumentTitle(); // [1-2]
         }, 0);
     }
 
@@ -362,6 +250,7 @@ class GenogramApp {
             zoomIn: document.getElementById('zoomIn'),
             zoomOut: document.getElementById('zoomOut'),
             fitView: document.getElementById('fitView'),
+            locateIP: document.getElementById('locateIP'), // [3-3] 定位案主
             zoomReset: document.getElementById('zoomReset'),
             canvasContainer: document.getElementById('canvasContainer'),
             labelPositionPopover: document.getElementById('labelPositionPopover'),
@@ -384,6 +273,13 @@ class GenogramApp {
             closeHelpBtn: document.getElementById('closeHelp'),
             fileInput: document.getElementById('fileInput'),
 
+            // [2-3] 開啟檔案對話框（最近檔案 / 瀏覽 / 清除本機暫存）
+            openFileModal: document.getElementById('openFileModal'),
+            recentFileList: document.getElementById('recentFileList'),
+            browseFileBtn: document.getElementById('browseFileBtn'),
+            cancelOpenFile: document.getElementById('cancelOpenFile'),
+            clearLocalDataBtn: document.getElementById('clearLocalDataBtn'),
+
             // 圖例面板
             legendPanel: document.getElementById('legendPanel'),
 
@@ -405,6 +301,7 @@ class GenogramApp {
         const registrations = [
             [this.elements.genderModal, () => this.closeGenderModal(), '.gender-btn'],
             [this.elements.relationshipModal, () => this.closeRelationshipModal(), '.rel-btn'],
+            [this.elements.openFileModal, () => this.closeOpenFileModal(), '#browseFileBtn'],
             [this.elements.childrenModal, () => this.closeChildrenModal(), '#skipChildren'],
             [this.elements.helpModal, () => this.closeHelpModal(), '#closeHelp'],
             [this.elements.exportModal, () => this.closeExportModal(), '.export-option-btn']
@@ -490,6 +387,26 @@ class GenogramApp {
             });
             group.appendChild(sectionElement);
         });
+
+        // [HH-2] 圖形符號（非關係線）：同住框。刻意不用 .legend-group / data-legend-group，
+        // 側欄「三大關係群組」契約（verify_legend_consistency）不受影響。
+        const symbols = document.createElement('section');
+        symbols.className = 'legend-extra';
+        symbols.dataset.legendExtra = 'symbols';
+        const symbolsTitle = document.createElement('h4');
+        symbolsTitle.className = 'legend-group-title';
+        symbolsTitle.textContent = '圖形符號';
+        const householdItem = document.createElement('div');
+        householdItem.className = 'legend-item legend-symbol-item';
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch-household';
+        swatch.setAttribute('aria-hidden', 'true');
+        const swatchLabel = document.createElement('span');
+        swatchLabel.className = 'legend-label';
+        swatchLabel.textContent = '同住框（虛線框內為同住成員）';
+        householdItem.append(swatch, swatchLabel);
+        symbols.append(symbolsTitle, householdItem);
+        container.appendChild(symbols);
     }
 
     setViewOption(key, value, { render = true } = {}) {
@@ -584,6 +501,34 @@ class GenogramApp {
                 nextTab.focus();
             });
         });
+        // [2-2] 匯出頁首欄位 → 文件 meta；勾選/紙張 → localStorage 偏好
+        const includeHeader = document.getElementById('exportIncludeHeader');
+        if (includeHeader) includeHeader.addEventListener('change', e => {
+            const fields = document.getElementById('exportHeaderFields');
+            if (fields) fields.hidden = !e.target.checked;
+            this._writeExportPrefs({ includeHeader: e.target.checked });
+            if (e.target.checked) document.getElementById('exportMetaTitle')?.focus();
+        });
+        const bindMeta = (id, key) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', e => {
+                this.setDocumentMeta({ [key]: e.target.value });
+                if (key === 'author') this._writeExportPrefs({ author: e.target.value.trim() });
+            });
+        };
+        bindMeta('exportMetaTitle', 'title');
+        bindMeta('exportMetaCaseId', 'caseId');
+        bindMeta('exportMetaAuthor', 'author');
+        document.getElementById('exportPdfFormat')?.addEventListener('change', e => this._writeExportPrefs({ pdfFormat: e.target.value }));
+        document.getElementById('exportPdfOrientation')?.addEventListener('change', e => this._writeExportPrefs({ pdfOrientation: e.target.value }));
+
+        // [2-1] 年齡基準日（檢視分頁；session-only，不進 JSON）
+        const ageRefInput = document.getElementById('ageReferenceDate');
+        if (ageRefInput) ageRefInput.addEventListener('change', e => this.setAgeReferenceDate(e.target.value || null));
+        const ageRefToday = document.getElementById('ageReferenceToday');
+        if (ageRefToday) ageRefToday.addEventListener('click', () => this.setAgeReferenceDate(null));
+
         document.querySelectorAll('[data-view-option]').forEach(control => {
             control.addEventListener('change', event => {
                 this.setViewOption(event.currentTarget.dataset.viewOption, event.currentTarget.checked);
@@ -631,6 +576,10 @@ class GenogramApp {
         this.elements.saveBtn.addEventListener('click', () => this.saveToFile());
         this.elements.downloadBtn.addEventListener('click', () => this.downloadFile());
         this.elements.loadBtn.addEventListener('click', () => this.handleLoadClick());
+        // [2-3] 開啟檔案對話框
+        this.elements.browseFileBtn?.addEventListener('click', () => { this.closeOpenFileModal(); this.openWithPicker(); });
+        this.elements.cancelOpenFile?.addEventListener('click', () => this.closeOpenFileModal());
+        this.elements.clearLocalDataBtn?.addEventListener('click', () => this.clearLocalData());
         this.elements.fileInput.addEventListener('change', (e) => this.loadFromFile(e));
         if (this.elements.exportBtn) {
             this.elements.exportBtn.addEventListener('click', () => this.showExportModal());
@@ -684,6 +633,7 @@ class GenogramApp {
         this.elements.zoomIn.addEventListener('click', () => this.zoomStep(1));
         this.elements.zoomOut.addEventListener('click', () => this.zoomStep(-1));
         this.elements.fitView.addEventListener('click', () => this.fitToView());
+        this.elements.locateIP?.addEventListener('click', () => this.locateIdentifiedPatient()); // [3-3]
         this.elements.zoomReset.addEventListener('click', () => this.resetZoom());
 
         // 性別選擇對話框
@@ -727,23 +677,9 @@ class GenogramApp {
         const swapBtn = document.getElementById('swapRelationshipDirection');
         if (swapBtn) swapBtn.addEventListener('click', () => this.swapRelationshipDirection());
 
-        // 關係類型按鈕
+        // 關係類型按鈕（靜態清單；「最近使用」的複製鈕在開啟 modal 時動態綁同一個 handler）
         document.querySelectorAll('.rel-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                // 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)
-                const type = e.currentTarget.dataset.type;
-                // [Phase 1] 親子按鈕帶 data-link-type（biological/adopted/foster）；其餘關係無此屬性
-                const linkType = e.currentTarget.dataset.linkType || null;
-
-                // 判斷是編輯模式還是新建模式
-                if (this.editingRelationshipId) {
-                    // 編輯模式：更新現有關係的類型
-                    this.updateRelationshipType(type, linkType);
-                } else {
-                    // 新建模式：建立新關係
-                    this.createRelationship(type, linkType);
-                }
-            });
+            btn.addEventListener('click', e => this.handleRelationshipTypeButton(e));
         });
 
         // [Phase 2A.2] 婚姻線走法改為畫布上「走法鈕」（鉛筆旁，見 canvas.drawRelationshipRouteButtons）
@@ -792,7 +728,7 @@ class GenogramApp {
                 scale: this.canvas?.scale || 1,
                 offsetX: this.canvas?.offsetX || 0,
                 offsetY: this.canvas?.offsetY || 0
-            });
+            }, this.getDocumentExtra());
         });
     }
 
@@ -838,14 +774,22 @@ class GenogramApp {
                 statusText = '連接工具：依序點擊兩個人物建立關係';
                 this.connectingFrom = null;
                 break;
-            case 'household':
+            case 'household': {
                 // [UX Fix] 改用點選模式，更直覺好用
-                if (this.selectedPersonIds.length > 0) {
-                    statusText = `已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框`;
-                } else {
-                    statusText = '同住圈選：點選角色加入選取，按 Enter 建立';
+                // [HH-4] 已經多選 ≥2 人 → 直接建框（createHousehold 內會切回選取工具並提示）
+                if (this.selectedPersonIds.length >= 2) {
+                    this.householdSelection = [...this.selectedPersonIds];
+                    this.createHousehold();
+                    return;
                 }
+                // 只選 1 人 → 不動選取狀態（切工具不得改變選取，見 verify_manual_label_controls），
+                // Enter 會直接用該人建框；再點其他人時由 pointerdown 把他一起納入
+                const preselected = this.selectedPersonIds.length || (this.selectedPersonId ? 1 : 0);
+                statusText = preselected > 0
+                    ? `已選取 ${preselected} 位成員，按 Enter 建立同住框（再點人可增減）`
+                    : '同住圈選：點選角色加入選取，按 Enter 建立';
                 break;
+            }
             case 'lifeCircle':
                 statusText = '生活圈繪製：點擊增加頂點，雙擊或 Enter 完成，Esc 取消';
                 break;
@@ -888,6 +832,10 @@ class GenogramApp {
             this.canvas.draggedHousehold = null;
             this.canvas.draggedLifeCircle = null; // [Fix] 漏清會劫持下一次拖曳
         }
+        this.lcVertexDrag = null;   // [LC-1]
+        this.liftDrag = null;       // [R-1]
+        this.lcPress = null;        // [LC-2]
+        this.ellipsePreview = null; // [LC-2]
 
         // 清理框選狀態
         this.isBoxSelecting = false;
@@ -920,6 +868,97 @@ class GenogramApp {
     /**
      * 更新工具列狀態
      */
+    /**
+     * [2-1] 設定年齡基準日（'YYYY-MM-DD' 或 null=今天），重繪並更新屬性面板年齡欄。
+     * 只影響「有出生年月」的人物；不寫入檔案。
+     */
+    setAgeReferenceDate(value, { render = true } = {}) {
+        const normalized = value ? Person.normalizeDateString(value) : null;
+        this.ageReferenceDate = normalized && normalized.length === 10 ? normalized : null;
+        const input = document.getElementById('ageReferenceDate');
+        if (input) input.value = this.ageReferenceDate || '';
+        if (render) this.render();
+        const person = this.personMap.get(this.selectedPersonId);
+        if (person) this.refreshPersonAgeFields(this.elements.propertyContent, person);
+    }
+
+    /**
+     * [2-1] 依人物的出生/死亡年月狀態更新屬性面板：
+     *   有計算值 → 年齡欄唯讀顯示計算值 + 提示；否則可手填。過世才顯示死亡年月欄。
+     */
+    refreshPersonAgeFields(root, person) {
+        if (!root || !person) return;
+        const ageInput = root.querySelector('#personAge');
+        const hint = root.querySelector('#personAgeHint');
+        const deathGroup = root.querySelector('#personDeathDateGroup');
+        if (deathGroup) deathGroup.hidden = !person.isDeceased;
+        const computed = typeof person.isAgeComputed === 'function' && person.isAgeComputed(this.ageReferenceDate);
+        if (ageInput) {
+            if (computed) {
+                ageInput.value = person.getDisplayAge(this.ageReferenceDate);
+                ageInput.readOnly = true;
+                ageInput.classList.add('is-computed');
+                ageInput.title = '依出生年月自動計算；清空出生年月可改回手動輸入';
+            } else {
+                ageInput.readOnly = false;
+                ageInput.classList.remove('is-computed');
+                ageInput.title = '';
+                if (document.activeElement !== ageInput) ageInput.value = person.age ?? '';
+            }
+        }
+        if (!hint) return;
+        if (computed) {
+            hint.hidden = false;
+            hint.textContent = person.isDeceased
+                ? '年齡依出生／死亡年月自動計算（享年）'
+                : `年齡依出生年月自動計算，基準日：${this.ageReferenceDate || '今天'}（可在「檢視」分頁調整）`;
+        } else if (person.birthDate && person.isDeceased && !person.deathDate) {
+            hint.hidden = false;
+            hint.textContent = '已過世但未填死亡年月：年齡沿用手動輸入的享年';
+        } else {
+            hint.hidden = true;
+            hint.textContent = '';
+        }
+    }
+
+    /**
+     * [1-2] 標記「有變更尚未寫入檔案」並更新標題列。載入中不標記。
+     */
+    markDirty() {
+        if (this.isLoading) return;
+        this.isDirty = true;
+        this.updateDocumentTitle();
+    }
+
+    /**
+     * [1-2] 標題列：檔名 + 未儲存標記（●）。
+     * 未連結檔案 → 「未命名家系圖」；有內容但尚未存成檔案、或存檔後又有變更 → 顯示 ●。
+     * 同步更新瀏覽器分頁標題，方便多分頁時辨識。
+     */
+    updateDocumentTitle() {
+        const nameNode = document.getElementById('documentName');
+        const dirtyNode = document.getElementById('documentDirty');
+        const fileName = this.storage?.getOpenFileName?.() || null;
+        const linked = this.storage?.hasOpenFile?.() === true;
+        const hasContent = ((this.persons?.length || 0) + (this.relationships?.length || 0)
+            + (this.households?.length || 0) + (this.lifeCircles?.length || 0)) > 0;
+        const showDirty = this.isDirty && hasContent;
+        const title = fileName || '未命名家系圖';
+        if (nameNode) {
+            nameNode.textContent = title;
+            nameNode.title = !fileName
+                ? '尚未連結檔案：「另存」或「載入」後，Ctrl+S 會直接寫回該檔案'
+                : (linked ? `目前檔案：${fileName}（Ctrl+S 直接寫回）` : `目前檔案：${fileName}（唯讀載入，儲存請用「另存」）`);
+        }
+        if (dirtyNode) {
+            dirtyNode.hidden = !showDirty;
+            dirtyNode.title = linked
+                ? '有變更尚未儲存至檔案（Ctrl+S 儲存）'
+                : '內容尚未儲存為檔案（請點「另存」建立檔案）';
+        }
+        document.title = `${showDirty ? '● ' : ''}${title} | 勵馨家系圖生成器`;
+    }
+
     updateToolbar() {
         document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
 
@@ -1009,10 +1048,21 @@ class GenogramApp {
         // [Fix] 只處理主鍵（左鍵/觸控/筆）：右鍵、中鍵不該加生活圈頂點或觸發拖曳
         if (typeof e.button === 'number' && e.button > 0) return;
 
+        // [3-2] 觸控：追蹤手指；第二指落下 → 取消單指操作、進入雙指縮放/平移；
+        // 雙指結束後剩餘的手指一律忽略，直到全部放開（避免放開一指瞬間把人物拖走）
+        if (e.pointerType === 'touch') {
+            this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this.touchPointers.size >= 2) {
+                this.beginPinch();
+                return;
+            }
+            if (this.touchIgnoreUntilEmpty) return;
+        }
+
         // Pointer capture for robust drag handling
         if (e.target === this.canvas.canvas) {
             this.activePointerId = e.pointerId;
-            this.canvas.canvas.setPointerCapture(e.pointerId);
+            try { this.canvas.canvas.setPointerCapture(e.pointerId); } catch (_) { /* 合成事件或已失效的 pointer */ }
         }
 
         // [Snap] 每次 pointerdown 都重置拖曳吸附狀態，
@@ -1045,10 +1095,11 @@ class GenogramApp {
         // 生活圈繪製模式
         if (this.currentTool === 'lifeCircle') {
             if (!this.isDrawingLifeCircle) {
-                // 開始新的生活圈繪製
-                this.isDrawingLifeCircle = true;
-                this.currentLifeCirclePoints = [point];
-                this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成');
+                // [LC-2] 先記下按下點：放開時未移動 → 第 1 個頂點；按住拖曳 → 直接拉出橢圓
+                this.lcPress = { start: point, moved: false };
+                this.updateStatus('點一下放第 1 個頂點；或按住拖曳直接拉出橢圓');
+                this.render();
+                return;
             } else {
                 // 增加頂點
                 this.currentLifeCirclePoints.push(point);
@@ -1076,6 +1127,11 @@ class GenogramApp {
         if (this.currentTool === 'household') {
             const clickedPerson = this.getPersonAt(point.x, point.y);
             if (clickedPerson) {
+                // [HH-4] 進入工具前若只單選了一人，第一次點人時把他一起納入清單
+                if (this.selectedPersonIds.length === 0 && this.selectedPersonId && this.selectedPersonId !== clickedPerson.id) {
+                    this.selectedPersonIds = [this.selectedPersonId];
+                    this.selectedPersonId = null;
+                }
                 // Toggle 選取狀態
                 const index = this.selectedPersonIds.indexOf(clickedPerson.id);
                 if (index > -1) {
@@ -1144,6 +1200,16 @@ class GenogramApp {
                         if (this.canvas.isPointOnEditButton(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships)) {
                             this.editingRelationshipId = selectedRel.id;
                             this.showRelationshipEditModal();
+                            return;
+                        }
+                        // [R-1] 橫桿（ㄇ 天橋頂 / ㄩ 下折底）：按住可上下拖動，調整橫桿距離；人物不動
+                        const bar = this.canvas.getMarriageBarAt(point.x, point.y, selectedRel, fromPerson, toPerson, this.relationships);
+                        if (bar) {
+                            this.dragStartSnapshot = this.getState();
+                            this.liftDrag = { rel: selectedRel, startLift: selectedRel.routeLift || 0, startY: point.y, dir: bar.dir };
+                            this.canvas.isDragging = true;
+                            this.canvas.dragStart = { x: point.x, y: point.y };
+                            this.canvas.canvas.style.cursor = 'ns-resize';
                             return;
                         }
                     }
@@ -1268,6 +1334,32 @@ class GenogramApp {
             }
 
             // 3. 檢查是否點擊到生活圈「邊界帶」
+            // [LC-1] 已選取的生活圈：點頂點 → 拖曳該頂點；Alt+點頂點 → 刪除（至少保留 3 點）
+            if (this.selectedLifeCircleId && this.viewOptions.showLifeCircles) {
+                const selLc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+                const vi = selLc ? this.getLifeCircleVertexAt(selLc, point.x, point.y) : -1;
+                if (selLc && vi >= 0) {
+                    if (e.altKey) {
+                        if (selLc.points.length <= 3) {
+                            this.updateStatus('生活圈至少需要 3 個頂點，無法再刪除', 'warning');
+                            return;
+                        }
+                        this.saveState();
+                        selLc.points.splice(vi, 1);
+                        this.updateStatus('已刪除頂點', 'info');
+                        this.autoSave();
+                        this.render();
+                        return;
+                    }
+                    this.dragStartSnapshot = this.getState();
+                    this.canvas.isDragging = true;
+                    this.canvas.dragStart = point;
+                    this.lcVertexDrag = { lc: selLc, index: vi };
+                    this.updateStatus('拖曳調整頂點；Alt+點頂點可刪除、雙擊邊線可新增頂點', 'info');
+                    return;
+                }
+            }
+
             // [Fix] 生活圈改邊界帶命中且優先於同住框：圈邊框壓在框內部時仍點得到圈，
             // 圈內空白則讓給同住框 / 畫布平移
             const clickedLifeCircle = this.getLifeCircleAt(point.x, point.y);
@@ -1354,6 +1446,12 @@ class GenogramApp {
      * 處理指標移動 (Pointer Events 統一滑鼠與觸控)
      */
     handlePointerMove(e) {
+        // [3-2] 觸控：更新手指位置；雙指中 → 只做縮放/平移；雙指結束後的殘留手指忽略
+        if (e.pointerType === 'touch' && this.touchPointers.has(e.pointerId)) {
+            this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this.pinch) { this.updatePinch(); return; }
+            if (this.touchIgnoreUntilEmpty) return;
+        }
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
@@ -1361,6 +1459,17 @@ class GenogramApp {
         if (this.placementSession) {
             this.updatePlacement(point.x, point.y, e.altKey);
             this.render();
+            return;
+        }
+
+        // [LC-2] 生活圈工具按住拖曳 → 橢圓預覽（超過 8 螢幕像素才算拖）
+        if (this.currentTool === 'lifeCircle' && this.lcPress) {
+            const dist = Math.hypot(point.x - this.lcPress.start.x, point.y - this.lcPress.start.y);
+            if (this.lcPress.moved || dist > 8 / ((this.canvas && this.canvas.scale) || 1)) {
+                this.lcPress.moved = true;
+                this.ellipsePreview = { start: this.lcPress.start, current: point };
+                this.render();
+            }
             return;
         }
 
@@ -1404,6 +1513,29 @@ class GenogramApp {
         if (this.canvas.isDragging) {
             let dx = point.x - this.canvas.dragStart.x;
             let dy = point.y - this.canvas.dragStart.y;
+
+            // [R-1] 婚姻線橫桿拖曳：只改 routeLift（dir=-1 橫桿在上 → 往上拖變大；dir=+1 在下 → 往下拖變大）
+            if (this.liftDrag) {
+                const d = this.liftDrag;
+                const next = Math.max(0, Math.min(600, Math.round(d.startLift + d.dir * (point.y - d.startY))));
+                if (next !== (d.rel.routeLift || 0)) {
+                    d.rel.routeLift = next;
+                    this._dataVersion++;
+                    this.render();
+                }
+                return;
+            }
+
+            // [LC-1] 生活圈單一頂點拖曳
+            if (this.lcVertexDrag) {
+                const { lc, index } = this.lcVertexDrag;
+                if (lc.points[index]) {
+                    lc.points[index].x = point.x;
+                    lc.points[index].y = point.y;
+                }
+                this.render();
+                return;
+            }
 
             // 生活圈拖曳
             if (this.canvas.draggedLifeCircle) {
@@ -1551,6 +1683,8 @@ class GenogramApp {
                         this.canvas.isPointOnSwapButton(point.x, point.y, selRel, fp, tp, this.relationships)
                     )) {
                         this.canvas.canvas.style.cursor = 'pointer';
+                    } else if (fp && tp && this.canvas.getMarriageBarAt(point.x, point.y, selRel, fp, tp, this.relationships)) {
+                        this.canvas.canvas.style.cursor = 'ns-resize'; // [R-1] 橫桿可上下拖
                     }
                 }
             }
@@ -1561,11 +1695,68 @@ class GenogramApp {
      * 處理指標放開 (Pointer Events 統一滑鼠與觸控)
      */
     handlePointerUp(e) {
-        // 釋放 pointer capture
-        if (this.activePointerId !== null && this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
-            this.canvas.canvas.releasePointerCapture(this.activePointerId);
+        // [3-2] 觸控：手指放開
+        if (e.pointerType === 'touch') {
+            this.touchPointers.delete(e.pointerId);
+            if (this.pinch) {
+                if (this.touchPointers.size < 2) {
+                    this.pinch = null;
+                    this.touchIgnoreUntilEmpty = this.touchPointers.size > 0;
+                    this.autoSave(); // 視角（scale/offset）寫入暫存
+                }
+                return;
+            }
+            if (this.touchIgnoreUntilEmpty) {
+                if (this.touchPointers.size === 0) this.touchIgnoreUntilEmpty = false;
+                return;
+            }
         }
+
+        // 釋放 pointer capture
+        try {
+            if (this.activePointerId !== null && this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
+                this.canvas.canvas.releasePointerCapture(this.activePointerId);
+            }
+        } catch (_) { /* 合成事件或已失效的 pointer */ }
         this.activePointerId = null;
+
+        // [LC-2] 生活圈工具放開：拖過 → 依拖曳矩形建橢圓（16 點）；沒拖 → 放第 1 個頂點
+        if (this.currentTool === 'lifeCircle' && this.lcPress) {
+            const press = this.lcPress;
+            const preview = this.ellipsePreview;
+            this.lcPress = null;
+            this.ellipsePreview = null;
+            if (press.moved && preview) {
+                this.finishLifeCircle(GenogramApp.ellipsePoints(press.start, preview.current, 16));
+            } else {
+                this.isDrawingLifeCircle = true;
+                this.currentLifeCirclePoints = [press.start];
+                this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成；Backspace 退回上一點');
+                this.render();
+            }
+            return;
+        }
+        // [R-1] 橫桿拖曳結束：有變動才寫一筆 history（以拖曳前的值存 snapshot，語意同 saveState-before-mutation）
+        if (this.liftDrag) {
+            const d = this.liftDrag;
+            this.liftDrag = null;
+            this.canvas.isDragging = false;
+            this.dragStartSnapshot = null;
+            const finalLift = d.rel.routeLift || 0;
+            if (finalLift !== d.startLift) {
+                d.rel.routeLift = d.startLift;
+                this.saveState();
+                d.rel.routeLift = finalLift;
+                this._dataVersion++;
+                this.updateStatus(`橫桿距離：${finalLift}px`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
+                this.autoSave();
+            }
+            this.updatePropertyPanel();
+            this.render();
+            return;
+        }
+        // [LC-1] 頂點拖曳結束：清除頂點狀態，後面走一般拖曳 commit（dragStartSnapshot → history）
+        if (this.lcVertexDrag) this.lcVertexDrag = null;
 
         if (this.isBoxSelecting) {
             this.isBoxSelecting = false;
@@ -1777,6 +1968,7 @@ class GenogramApp {
                 );
 
                 if (hasSignificantChange) {
+                    this.markDirty(); // [1-2]
                     this.history.pushState(this.dragStartSnapshot);
                 }
                 this.dragStartSnapshot = null;
@@ -1839,6 +2031,71 @@ class GenogramApp {
     /**
      * 處理滾輪縮放
      */
+    /**
+     * [3-2] 進入雙指縮放：取消任何單指操作（拖曳座標還原到起點、不寫 history），
+     * 記下起始兩指距離、起始縮放、兩指中點對應的世界座標。
+     */
+    beginPinch() {
+        if (this.dragStartSnapshot && this.canvas.isDragging) {
+            const snap = this.dragStartSnapshot;
+            (snap.persons || []).forEach(sp => {
+                const live = this.personMap.get(sp.id);
+                if (live) { live.x = sp.x; live.y = sp.y; }
+            });
+            (snap.lifeCircles || []).forEach(slc => {
+                const live = this.lifeCircles.find(l => l.id === slc.id);
+                if (live && Array.isArray(slc.points)) live.points = slc.points.map(p => ({ x: p.x, y: p.y }));
+            });
+        }
+        this.dragStartSnapshot = null;
+        this.canvas.isDragging = false;
+        this.canvas.isPanning = false;
+        this.canvas.draggedPerson = null;
+        this.canvas.draggedHousehold = null;
+        this.canvas.draggedLifeCircle = null;
+        this.lcVertexDrag = null;
+        this.lcPress = null;
+        this.ellipsePreview = null;
+        this.isBoxSelecting = false;
+        this.dragVirtual = null;
+        this.dragGuides = null;
+        this.canvas.dragGuides = null;
+        if (this.placementSession) this.cancelPlacement();
+
+        const [a, b] = [...this.touchPointers.values()];
+        const rect = this.canvas.canvas.getBoundingClientRect();
+        const mid = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+        this.pinch = {
+            startDist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+            startScale: this.canvas.scale,
+            worldMid: {
+                x: (mid.x - this.canvas.offsetX) / this.canvas.scale,
+                y: (mid.y - this.canvas.offsetY) / this.canvas.scale
+            }
+        };
+        this.touchIgnoreUntilEmpty = true;
+        this.updateStatus('雙指縮放／平移', 'info');
+        this.render();
+    }
+
+    /**
+     * [3-2] 雙指移動：依兩指距離比例縮放（夾在 minScale～maxScale），並讓起始中點對應的世界點跟著目前中點
+     */
+    updatePinch() {
+        if (!this.pinch || this.touchPointers.size < 2) return;
+        const [a, b] = [...this.touchPointers.values()];
+        const rect = this.canvas.canvas.getBoundingClientRect();
+        const mid = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+        const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        const scale = Math.max(this.canvas.minScale,
+            Math.min(this.canvas.maxScale, this.pinch.startScale * dist / this.pinch.startDist));
+        this.canvas.scale = scale;
+        this.canvas.offsetX = mid.x - this.pinch.worldMid.x * scale;
+        this.canvas.offsetY = mid.y - this.pinch.worldMid.y * scale;
+        this.updateZoomDisplay();
+        this.render();
+    }
+
     handleWheel(e) {
         if (e.ctrlKey) {
             e.preventDefault();
@@ -1864,6 +2121,23 @@ class GenogramApp {
         }
 
         const point = this.canvas.getMousePos(e);
+
+        // [LC-1] 雙擊已選取生活圈的邊線（非頂點）→ 在最近的邊插入一個頂點
+        if (this.currentTool === 'select' && this.selectedLifeCircleId && this.viewOptions.showLifeCircles) {
+            const selLc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+            const tol = 12 / ((this.canvas && this.canvas.scale) || 1);
+            if (selLc && this.getLifeCircleVertexAt(selLc, point.x, point.y) < 0
+                && this.canvas.isPointOnLifeCircleEdge(selLc, point.x, point.y, tol)) {
+                const seg = GenogramApp.nearestSegmentIndex(selLc.points, point);
+                this.saveState();
+                selLc.points.splice(seg + 1, 0, { x: point.x, y: point.y });
+                this.updateStatus('已新增頂點，可直接拖曳調整', 'info');
+                this.autoSave();
+                this.render();
+                return;
+            }
+        }
+
         const person = this.getPersonAt(point.x, point.y);
         if (person) {
             this.selectPerson(person.id);
@@ -1902,6 +2176,7 @@ class GenogramApp {
         if (!session) return false;
         const afterSignature = JSON.stringify(this.getState());
         if (afterSignature === session.beforeSignature) return false;
+        this.markDirty(); // [1-2]
         this.history.pushState(session.before);
         this.updateToolbar();
         return true;
@@ -1996,6 +2271,17 @@ class GenogramApp {
             case 'Delete':
             case 'Backspace':
                 e.preventDefault();
+                // [LC-2] 生活圈繪製中：退回上一個頂點（沒有頂點了就取消繪製），不刪任何物件
+                if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
+                    this.currentLifeCirclePoints.pop();
+                    if (this.currentLifeCirclePoints.length === 0) {
+                        this.cancelLifeCircle();
+                    } else {
+                        this.updateStatus(`已退回一個頂點，剩 ${this.currentLifeCirclePoints.length} 個`, 'info');
+                        this.render();
+                    }
+                    break;
+                }
                 this.deleteSelected();
                 break;
             case 'Escape':
@@ -3095,6 +3381,54 @@ class GenogramApp {
                 `${fromPerson ? fromPerson.name || '未命名' : '未知'} ↔ ${toPerson ? toPerson.name || '未命名' : '未知'}`;
             root.querySelector('#relationshipDate').value = relationship.date || '';
 
+            // [1-4] 面板直接變更類型 / 子女線型 / 婚姻線走法（與畫布鉛筆、走法鈕共用同一組函式）
+            root.querySelector('#changeRelationshipTypeBtn').addEventListener('click', () => {
+                this.editingRelationshipId = relationship.id;
+                this.showRelationshipEditModal();
+            });
+            const linkGroup = root.querySelector('#relationshipLinkTypeGroup');
+            linkGroup.hidden = relationship.type !== 'parent-child'; // 明確設定，避免沿用前一次選取的顯示狀態
+            if (relationship.type === 'parent-child') {
+                const currentLink = relationship.linkType || 'biological';
+                linkGroup.querySelectorAll('[data-link-type]').forEach(btn => {
+                    const active = btn.dataset.linkType === currentLink;
+                    btn.classList.toggle('is-active', active);
+                    btn.setAttribute('aria-pressed', String(active));
+                    btn.addEventListener('click', () => this.setLinkTypeById(relationship.id, btn.dataset.linkType));
+                });
+            }
+            const routeGroup = root.querySelector('#relationshipRouteGroup');
+            const isMarriage = Relationship.getCategory(relationship.type) === 'marriage';
+            routeGroup.hidden = !isMarriage; // 明確設定
+            if (isMarriage) {
+                const currentRoute = relationship.routeMode || 'auto';
+                routeGroup.querySelectorAll('[data-route-mode]').forEach(btn => {
+                    const active = btn.dataset.routeMode === currentRoute;
+                    btn.classList.toggle('is-active', active);
+                    btn.setAttribute('aria-pressed', String(active));
+                    btn.addEventListener('click', () => {
+                        this.setRouteModeById(relationship.id, btn.dataset.routeMode);
+                        this.updatePropertyPanel();
+                    });
+                });
+                // [R-1] 橫桿距離：只有 ㄇ / ㄩ 有橫桿可調；auto / 一 停用
+                const liftRow = routeGroup.querySelector('#relationshipLiftRow');
+                if (liftRow) {
+                    const hasBar = currentRoute === 'over' || currentRoute === 'under';
+                    const lift = relationship.routeLift || 0;
+                    liftRow.querySelector('#relationshipLiftValue').textContent = String(lift);
+                    liftRow.querySelectorAll('[data-lift]').forEach(btn => {
+                        btn.disabled = !hasBar;
+                        if (!hasBar) btn.title = '先選 ㄇ 或 ㄩ 走法，才有橫桿可調';
+                        btn.addEventListener('click', () => {
+                            const v = btn.dataset.lift === 'reset' ? 0 : lift + Number(btn.dataset.lift);
+                            this.setRouteLiftById(relationship.id, v);
+                            this.updatePropertyPanel();
+                        });
+                    });
+                }
+            }
+
             this.bindPropertyEdit(root.querySelector('#relationshipDate'), e => {
                 relationship.date = e.target.value;
             });
@@ -3106,13 +3440,47 @@ class GenogramApp {
             const household = this.households.find(h => h.id === this.selectedHouseholdId);
             if (household) {
                 const root = this.setPropertyPanelTemplate('household');
-                const memberNames = household.ids
-                    .map(id => this.personMap.get(id))
-                    .filter(p => p)
-                    .map(p => p.name || '未命名')
-                    .join('、');
                 root.querySelector('#householdMemberCount').textContent = `同住家庭（${household.ids.length} 位成員）`;
-                root.querySelector('#householdMembers').textContent = memberNames || '（無成員）';
+                // [HH-2] 名稱（畫在框上）
+                root.querySelector('#householdLabel').value = household.label || '';
+                this.bindPropertyEdit(root.querySelector('#householdLabel'), e => {
+                    household.label = e.target.value.trim();
+                });
+                // [HH-3] 成員標籤（✕ 移出）+ 加入下拉；✕ 用 CSS 畫，不進 textContent
+                const membersHost = root.querySelector('#householdMembers');
+                membersHost.replaceChildren();
+                household.ids.forEach(id => {
+                    const p = this.personMap.get(id);
+                    if (!p) return;
+                    const chip = document.createElement('span');
+                    chip.className = 'household-member-chip';
+                    chip.dataset.personId = id;
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'chip-name';
+                    nameEl.textContent = p.name || '未命名';
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'chip-remove';
+                    removeBtn.setAttribute('aria-label', `將 ${p.name || '未命名'} 移出同住框`);
+                    removeBtn.title = '移出同住框';
+                    removeBtn.addEventListener('click', () => this.removeHouseholdMember(household.id, id));
+                    chip.append(nameEl, removeBtn);
+                    membersHost.appendChild(chip);
+                });
+                if (!household.ids.length) membersHost.textContent = '（無成員）';
+                const select = root.querySelector('#householdAddSelect');
+                this.persons.filter(p => !household.ids.includes(p.id)).forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    const age = typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age;
+                    opt.textContent = (p.name || '未命名') + (age !== null && age !== undefined && age !== '' ? `（${age}）` : '');
+                    select.appendChild(opt);
+                });
+                root.querySelector('#householdAddBtn').addEventListener('click', () => {
+                    const pid = select.value;
+                    if (!pid) { this.updateStatus('請先從下拉選單選擇要加入的成員', 'warning'); return; }
+                    this.addHouseholdMember(household.id, pid);
+                });
                 root.querySelector('#householdNotes').value = household.notes || '';
                 this.bindPropertyEdit(root.querySelector('#householdNotes'), e => {
                     household.notes = e.target.value;
@@ -3127,6 +3495,18 @@ class GenogramApp {
             if (lc) {
                 const root = this.setPropertyPanelTemplate('lifeCircle');
                 root.querySelector('#lifeCircleLabel').value = lc.label || '';
+                // [LC-3] 名稱位置 / 說明
+                const posSel = root.querySelector('#lifeCircleLabelPosition');
+                posSel.value = ['top', 'center', 'bottom'].includes(lc.labelPosition) ? lc.labelPosition : 'top';
+                this.bindPropertyEdit(posSel, e => {
+                    lc.labelPosition = e.target.value === 'top' ? undefined : e.target.value;
+                    if (lc.labelPosition === undefined) delete lc.labelPosition; // 預設值不寫入 JSON
+                }, { eventName: 'change', commitOnChange: true });
+                const notesEl = root.querySelector('#lifeCircleNotes');
+                notesEl.value = lc.notes || '';
+                this.bindPropertyEdit(notesEl, e => {
+                    if (e.target.value) lc.notes = e.target.value; else delete lc.notes;
+                }, { render: false });
                 const swatchHost = root.querySelector('#lifeCircleSwatches');
                 GenogramApp.LIFE_CIRCLE_COLORS.forEach(color => {
                     const button = document.createElement('button');
@@ -3176,6 +3556,8 @@ class GenogramApp {
         const valueById = {
             personName: person.name || '',
             personAge: person.age ?? '',
+            personBirthDate: person.birthDate || '',
+            personDeathDate: person.deathDate || '',
             personNotes: person.notes || '',
             personGender: person.gender,
             personLossType: person.lossType || '',
@@ -3206,6 +3588,7 @@ class GenogramApp {
         }
         root.querySelector('#twinSettingsHost').appendChild(this.createTwinSettingsElement(person));
         this.setupPropertyFormEvents();
+        this.refreshPersonAgeFields(root, person); // [2-1]
     }
 
     adjustSelectedPersonLabel(direction, options = {}) {
@@ -3455,6 +3838,50 @@ class GenogramApp {
     /**
      * 建立同住家庭
      */
+    /**
+     * [HH-3] 從同住框移出一位成員；歸零則刪框。一筆 history。
+     */
+    removeHouseholdMember(householdId, personId) {
+        const idx = this.households.findIndex(h => h.id === householdId);
+        if (idx < 0) return;
+        const household = this.households[idx];
+        if (!household.ids.includes(personId)) return;
+        this.saveState();
+        const remain = household.ids.filter(id => id !== personId);
+        if (remain.length === 0) {
+            this.households = this.households.filter(h => h.id !== householdId);
+            if (this.selectedHouseholdId === householdId) this.selectedHouseholdId = null;
+            this.updateStatus('同住框已無成員，已移除', 'info');
+        } else {
+            this.households[idx] = { ...household, ids: remain };
+            this.updateStatus('已將成員移出同住框', 'info');
+        }
+        this._dataVersion++;
+        this.updatePropertyPanel();
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * [HH-3] 把一位成員加入同住框；若已在其他框則先移出（舊框歸零即刪）。一筆 history。
+     */
+    addHouseholdMember(householdId, personId) {
+        const target = this.households.find(h => h.id === householdId);
+        if (!target || !this.personMap.has(personId) || target.ids.includes(personId)) return;
+        this.saveState();
+        this.households = this.households
+            .map(h => h.id === householdId
+                ? { ...h, ids: [...h.ids, personId] }
+                : { ...h, ids: h.ids.filter(id => id !== personId) })
+            .filter(h => h.ids.length > 0);
+        this._dataVersion++;
+        const p = this.personMap.get(personId);
+        this.updateStatus(`已將 ${p.name || '未命名'} 加入同住框`, 'info');
+        this.updatePropertyPanel();
+        this.autoSave();
+        this.render();
+    }
+
     createHousehold() {
         if (this.householdSelection.length < 1) {
             this.updateStatus('請至少選取一位成員', 'error');
@@ -3501,10 +3928,11 @@ class GenogramApp {
     /**
      * 完成生活圈繪製
      */
-    finishLifeCircle() {
+    finishLifeCircle(presetPoints = null) {
         // [Fix] 去除相鄰重複頂點（雙擊完成前的兩次 pointerdown 會塞入同一點，
         // Catmull-Rom 遇重複點會在收尾處畫出打結小圈）；頭尾也比對一次
-        let pts = this.currentLifeCirclePoints.filter((p, i, a) =>
+        // [LC-2] presetPoints（拖拉橢圓）直接採用
+        let pts = (presetPoints || this.currentLifeCirclePoints).filter((p, i, a) =>
             i === 0 || Math.hypot(p.x - a[i - 1].x, p.y - a[i - 1].y) > 8
         );
         if (pts.length >= 2) {
@@ -3552,6 +3980,8 @@ class GenogramApp {
         this.isDrawingLifeCircle = false;
         this.currentLifeCirclePoints = [];
         this.lifeCircleMousePos = null;
+        this.lcPress = null;
+        this.ellipsePreview = null;
         this.updateStatus('生活圈繪製已取消', 'info');
         this.render();
     }
@@ -3559,6 +3989,50 @@ class GenogramApp {
     /**
      * 獲取下一個生活圈的顏色
      */
+    /**
+     * [LC-2] 以拖曳矩形（對角兩點）產生 n 點橢圓多邊形；最小半徑 20，避免退化
+     */
+    static ellipsePoints(a, b, n = 16) {
+        const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        const rx = Math.max(20, Math.abs(b.x - a.x) / 2), ry = Math.max(20, Math.abs(b.y - a.y) / 2);
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const t = (i / n) * Math.PI * 2;
+            pts.push({ x: Math.round((cx + rx * Math.cos(t)) * 100) / 100, y: Math.round((cy + ry * Math.sin(t)) * 100) / 100 });
+        }
+        return pts;
+    }
+
+    /**
+     * [LC-1] 點到多邊形哪一條邊最近（回傳起點索引 i，邊為 points[i]→points[(i+1)%n]）
+     */
+    static nearestSegmentIndex(points, pt) {
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < points.length; i++) {
+            const p = points[i], q = points[(i + 1) % points.length];
+            const dx = q.x - p.x, dy = q.y - p.y;
+            const len2 = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / len2));
+            const d = Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+    }
+
+    /**
+     * [LC-1] 點是否落在生活圈某頂點上（螢幕 12px 容差）；回傳索引或 -1
+     */
+    getLifeCircleVertexAt(lc, x, y) {
+        if (!lc || !Array.isArray(lc.points)) return -1;
+        const tol = 12 / ((this.canvas && this.canvas.scale) || 1);
+        let best = -1, bestD = Infinity;
+        lc.points.forEach((p, i) => {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d <= tol && d < bestD) { bestD = d; best = i; }
+        });
+        return best;
+    }
+
     getNextLifeCircleColor() {
         // [Fix] 改取「第一個未被使用」的顏色：原本以 length 取模，刪除後再建會與既有圈撞色
         const colors = GenogramApp.LIFE_CIRCLE_COLORS;
@@ -3582,11 +4056,34 @@ class GenogramApp {
             person.name = e.target.value;
         });
 
-        // 年齡
+        // 年齡（有出生年月時欄位唯讀、顯示計算值，不會觸發此 handler）
         this.bindPropertyEdit(document.getElementById('personAge'), e => {
             const raw = e.target.value;
             person.age = raw === '' ? null : Number(raw);
         });
+
+        // [2-1] 出生年月 / 死亡年月：change 時才套用（避免輸入中途年齡欄閃動）；格式錯誤不寫入並標紅
+        const bindDateField = (id, key) => {
+            const field = document.getElementById(id);
+            if (!field) return;
+            this.bindPropertyEdit(field, e => {
+                const raw = e.target.value.trim();
+                const normalized = raw ? Person.normalizeDateString(raw) : null;
+                const invalid = raw !== '' && normalized === null;
+                field.classList.toggle('is-invalid', invalid);
+                field.setAttribute('aria-invalid', String(invalid));
+                if (invalid) {
+                    this.updateStatus('日期格式請用 YYYY、YYYY-MM 或 YYYY-MM-DD（例：1985-06）', 'error',
+                        { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert });
+                    return;
+                }
+                person[key] = normalized;
+                if (normalized) e.target.value = normalized;
+                this.refreshPersonAgeFields(form, person);
+            }, { eventName: 'change', commitOnChange: true });
+        };
+        bindDateField('personBirthDate', 'birthDate');
+        bindDateField('personDeathDate', 'deathDate');
 
         // 備註（最多 2 行）
         this.bindPropertyEdit(document.getElementById('personNotes'), e => {
@@ -3604,6 +4101,7 @@ class GenogramApp {
         // 過世
         this.bindPropertyEdit(document.getElementById('personDeceased'), e => {
             person.isDeceased = e.target.checked;
+            this.refreshPersonAgeFields(form, person); // [2-1] 顯示/隱藏死亡年月、重算享年
         }, { eventName: 'change', commitOnChange: true });
 
         // 案主
@@ -3719,6 +4217,83 @@ class GenogramApp {
     }
 
     /**
+     * 關係類型按鈕點擊（靜態清單與「最近使用」共用）。
+     * 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)。
+     */
+    handleRelationshipTypeButton(e) {
+        const type = e.currentTarget.dataset.type;
+        // [Phase 1] 親子按鈕帶 data-link-type（biological/adopted/foster）；其餘關係無此屬性
+        const linkType = e.currentTarget.dataset.linkType || null;
+        if (!type) return;
+        this.recordRecentRelationshipType(type, linkType);
+
+        // 判斷是編輯模式還是新建模式
+        if (this.editingRelationshipId) {
+            this.updateRelationshipType(type, linkType);
+        } else {
+            this.createRelationship(type, linkType);
+        }
+    }
+
+    /**
+     * [1-5] 最近使用的關係類型（最多 6 筆，只存 localStorage，不進 JSON / history）。
+     * key = `${type}` 或 `${type}:${linkType}`（親子線分親生/收養/寄養）。
+     */
+    static RECENT_REL_KEY = 'genogram_recent_rel_types';
+    static RECENT_REL_MAX = 6;
+
+    getRecentRelationshipTypes() {
+        try {
+            const raw = localStorage.getItem(GenogramApp.RECENT_REL_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list) ? list.filter(k => typeof k === 'string') : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    recordRecentRelationshipType(type, linkType = null) {
+        const key = linkType ? `${type}:${linkType}` : type;
+        const next = [key, ...this.getRecentRelationshipTypes().filter(k => k !== key)]
+            .slice(0, GenogramApp.RECENT_REL_MAX);
+        try { localStorage.setItem(GenogramApp.RECENT_REL_KEY, JSON.stringify(next)); } catch (_) { /* 私密模式等 */ }
+    }
+
+    /**
+     * [1-5] 開 modal 時把「最近使用」渲染到最上方（複製靜態按鈕，含圖例線）；關閉時清掉。
+     * 只在 modal 開啟期間存在，不影響任何依靜態 DOM 的檢查。
+     */
+    renderRecentRelationshipTypes() {
+        const group = document.getElementById('recentRelationshipGroup');
+        const grid = document.getElementById('recentRelationshipGrid');
+        if (!group || !grid) return;
+        grid.innerHTML = '';
+        const keys = this.getRecentRelationshipTypes();
+        const clones = [];
+        for (const key of keys) {
+            const [type, linkType] = key.split(':');
+            const selector = linkType
+                ? `.rel-btn[data-type="${type}"][data-link-type="${linkType}"]:not([data-recent])`
+                : `.rel-btn[data-type="${type}"]:not([data-link-type]):not([data-recent])`;
+            const source = this.elements.relationshipModal.querySelector(selector);
+            if (!source) continue;
+            const clone = source.cloneNode(true);
+            clone.dataset.recent = '1';
+            clone.addEventListener('click', e => this.handleRelationshipTypeButton(e));
+            clones.push(clone);
+        }
+        clones.forEach(c => grid.appendChild(c));
+        group.hidden = clones.length === 0;
+    }
+
+    clearRecentRelationshipTypesUI() {
+        const group = document.getElementById('recentRelationshipGroup');
+        const grid = document.getElementById('recentRelationshipGrid');
+        if (grid) grid.innerHTML = '';
+        if (group) group.hidden = true;
+    }
+
+    /**
      * 顯示關係選擇對話框
      */
     showRelationshipModal() {
@@ -3726,6 +4301,7 @@ class GenogramApp {
         this.commitPropertyEditSession();
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
+        this.renderRecentRelationshipTypes(); // [1-5]
         this.modalManager.open(this.elements.relationshipModal);
     }
 
@@ -3757,6 +4333,7 @@ class GenogramApp {
         }
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = ''; // 編輯模式才顯示對調方向
+        this.renderRecentRelationshipTypes(); // [1-5]
         this.modalManager.open(this.elements.relationshipModal);
     }
 
@@ -3765,6 +4342,7 @@ class GenogramApp {
      */
     closeRelationshipModal() {
         this.modalManager.close(this.elements.relationshipModal);
+        this.clearRecentRelationshipTypesUI(); // [1-5]
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none';
 
@@ -3827,6 +4405,45 @@ class GenogramApp {
         this.updateStatus('婚姻線走法：' + label, 'info');
         this.autoSave();
         this.render();
+    }
+
+    /**
+     * [R-1] 設定婚姻線橫桿距離（px, 0～600，四捨五入）。ㄇ：天橋抬高；ㄩ：下折加深；
+     * auto / 一：值保留但不影響幾何（面板會停用控制項）。
+     * @param {string} id
+     * @param {number} lift
+     */
+    setRouteLiftById(id, lift) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel) return;
+        const next = Math.max(0, Math.min(600, Math.round(Number(lift) || 0)));
+        if ((rel.routeLift || 0) === next) return;
+        this.saveState();
+        rel.routeLift = next;
+        this._dataVersion++; // 幾何變動 → 快取失效
+        this.updateStatus(`橫桿距離：${next}px`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * [1-4] 依 id 變更親子線型（親生/收養/寄養）；屬性面板直接呼叫，不經 modal。
+     * @param {string} id
+     * @param {'biological'|'adopted'|'foster'} linkType
+     */
+    setLinkTypeById(id, linkType) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel || rel.type !== 'parent-child') return;
+        if (!['biological', 'adopted', 'foster'].includes(linkType)) return;
+        if ((rel.linkType || 'biological') === linkType) return;
+        this.saveState();
+        rel.linkType = linkType;
+        this._dataVersion++; // 線型變動 → 快取失效
+        const label = { biological: '親生', adopted: '收養', foster: '寄養' }[linkType];
+        this.updateStatus(`子女線型：${label}`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
+        this.autoSave();
+        this.render();
+        this.updatePropertyPanel();
     }
 
     /**
@@ -4628,6 +5245,8 @@ class GenogramApp {
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
         this.canvas.personMap = this.personMap;
         this.canvas.viewOptions = this.viewOptions;
+        this.canvas.ageReferenceDate = this.ageReferenceDate; // [2-1]
+        this.canvas.lodScale = this.canvas.scale; // [3-3] 螢幕 LOD（匯出期間 canvas 自行固定為 1）
         if (this.labelEditingPersonId !== this.selectedPersonId
             || !this.personMap.has(this.labelEditingPersonId)) {
             this.labelEditingPersonId = null;
@@ -4668,6 +5287,10 @@ class GenogramApp {
         // 繪製生活圈預覽（正在繪製中，維持最上層）
         if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
             this.canvas.drawLifeCirclePreview(this.currentLifeCirclePoints, this.lifeCircleMousePos);
+        }
+        // [LC-2] 拖拉橢圓預覽
+        if (this.ellipsePreview) {
+            this.canvas.drawEllipsePreview(this.ellipsePreview.start, this.ellipsePreview.current);
         }
     }
 
@@ -4741,6 +5364,35 @@ class GenogramApp {
 
         this.updateZoomDisplay();
         this.render();
+    }
+
+    /**
+     * [3-3] 定位案主：縮放回 100%、把案主置中並選取；多位案主時每按一次輪到下一位。
+     */
+    locateIdentifiedPatient() {
+        const ips = this.persons.filter(p => p.isIdentifiedPatient);
+        if (!ips.length) {
+            this.updateStatus('尚未標記案主：選取人物後在屬性面板勾選「案主 / 關注對象」', 'warning',
+                { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert });
+            return;
+        }
+        let index = 0;
+        if (ips.length > 1) {
+            const currentIdx = ips.findIndex(p => p.id === this._lastLocatedIpId);
+            index = (currentIdx + 1) % ips.length;
+        }
+        const target = ips[index];
+        this._lastLocatedIpId = target.id;
+        this.canvas.scale = 1;
+        this.canvas.offsetX = this.canvas.width / 2 - target.x;
+        this.canvas.offsetY = this.canvas.height / 2 - target.y;
+        this.clearAllSelections();
+        this.selectPerson(target.id);
+        this.updateZoomDisplay();
+        this.render();
+        this.updateStatus(ips.length > 1
+            ? `已定位案主 ${index + 1}/${ips.length}：${target.name || '未命名'}（再按一次切到下一位）`
+            : `已定位案主：${target.name || '未命名'}`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
     }
 
     fitToView({ onlyIfNeeded = false } = {}) {
@@ -4966,7 +5618,9 @@ class GenogramApp {
         const legend = document.getElementById('legendContent')?.textContent || '';
         // Canvas text fields: person name/age/notes, relationship notes/date, and life-circle labels.
         // Medical markers are vector/ASCII symbols and do not contribute arbitrary font glyphs.
-        const personText = this.persons.flatMap(person => [person.name, person.age, person.notes]).filter(Boolean);
+        const personText = this.persons.flatMap(person => [person.name,
+            typeof person.getDisplayAge === 'function' ? person.getDisplayAge(this.ageReferenceDate) : person.age,
+            person.notes]).filter(Boolean);
         const relationshipText = this.relationships.flatMap(rel => [rel.notes, rel.date]).filter(Boolean);
         const lifeCircleText = (this.lifeCircles || []).map(lc => lc.label).filter(Boolean);
         return [legend, ...personText, ...relationshipText, ...lifeCircleText].join('\n');
@@ -5479,6 +6133,7 @@ class GenogramApp {
         try {
             if (this.isPreviewingLayout) this.cancelPreviewedLayout();
             this.commitPropertyEditSession();
+            this.markDirty(); // [1-2]
             this.history.pushState(this.getState());
             this.updateToolbar();
             return true;
@@ -5582,6 +6237,7 @@ class GenogramApp {
             this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
                 ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
+            this.markDirty(); // [1-2] 復原/重做後內容與檔案不同步
             this.autoSave();
             this.render();
         } else this.render();
@@ -5622,6 +6278,7 @@ class GenogramApp {
             this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
                 ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
+            this.markDirty(); // [1-2] 復原/重做後內容與檔案不同步
             this.autoSave();
             this.render();
         } else this.render();
@@ -5701,9 +6358,11 @@ class GenogramApp {
         this.autoSave();
 
         // 2. 嘗試直接寫入檔案 (如果瀏覽器支援且有連結)
-        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], this.getDocumentExtra());
 
         if (result === true) {
+            this.isDirty = false; // [1-2] 已寫回檔案
+            this.updateDocumentTitle();
             this.updateStatus(`已成功儲存至檔案: ${this.storage.getOpenFileName()}`, 'success');
         } else {
             // 如果無法直接寫入（沒連結或不支援）
@@ -5724,10 +6383,12 @@ class GenogramApp {
         const timestamp = new Date().toISOString().slice(0, 10);
         const filename = suggestedName || `genogram_${timestamp}.json`;
         this.updateStatus(`正在另存檔案: ${filename}...`, 'info');
-        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename);
+        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename, this.getDocumentExtra());
         if (success) {
             this.updateStatus(`已成功導出: ${this.storage.getOpenFileName()}`, 'success');
             this.autoSave();
+            this.isDirty = false; // [1-2] 另存成功 = 檔案與畫面一致
+            this.updateDocumentTitle();
         }
     }
 
@@ -5754,6 +6415,7 @@ class GenogramApp {
             lc.points.every(p => typeof p.x === 'number' && typeof p.y === 'number' &&
                 !isNaN(p.x) && !isNaN(p.y))
         );
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(data.meta); // [2-2]
         const norm = this.normalizeLoadedFamilyRelationships();
         this.selectedPersonId = null;
         this.updatePropertyPanel();
@@ -5764,10 +6426,18 @@ class GenogramApp {
             this.fitToView({ onlyIfNeeded: true });
         });
 
+        this.isDirty = false; // [1-2] 剛載入 = 與檔案一致
+        this.updateDocumentTitle();
+
+        // [1-3] 只有真的改了東西才提示，且用使用者看得懂的說法（原「調整/去重/移除」是工程用語）
         if ((norm.normalized + norm.deduped + norm.dropped) > 0) {
+            const parts = [];
+            if (norm.normalized) parts.push(`修正親子方向 ${norm.normalized} 筆`);
+            if (norm.deduped) parts.push(`合併重複關係 ${norm.deduped} 筆`);
+            if (norm.dropped) parts.push(`移除無效關係 ${norm.dropped} 筆`);
             this.updateStatus(
-                `已套用舊檔相容修正：調整 ${norm.normalized}、去重 ${norm.deduped}、移除 ${norm.dropped}`,
-                'info'
+                `已自動整理舊版檔案的關係資料：${parts.join('、')}`,
+                'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert }
             );
         }
     }
@@ -5776,25 +6446,150 @@ class GenogramApp {
      * 處理載入按鈕點擊
      */
     async handleLoadClick() {
-        // 嘗試使用新的 API 載入
+        // [2-3] 支援 File System Access 的瀏覽器：先開「開啟檔案」對話框（最近檔案 / 瀏覽 / 清除本機暫存）
+        if (window.showOpenFilePicker && this.elements.openFileModal) {
+            await this.showOpenFileModal();
+            return;
+        }
+        // 如果 API 不支援，使用傳統 input 方式
+        this.elements.fileInput.click();
+    }
+
+    /**
+     * 以系統檔案選擇器開啟（原 handleLoadClick 的 picker 路徑）
+     */
+    async openWithPicker() {
         if (window.showOpenFilePicker) {
             try {
                 const data = await this.storage.openFileWithPicker();
                 if (data) {
                     this.loadData(data);
                     this.updateStatus(`已載入檔案: ${this.storage.getOpenFileName()}`, 'success');
-                    return;
-                } else {
-                    // 用戶取消選擇，直接返回，不執行後續的傳統方式
-                    return;
                 }
+                return; // 用戶取消也直接返回，不落到傳統方式
             } catch (err) {
                 console.warn('使用檔案選擇器載入失敗，切換回傳統方式', err);
             }
         }
-
-        // 如果 API 不支援或失敗，使用傳統 input 方式
         this.elements.fileInput.click();
+    }
+
+    /**
+     * [2-3] 開啟檔案對話框：列出最近檔案（IndexedDB 內的 handle）、瀏覽、清除本機暫存
+     */
+    async showOpenFileModal() {
+        this.commitPropertyEditSession();
+        await this.renderRecentFiles();
+        this.modalManager.open(this.elements.openFileModal);
+    }
+
+    closeOpenFileModal() {
+        this.modalManager.close(this.elements.openFileModal);
+    }
+
+    static formatRecentTime(ts) {
+        if (!Number.isFinite(ts)) return '';
+        const d = new Date(ts);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    async renderRecentFiles() {
+        const list = this.elements.recentFileList;
+        if (!list) return;
+        list.replaceChildren();
+        let entries = [];
+        try { entries = await this.storage.listRecentFiles(); } catch (_) { entries = []; }
+        if (!entries.length) {
+            const empty = document.createElement('p');
+            empty.className = 'recent-file-empty';
+            empty.textContent = '尚無最近檔案。用「瀏覽檔案…」開啟或「另存」建立檔案後，會出現在這裡。';
+            list.appendChild(empty);
+            return;
+        }
+        const current = this.storage.getOpenFileName();
+        entries.forEach(entry => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'recent-file-item';
+            item.setAttribute('role', 'listitem');
+            item.dataset.name = entry.name;
+            if (entry.name === current) item.classList.add('is-current');
+            const name = document.createElement('span');
+            name.className = 'recent-file-name';
+            name.textContent = entry.name; // textContent：檔名可能含個案姓名，不走 innerHTML
+            name.title = entry.name;
+            const time = document.createElement('span');
+            time.className = 'recent-file-time';
+            time.textContent = (entry.name === current ? '目前開啟 · ' : '') + GenogramApp.formatRecentTime(entry.openedAt);
+            item.append(name, time);
+            item.addEventListener('click', () => this.openRecentEntry(entry));
+            list.appendChild(item);
+        });
+    }
+
+    async openRecentEntry(entry) {
+        try {
+            const data = await this.storage.openRecentFile(entry);
+            if (!data) {
+                this.updateStatus('未取得檔案存取權限，請改用「瀏覽檔案…」', 'warning');
+                return;
+            }
+            this.closeOpenFileModal();
+            this.loadData(data);
+            this.updateStatus(`已載入檔案: ${this.storage.getOpenFileName()}`, 'success');
+        } catch (err) {
+            console.warn('開啟最近檔案失敗:', err);
+            if (err && err.name === 'NotFoundError') {
+                await this.storage.forgetRecentFile(entry.name);
+                await this.renderRecentFiles();
+                this.updateStatus('找不到該檔案（可能已移動或刪除），已從最近檔案移除', 'error');
+            } else {
+                this.updateStatus('開啟檔案失敗：' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+    }
+
+    /**
+     * [2-3] 清除本機暫存並關閉個案：瀏覽器暫存 + 最近檔案 + 畫布內容 + 歷史，回到空白新個案。
+     * 不會刪除磁碟上的 JSON 檔。給共用電腦離開前使用。
+     */
+    async clearLocalData() {
+        const confirmed = confirm('確定要清除這台電腦上的暫存並關閉目前個案嗎？\n\n會清除：瀏覽器暫存、最近檔案清單、畫布內容與復原紀錄。\n不會刪除你已另存到電腦裡的 JSON 檔案。');
+        if (!confirmed) return;
+        this.closeOpenFileModal();
+        this.commitPropertyEditSession();
+        this.cancelPlacement();
+        this.cancelRelationshipWorkflow();
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+        this.isLoading = true; // 期間不觸發 autosave 寫回
+        try {
+            await this.storage.clearLocalData();
+        } finally {
+            this.isLoading = false;
+        }
+        this.persons = [];
+        this._syncPersonMap();
+        this.relationships = [];
+        this.households = [];
+        this.lifeCircles = [];
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
+        this.selectedPersonId = null;
+        this.selectedPersonIds = [];
+        this.selectedRelationshipId = null;
+        this.selectedHouseholdId = null;
+        this.selectedLifeCircleId = null;
+        this.editingRelationshipId = null;
+        this.history.undoStack = [];
+        this.history.redoStack = [];
+        this._dataVersion++;
+        this.isDirty = false;
+        this.updateDocumentTitle();
+        this.updateToolbar();
+        this.updatePropertyPanel();
+        this.resetZoom();
+        this.render();
+        this.updateStatus('已清除本機暫存並關閉個案', 'success');
     }
 
     /**
@@ -5819,11 +6614,16 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    async exportPNG(showNotes = true, showLegend = true, scale = 3) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap; // [3-1] 關係/家庭線查表用複本；結束後還原
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -5833,8 +6633,142 @@ class GenogramApp {
     /**
      * 顯示匯出格式選擇對話框
      */
+    /**
+     * [2-2] 文件 meta 正規化（只保留三個字串欄位）
+     */
+    static normalizeDocumentMeta(meta) {
+        const src = meta && typeof meta === 'object' ? meta : {};
+        const pick = key => (typeof src[key] === 'string' ? src[key].trim() : '');
+        return { title: pick('title'), caseId: pick('caseId'), author: pick('author') };
+    }
+
+    static EXPORT_PREFS_KEY = 'genogram_export_prefs';
+
+    /**
+     * [2-2] 存檔時附加的欄位：有任一 meta 值才帶 `meta`，舊檔／未填者 JSON 逐 byte 不變
+     */
+    getDocumentExtra() {
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        return (meta.title || meta.caseId || meta.author) ? { meta } : {};
+    }
+
+    /**
+     * [2-2] 由匯出對話框欄位更新 meta（屬於個案內容 → 標記未儲存、寫入暫存；不進 Undo）
+     */
+    setDocumentMeta(partial) {
+        const next = GenogramApp.normalizeDocumentMeta({ ...this.documentMeta, ...partial });
+        const changed = JSON.stringify(next) !== JSON.stringify(this.documentMeta);
+        this.documentMeta = next;
+        if (changed) {
+            this.markDirty();
+            this.autoSave();
+        }
+    }
+
+    _readExportPrefs() {
+        try { return JSON.parse(localStorage.getItem(GenogramApp.EXPORT_PREFS_KEY) || '{}') || {}; } catch (_) { return {}; }
+    }
+
+    _writeExportPrefs(patch) {
+        try { localStorage.setItem(GenogramApp.EXPORT_PREFS_KEY, JSON.stringify({ ...this._readExportPrefs(), ...patch })); } catch (_) { /* ignore */ }
+    }
+
+    /**
+     * [3-1] 年齡 → 年齡帶（十年一段：0-9、10-19…）；無法解析回 null
+     */
+    static ageBand(age) {
+        const n = typeof age === 'number' ? age
+            : (typeof age === 'string' && age.trim() !== '' ? Number(age) : NaN);
+        if (!Number.isFinite(n) || n < 0) return null;
+        const lo = Math.floor(n / 10) * 10;
+        return `${lo}-${lo + 9}`;
+    }
+
+    /**
+     * [3-1] 匯出用資料集。deidentify=true 時回傳「複本」：姓名→代號（案主／男1／女1…，依 y、x 排序確定）、
+     * 年齡→年齡帶、備註清空、出生/死亡年月移除；id 與座標不變，關係／同住框／生活圈照舊引用。
+     * 磁碟資料與畫面完全不動。
+     */
+    getExportDataset(deidentify = false) {
+        if (!deidentify) return { persons: this.persons, personMap: this.personMap };
+        const order = [...this.persons].sort((a, b) => (a.y - b.y) || (a.x - b.x) || String(a.id).localeCompare(String(b.id)));
+        const ips = order.filter(p => p.isIdentifiedPatient);
+        const counters = { male: 0, female: 0, other: 0 };
+        const prefix = { male: '男', female: '女', other: '人' };
+        const names = new Map();
+        order.forEach(p => {
+            if (p.isIdentifiedPatient) {
+                names.set(p.id, ips.length > 1 ? `案主${ips.indexOf(p) + 1}` : '案主');
+                return;
+            }
+            const g = p.gender === 'male' || p.gender === 'female' ? p.gender : 'other';
+            counters[g] += 1;
+            names.set(p.id, `${prefix[g]}${counters[g]}`);
+        });
+        const persons = this.persons.map(p => {
+            const json = p.toJSON();
+            const band = GenogramApp.ageBand(typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age);
+            delete json.birthDate;
+            delete json.deathDate;
+            return Person.fromJSON({ ...json, name: names.get(p.id), age: band, notes: '' });
+        });
+        return { persons, personMap: new Map(persons.map(p => [p.id, p])) };
+    }
+
+    /**
+     * [3-1] 去識別化的頁首：標題改為中性（標題常含個案姓名）、標記去識別化版本；案號／日期／繪製者保留
+     */
+    deidentifyHeader(header) {
+        if (!header) return header;
+        return { ...header, title: header.title ? '家系圖（去識別化）' : '', deidentified: true };
+    }
+
+    static formatLocalDate(d = new Date()) {
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    /**
+     * [2-2] 讀匯出對話框的頭首/PDF 設定。未勾「加上頁首」→ header=null（輸出與以往相同）。
+     * @returns {{header: (null|{title:string,caseId:string,author:string,date:string}), pdfOptions: {format:string, orientation:string}}}
+     */
+    readExportHeaderSettings() {
+        const include = document.getElementById('exportIncludeHeader')?.checked === true;
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        const dateInput = document.getElementById('exportMetaDate');
+        const date = dateInput && dateInput.value ? dateInput.value : GenogramApp.formatLocalDate();
+        const header = include ? { ...meta, date } : null;
+        const pdfOptions = {
+            format: document.getElementById('exportPdfFormat')?.value || 'a4',
+            orientation: document.getElementById('exportPdfOrientation')?.value || 'auto'
+        };
+        return { header, pdfOptions };
+    }
+
+    _syncExportHeaderFields() {
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        const prefs = this._readExportPrefs();
+        const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+        set('exportMetaTitle', meta.title);
+        set('exportMetaCaseId', meta.caseId);
+        set('exportMetaAuthor', meta.author || (typeof prefs.author === 'string' ? prefs.author : ''));
+        const dateInput = document.getElementById('exportMetaDate');
+        if (dateInput && !dateInput.value) dateInput.value = GenogramApp.formatLocalDate();
+        const include = document.getElementById('exportIncludeHeader');
+        if (include) include.checked = prefs.includeHeader === true;
+        const deid = document.getElementById('exportDeidentify');
+        if (deid) deid.checked = false; // [3-1] 每次開啟都重新選擇，不記憶
+        const fields = document.getElementById('exportHeaderFields');
+        if (fields) fields.hidden = !(include && include.checked);
+        const pdfFormat = document.getElementById('exportPdfFormat');
+        if (pdfFormat && prefs.pdfFormat) pdfFormat.value = prefs.pdfFormat;
+        const pdfOrient = document.getElementById('exportPdfOrientation');
+        if (pdfOrient && prefs.pdfOrientation) pdfOrient.value = prefs.pdfOrientation;
+    }
+
     showExportModal() {
         this.commitPropertyEditSession();
+        this._syncExportHeaderFields(); // [2-2]
         this.modalManager.open(this.elements.exportModal);
     }
 
@@ -5874,26 +6808,31 @@ class GenogramApp {
         }
 
         const timestamp = new Date().toISOString().slice(0, 10);
+        // [2-2] 頁首與 PDF 紙張設定（不勾「加上頁首」時 header = null，輸出與以往相同）
+        const { header, pdfOptions } = this.readExportHeaderSettings();
+        // [3-1] 去識別化（只動輸出）
+        const deidentify = document.getElementById('exportDeidentify')?.checked === true;
+        const deidNote = deidentify ? '（去識別化版本）' : '';
 
         switch (format) {
             case 'png':
-                await this.exportPNG(showNotes, showLegend, scale);
-                this.updateStatus('已匯出 PNG 圖片', 'success');
+                await this.exportPNG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 PNG 圖片' + deidNote, 'success');
                 break;
 
             case 'jpeg':
-                await this.exportJPEG(showNotes, showLegend, scale);
-                this.updateStatus('已匯出 JPEG 圖片', 'success');
+                await this.exportJPEG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 JPEG 圖片' + deidNote, 'success');
                 break;
 
             case 'svg':
-                await this.exportSVG(showNotes, showLegend, scale);
-                this.updateStatus('已匯出 SVG 向量圖', 'success');
+                await this.exportSVG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 SVG 向量圖' + deidNote, 'success');
                 break;
 
             case 'pdf':
-                await this.exportPDF(showNotes, showLegend, scale);
-                this.updateStatus('已匯出 PDF 文件', 'success');
+                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions, deidentify);
+                this.updateStatus('已匯出 PDF 文件' + deidNote, 'success');
                 break;
 
             case 'json':
@@ -5909,11 +6848,16 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    async exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale,
-            this.viewOptions);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToJPEG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], 0.92, deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -5925,13 +6869,18 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    async exportSVG(showNotes = true, showLegend = true, scale = 3) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -5958,11 +6907,16 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    async exportPDF(showNotes = true, showLegend = true, scale = 3) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -5970,7 +6924,7 @@ class GenogramApp {
                 const width = img.width;
                 const height = img.height;
                 const timestamp = new Date().toISOString().slice(0, 10);
-                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`);
+                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`, pdfOptions);
             };
             img.src = dataUrl;
         }
@@ -5986,7 +6940,8 @@ class GenogramApp {
             this.relationships,
             this.households || [],
             this.lifeCircles || [],
-            `genogram_backup_${timestamp}.json`
+            `genogram_backup_${timestamp}.json`,
+            this.getDocumentExtra()
         );
     }
 
@@ -6018,6 +6973,7 @@ class GenogramApp {
         this.relationships = [];
         this.households = [];
         this.lifeCircles = [];
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null); // [2-2] 清空 = 新個案
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
@@ -6061,9 +7017,16 @@ class GenogramApp {
                 }
             }
 
-            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-                this.viewOptions);
+            // [3-1] 沿用匯出對話框的「去識別化」勾選（複製到 LINE/Word 也常需要去識別）
+            const deidentify = document.getElementById('exportDeidentify')?.checked === true;
+            const ds = this.getExportDataset(deidentify);
+            this.canvas.personMap = ds.personMap;
+            let dataUrl = null;
+            try {
+                dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                    this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                    this.viewOptions);
+            } finally { this.canvas.personMap = this.personMap; }
             if (!dataUrl) {
                 this.updateStatus('產生圖片失敗', 'error');
                 return;
@@ -6096,6 +7059,7 @@ class GenogramApp {
      */
     autoSave() {
         if (this.isLoading) return;
+        this.updateDocumentTitle(); // [1-2] 每次變更後重新評估「有內容 + 未存檔」→ 標題列 ●
 
         if (this.autoSaveTimer) {
             clearTimeout(this.autoSaveTimer);
@@ -6115,7 +7079,7 @@ class GenogramApp {
                 scale: currentScale,
                 offsetX: currentOffsetX,
                 offsetY: currentOffsetY
-            });
+            }, this.getDocumentExtra());
             this.lastAutoSaveTime = now;
             this.autoSaveTimer = null;
         }, 1000); // 1秒防抖
@@ -6134,7 +7098,9 @@ class GenogramApp {
             this.relationships = saved.relationships;
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
+            this.documentMeta = GenogramApp.normalizeDocumentMeta(saved.meta); // [2-2]
             this.normalizeLoadedFamilyRelationships();
+            this.isDirty = true; // [1-2] 從瀏覽器暫存恢復：內容尚未在任何檔案裡
 
             // 還原視圖狀態
             // [Bug Fix] 視圖狀態應寫入 canvas 物件而非 app
@@ -6224,6 +7190,7 @@ class GenogramApp {
             })
         };
 
+        this.markDirty(); // [1-2]
         this.history.pushState(beforeState);
 
         // 2. 隱藏預覽 UI
@@ -6291,12 +7258,7 @@ class GenogramApp {
             return;
         }
 
-        // 檢查 Dagre 是否載入
-        if (typeof dagre === 'undefined') {
-            console.error('Dagre.js not loaded');
-            this.updateStatus('佈局引擎載入失敗，請檢查網路連線', 'error');
-            return;
-        }
+        // [L-1] 佈局引擎已改為自家的家系圖分層佈局，不再依賴 dagre
 
         // 使用新的佈局引擎
         const layout = new GenogramLayout(this.persons, this.relationships, {
@@ -6310,7 +7272,7 @@ class GenogramApp {
         // 套用新座標
         result.positions.forEach((pos, personId) => {
             const person = this.personMap.get(personId);
-            if (person) {
+            if (person && !pos.keep) { // keep = 沒有任何關係的獨立人物，原地不動也不吸附
                 person.x = this.snapToGrid(pos.x, 'x');
                 person.y = this.snapToGrid(pos.y, 'y');
             }
