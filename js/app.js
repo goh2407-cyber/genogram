@@ -285,6 +285,8 @@ class GenogramApp {
         this.isDirty = false;
         // [2-1] 年齡基準日（'YYYY-MM-DD' 或 null = 今天）。session-only，不進 JSON / history。
         this.ageReferenceDate = null;
+        // [2-2] 文件 meta（標題 / 案號 / 繪製者）：屬於這份個案，存進 JSON（只在有值時）；匯出頁首用
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -618,6 +620,28 @@ class GenogramApp {
                 nextTab.focus();
             });
         });
+        // [2-2] 匯出頁首欄位 → 文件 meta；勾選/紙張 → localStorage 偏好
+        const includeHeader = document.getElementById('exportIncludeHeader');
+        if (includeHeader) includeHeader.addEventListener('change', e => {
+            const fields = document.getElementById('exportHeaderFields');
+            if (fields) fields.hidden = !e.target.checked;
+            this._writeExportPrefs({ includeHeader: e.target.checked });
+            if (e.target.checked) document.getElementById('exportMetaTitle')?.focus();
+        });
+        const bindMeta = (id, key) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', e => {
+                this.setDocumentMeta({ [key]: e.target.value });
+                if (key === 'author') this._writeExportPrefs({ author: e.target.value.trim() });
+            });
+        };
+        bindMeta('exportMetaTitle', 'title');
+        bindMeta('exportMetaCaseId', 'caseId');
+        bindMeta('exportMetaAuthor', 'author');
+        document.getElementById('exportPdfFormat')?.addEventListener('change', e => this._writeExportPrefs({ pdfFormat: e.target.value }));
+        document.getElementById('exportPdfOrientation')?.addEventListener('change', e => this._writeExportPrefs({ pdfOrientation: e.target.value }));
+
         // [2-1] 年齡基準日（檢視分頁；session-only，不進 JSON）
         const ageRefInput = document.getElementById('ageReferenceDate');
         if (ageRefInput) ageRefInput.addEventListener('change', e => this.setAgeReferenceDate(e.target.value || null));
@@ -818,7 +842,7 @@ class GenogramApp {
                 scale: this.canvas?.scale || 1,
                 offsetX: this.canvas?.offsetX || 0,
                 offsetY: this.canvas?.offsetY || 0
-            });
+            }, this.getDocumentExtra());
         });
     }
 
@@ -5985,7 +6009,7 @@ class GenogramApp {
         this.autoSave();
 
         // 2. 嘗試直接寫入檔案 (如果瀏覽器支援且有連結)
-        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
+        const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], this.getDocumentExtra());
 
         if (result === true) {
             this.isDirty = false; // [1-2] 已寫回檔案
@@ -6010,7 +6034,7 @@ class GenogramApp {
         const timestamp = new Date().toISOString().slice(0, 10);
         const filename = suggestedName || `genogram_${timestamp}.json`;
         this.updateStatus(`正在另存檔案: ${filename}...`, 'info');
-        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename);
+        const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename, this.getDocumentExtra());
         if (success) {
             this.updateStatus(`已成功導出: ${this.storage.getOpenFileName()}`, 'success');
             this.autoSave();
@@ -6042,6 +6066,7 @@ class GenogramApp {
             lc.points.every(p => typeof p.x === 'number' && typeof p.y === 'number' &&
                 !isNaN(p.x) && !isNaN(p.y))
         );
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(data.meta); // [2-2]
         const norm = this.normalizeLoadedFamilyRelationships();
         this.selectedPersonId = null;
         this.updatePropertyPanel();
@@ -6115,11 +6140,11 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    async exportPNG(showNotes = true, showLegend = true, scale = 3) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null) {
         await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
             this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+            this.viewOptions, header);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -6129,8 +6154,90 @@ class GenogramApp {
     /**
      * 顯示匯出格式選擇對話框
      */
+    /**
+     * [2-2] 文件 meta 正規化（只保留三個字串欄位）
+     */
+    static normalizeDocumentMeta(meta) {
+        const src = meta && typeof meta === 'object' ? meta : {};
+        const pick = key => (typeof src[key] === 'string' ? src[key].trim() : '');
+        return { title: pick('title'), caseId: pick('caseId'), author: pick('author') };
+    }
+
+    static EXPORT_PREFS_KEY = 'genogram_export_prefs';
+
+    /**
+     * [2-2] 存檔時附加的欄位：有任一 meta 值才帶 `meta`，舊檔／未填者 JSON 逐 byte 不變
+     */
+    getDocumentExtra() {
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        return (meta.title || meta.caseId || meta.author) ? { meta } : {};
+    }
+
+    /**
+     * [2-2] 由匯出對話框欄位更新 meta（屬於個案內容 → 標記未儲存、寫入暫存；不進 Undo）
+     */
+    setDocumentMeta(partial) {
+        const next = GenogramApp.normalizeDocumentMeta({ ...this.documentMeta, ...partial });
+        const changed = JSON.stringify(next) !== JSON.stringify(this.documentMeta);
+        this.documentMeta = next;
+        if (changed) {
+            this.markDirty();
+            this.autoSave();
+        }
+    }
+
+    _readExportPrefs() {
+        try { return JSON.parse(localStorage.getItem(GenogramApp.EXPORT_PREFS_KEY) || '{}') || {}; } catch (_) { return {}; }
+    }
+
+    _writeExportPrefs(patch) {
+        try { localStorage.setItem(GenogramApp.EXPORT_PREFS_KEY, JSON.stringify({ ...this._readExportPrefs(), ...patch })); } catch (_) { /* ignore */ }
+    }
+
+    static formatLocalDate(d = new Date()) {
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    /**
+     * [2-2] 讀匯出對話框的頭首/PDF 設定。未勾「加上頁首」→ header=null（輸出與以往相同）。
+     * @returns {{header: (null|{title:string,caseId:string,author:string,date:string}), pdfOptions: {format:string, orientation:string}}}
+     */
+    readExportHeaderSettings() {
+        const include = document.getElementById('exportIncludeHeader')?.checked === true;
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        const dateInput = document.getElementById('exportMetaDate');
+        const date = dateInput && dateInput.value ? dateInput.value : GenogramApp.formatLocalDate();
+        const header = include ? { ...meta, date } : null;
+        const pdfOptions = {
+            format: document.getElementById('exportPdfFormat')?.value || 'a4',
+            orientation: document.getElementById('exportPdfOrientation')?.value || 'auto'
+        };
+        return { header, pdfOptions };
+    }
+
+    _syncExportHeaderFields() {
+        const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
+        const prefs = this._readExportPrefs();
+        const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+        set('exportMetaTitle', meta.title);
+        set('exportMetaCaseId', meta.caseId);
+        set('exportMetaAuthor', meta.author || (typeof prefs.author === 'string' ? prefs.author : ''));
+        const dateInput = document.getElementById('exportMetaDate');
+        if (dateInput && !dateInput.value) dateInput.value = GenogramApp.formatLocalDate();
+        const include = document.getElementById('exportIncludeHeader');
+        if (include) include.checked = prefs.includeHeader === true;
+        const fields = document.getElementById('exportHeaderFields');
+        if (fields) fields.hidden = !(include && include.checked);
+        const pdfFormat = document.getElementById('exportPdfFormat');
+        if (pdfFormat && prefs.pdfFormat) pdfFormat.value = prefs.pdfFormat;
+        const pdfOrient = document.getElementById('exportPdfOrientation');
+        if (pdfOrient && prefs.pdfOrientation) pdfOrient.value = prefs.pdfOrientation;
+    }
+
     showExportModal() {
         this.commitPropertyEditSession();
+        this._syncExportHeaderFields(); // [2-2]
         this.modalManager.open(this.elements.exportModal);
     }
 
@@ -6170,25 +6277,27 @@ class GenogramApp {
         }
 
         const timestamp = new Date().toISOString().slice(0, 10);
+        // [2-2] 頁首與 PDF 紙張設定（不勾「加上頁首」時 header = null，輸出與以往相同）
+        const { header, pdfOptions } = this.readExportHeaderSettings();
 
         switch (format) {
             case 'png':
-                await this.exportPNG(showNotes, showLegend, scale);
+                await this.exportPNG(showNotes, showLegend, scale, header);
                 this.updateStatus('已匯出 PNG 圖片', 'success');
                 break;
 
             case 'jpeg':
-                await this.exportJPEG(showNotes, showLegend, scale);
+                await this.exportJPEG(showNotes, showLegend, scale, header);
                 this.updateStatus('已匯出 JPEG 圖片', 'success');
                 break;
 
             case 'svg':
-                await this.exportSVG(showNotes, showLegend, scale);
+                await this.exportSVG(showNotes, showLegend, scale, header);
                 this.updateStatus('已匯出 SVG 向量圖', 'success');
                 break;
 
             case 'pdf':
-                await this.exportPDF(showNotes, showLegend, scale);
+                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions);
                 this.updateStatus('已匯出 PDF 文件', 'success');
                 break;
 
@@ -6205,11 +6314,11 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    async exportJPEG(showNotes = true, showLegend = true, scale = 3) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null) {
         await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships,
             this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale,
-            this.viewOptions);
+            this.viewOptions, header);
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -6221,13 +6330,13 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    async exportSVG(showNotes = true, showLegend = true, scale = 3) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null) {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
             this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+            this.viewOptions, header);
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -6254,11 +6363,11 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    async exportPDF(showNotes = true, showLegend = true, scale = 3) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}) {
         await this.waitForCurrentCanvasFonts();
         const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
             this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions);
+            this.viewOptions, header);
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -6266,7 +6375,7 @@ class GenogramApp {
                 const width = img.width;
                 const height = img.height;
                 const timestamp = new Date().toISOString().slice(0, 10);
-                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`);
+                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`, pdfOptions);
             };
             img.src = dataUrl;
         }
@@ -6282,7 +6391,8 @@ class GenogramApp {
             this.relationships,
             this.households || [],
             this.lifeCircles || [],
-            `genogram_backup_${timestamp}.json`
+            `genogram_backup_${timestamp}.json`,
+            this.getDocumentExtra()
         );
     }
 
@@ -6314,6 +6424,7 @@ class GenogramApp {
         this.relationships = [];
         this.households = [];
         this.lifeCircles = [];
+        this.documentMeta = GenogramApp.normalizeDocumentMeta(null); // [2-2] 清空 = 新個案
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
@@ -6412,7 +6523,7 @@ class GenogramApp {
                 scale: currentScale,
                 offsetX: currentOffsetX,
                 offsetY: currentOffsetY
-            });
+            }, this.getDocumentExtra());
             this.lastAutoSaveTime = now;
             this.autoSaveTimer = null;
         }, 1000); // 1秒防抖
@@ -6431,6 +6542,7 @@ class GenogramApp {
             this.relationships = saved.relationships;
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
+            this.documentMeta = GenogramApp.normalizeDocumentMeta(saved.meta); // [2-2]
             this.normalizeLoadedFamilyRelationships();
             this.isDirty = true; // [1-2] 從瀏覽器暫存恢復：內容尚未在任何檔案裡
 

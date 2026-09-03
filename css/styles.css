@@ -1629,6 +1629,31 @@ body {
     accent-color: var(--brand);
 }
 
+/* [2-2] 匯出頁首欄位 + PDF 紙張 */
+.export-header-settings { margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px; }
+.export-header-fields:not([hidden]) { display: grid; gap: 8px; margin-top: 10px; }
+.export-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.export-field-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.export-field-row input {
+    padding: 7px 9px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: #fff;
+}
+.export-field-hint { margin: 0; font-size: 12px; color: var(--ink-muted); line-height: 1.5; }
+.export-pdf-settings { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.export-pdf-settings select {
+    padding: 6px 8px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    background: #fff;
+}
+
 .export-options {
     display: grid;
     grid-template-columns: repeat(2, 1fr);

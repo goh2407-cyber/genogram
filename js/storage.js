@@ -25,9 +25,9 @@ class StorageManager {
      * @param {Array} households
      * @returns {Promise<boolean>} 是否成功儲存到檔案
      */
-    async saveToFile(persons, relationships, households = [], lifeCircles = []) {
+    async saveToFile(persons, relationships, households = [], lifeCircles = [], extra = {}) {
         // 也保存到 localStorage 作為備份
-        this.autoSave(persons, relationships, households, lifeCircles);
+        this.autoSave(persons, relationships, households, lifeCircles, {}, extra);
 
         // 如果有開啟的檔案 handle，直接寫入
         if (this.currentFileHandle) {
@@ -38,7 +38,8 @@ class StorageManager {
                     persons: persons.map(p => p.toJSON()),
                     relationships: relationships.map(r => r.toJSON()),
                     households: households || [],
-                    lifeCircles: lifeCircles || []
+                    lifeCircles: lifeCircles || [],
+                    ...(extra || {}) // [2-2] 文件 meta（標題/案號/繪製者），只在有值時存在
                 };
                 const jsonStr = JSON.stringify(data, null, 2);
 
@@ -61,14 +62,15 @@ class StorageManager {
      * @param {Array} households
      * @param {string} filename
      */
-    async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json') {
+    async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json', extra = {}) {
         const data = {
             version: '1.0',
             createdAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
             households: households || [],
-            lifeCircles: lifeCircles || []
+            lifeCircles: lifeCircles || [],
+            ...(extra || {}) // [2-2]
         };
 
         const jsonStr = JSON.stringify(data, null, 2);
@@ -171,7 +173,7 @@ class StorageManager {
                     const households = data.households || [];
                     const lifeCircles = data.lifeCircles || [];
 
-                    resolve({ persons, relationships, households, lifeCircles });
+                    resolve({ persons, relationships, households, lifeCircles, meta: data.meta || null });
                 } catch (err) {
                     reject(new Error('檔案解析失敗，請確認檔案格式是否正確: ' + err.message));
                 }
@@ -220,7 +222,7 @@ class StorageManager {
             const households = data.households || [];
             const lifeCircles = data.lifeCircles || [];
 
-            return { persons, relationships, households, lifeCircles };
+            return { persons, relationships, households, lifeCircles, meta: data.meta || null };
         } catch (err) {
             if (err.name === 'AbortError') {
                 return null; // 用戶取消
@@ -260,7 +262,7 @@ class StorageManager {
      * @param {Array} households
      * @param {Object} options - 額外視圖選項
      */
-    autoSave(persons, relationships, households = [], lifeCircles = [], options = {}) {
+    autoSave(persons, relationships, households = [], lifeCircles = [], options = {}, extra = {}) {
         try {
             const data = {
                 version: '1.0',
@@ -270,7 +272,8 @@ class StorageManager {
                 households: households || [],
                 lifeCircles: lifeCircles || [],
                 filename: this.currentFileName, // 紀錄檔名
-                view: options || {} // 儲存縮放與位移
+                view: options || {}, // 儲存縮放與位移
+                ...(extra || {}) // [2-2] 文件 meta
             };
             localStorage.setItem(this.localStorageKey, JSON.stringify(data));
         } catch (err) {
@@ -297,7 +300,7 @@ class StorageManager {
             const view = data.view || null;
             this.currentFileName = data.filename || null; // 還原檔名
 
-            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt };
+            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt, meta: data.meta || null };
         } catch (err) {
             console.warn('載入自動儲存失敗:', err);
             return null;
@@ -378,7 +381,7 @@ class StorageManager {
      * @param {number} height - 圖片高度
      * @param {string} filename
      */
-    exportPDF(dataUrl, width, height, filename = 'genogram.pdf') {
+    exportPDF(dataUrl, width, height, filename = 'genogram.pdf', options = {}) {
         if (!dataUrl) {
             alert('沒有內容可匯出');
             return;
@@ -392,13 +395,17 @@ class StorageManager {
 
         const { jsPDF } = window.jspdf;
 
-        // 根據圖片尺寸決定方向
-        const orientation = width > height ? 'l' : 'p';
+        // [2-2] 紙張 / 方向：預設 A4、依圖片比例自動決定方向；可由匯出對話框指定 A3 或強制直橫
+        const format = ['a4', 'a3'].includes(options.format) ? options.format : 'a4';
+        const orientation = options.orientation === 'l' || options.orientation === 'p'
+            ? options.orientation
+            : (width > height ? 'l' : 'p');
 
         // 建立 PDF，使用 mm 單位
         const pdf = new jsPDF({
             orientation: orientation,
-            unit: 'mm'
+            unit: 'mm',
+            format
         });
 
         // 取得 PDF 頁面尺寸
@@ -426,14 +433,15 @@ class StorageManager {
      * @param {Array} lifeCircles
      * @param {string} filename
      */
-    exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json') {
+    exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json', extra = {}) {
         const data = {
             version: '1.0',
             exportedAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
             households: households || [],
-            lifeCircles: lifeCircles || []
+            lifeCircles: lifeCircles || [],
+            ...(extra || {}) // [2-2]
         };
 
         const jsonStr = JSON.stringify(data, null, 2);

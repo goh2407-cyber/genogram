@@ -3344,7 +3344,7 @@ class GenogramCanvas {
      * @param {number} scale - 匯出縮放倍率 (解析度)
      */
     exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true,
-        showLegend = true, scale = 3, viewOptions = {}) {
+        showLegend = true, scale = 3, viewOptions = {}, header = null) {
         const exportState = this._captureExportDerivedState();
         try {
         const visible = this.getVisibleExportData(
@@ -3369,7 +3369,8 @@ class GenogramCanvas {
 
         // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
-        const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
+        const headerHeight = this._exportHeaderHeight(header); // [2-2] 頁首高度（無頁首 = 0，輸出與以往逐像素相同）
+        const totalHeight = headerHeight + Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
 
         // 建立臨時畫布
         const exportCanvas = document.createElement('canvas');
@@ -3388,7 +3389,7 @@ class GenogramCanvas {
 
         // 平移到內容區域
         this.ctx.save();
-        this.ctx.translate(-minX, -minY);
+        this.ctx.translate(-minX, -minY + headerHeight);
 
         // 1. 先繪製生活圈 (最最底層)
         if (visible.lifeCircles.length > 0) {
@@ -3436,9 +3437,11 @@ class GenogramCanvas {
         // 5. 繪製圖例 (靠右對齊) - 只有當 showLegend 為 true 時才繪製
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
-            const legendY = (totalHeight - legendHeight) / 2;
+            const legendY = headerHeight + (totalHeight - headerHeight - legendHeight) / 2;
             this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
+
+        if (headerHeight) this.drawExportHeader(exportCtx, totalWidth, header);
 
         return exportCanvas.toDataURL('image/png');
         } finally {
@@ -3459,7 +3462,7 @@ class GenogramCanvas {
      * @returns {string|null} - Data URL 或 null
      */
     exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92,
-        showNotes = true, showLegend = true, scale = 3, viewOptions = {}) {
+        showNotes = true, showLegend = true, scale = 3, viewOptions = {}, header = null) {
         const exportState = this._captureExportDerivedState();
         try {
         const visible = this.getVisibleExportData(
@@ -3481,7 +3484,8 @@ class GenogramCanvas {
         const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
 
         const totalWidth = contentWidth + legendWidth + legendPadding;
-        const totalHeight = Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
+        const headerHeight = this._exportHeaderHeight(header); // [2-2] 頁首高度（無頁首 = 0，輸出與以往逐像素相同）
+        const totalHeight = headerHeight + Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
 
         const exportCanvas = document.createElement('canvas');
         const exportScale = scale; // 使用傳入的 scale
@@ -3497,7 +3501,7 @@ class GenogramCanvas {
         this.ctx = exportCtx;
 
         this.ctx.save();
-        this.ctx.translate(-minX, -minY);
+        this.ctx.translate(-minX, -minY + headerHeight);
 
         // 繪製生活圈
         if (visible.lifeCircles.length > 0) {
@@ -3541,9 +3545,11 @@ class GenogramCanvas {
 
         if (showLegend) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
-            const legendY = (totalHeight - legendHeight) / 2;
+            const legendY = headerHeight + (totalHeight - headerHeight - legendHeight) / 2;
             this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
         }
+
+        if (headerHeight) this.drawExportHeader(exportCtx, totalWidth, header);
 
         return exportCanvas.toDataURL('image/jpeg', quality);
         } finally {
@@ -3585,6 +3591,71 @@ class GenogramCanvas {
     /**
      * 繪製匯出用的關係圖例
      */
+    /**
+     * [2-2] 匯出頁首：標題（粗體）+ 一行「案號／日期／繪製者」+ 細分隔線。
+     * 只有 header 內有任一非空欄位才佔高度；PNG / JPEG / SVG(內嵌PNG) / PDF 共用，複製圖片不加。
+     */
+    static EXPORT_HEADER = Object.freeze({ padX: 40, padTop: 24, titleSize: 22, metaSize: 13, gap: 8, padBottom: 16 });
+
+    _exportHeaderMetaLine(header) {
+        if (!header) return '';
+        const parts = [];
+        if (header.caseId) parts.push(`案號：${header.caseId}`);
+        if (header.date) parts.push(`日期：${header.date}`);
+        if (header.author) parts.push(`繪製者：${header.author}`);
+        return parts.join('　　');
+    }
+
+    _exportHeaderHeight(header) {
+        if (!header) return 0;
+        const H = GenogramCanvas.EXPORT_HEADER;
+        const hasTitle = Boolean(header.title && String(header.title).trim());
+        const meta = this._exportHeaderMetaLine(header);
+        if (!hasTitle && !meta) return 0;
+        let h = H.padTop;
+        if (hasTitle) h += H.titleSize + H.gap;
+        if (meta) h += H.metaSize + H.gap;
+        return h + H.padBottom;
+    }
+
+    drawExportHeader(ctx, width, header) {
+        const h = this._exportHeaderHeight(header);
+        if (!h) return 0;
+        const H = GenogramCanvas.EXPORT_HEADER;
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, h);
+        ctx.beginPath();
+        ctx.rect(H.padX - 4, 0, width - H.padX * 2 + 8, h);
+        ctx.clip(); // 超長文字不溢出頁首區
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        let y = H.padTop;
+        const title = header.title ? String(header.title).trim() : '';
+        if (title) {
+            ctx.fillStyle = '#1f2933';
+            ctx.font = `bold ${H.titleSize}px ${this.fontFamily}`;
+            ctx.fillText(title, H.padX, y);
+            y += H.titleSize + H.gap;
+        }
+        const meta = this._exportHeaderMetaLine(header);
+        if (meta) {
+            ctx.fillStyle = '#5b6b78';
+            ctx.font = `${H.metaSize}px ${this.fontFamily}`;
+            ctx.fillText(meta, H.padX, y);
+        }
+        ctx.restore();
+        ctx.save();
+        ctx.strokeStyle = '#dfe4e8';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(H.padX, h - 8.5);
+        ctx.lineTo(width - H.padX, h - 8.5);
+        ctx.stroke();
+        ctx.restore();
+        return h;
+    }
+
     drawExportLegend(ctx, x, y, viewOptions = {}) {
         const padding = 16;
         const lineHeight = 26;

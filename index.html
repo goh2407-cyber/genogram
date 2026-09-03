@@ -609,6 +609,36 @@
                             </label>
                         </div>
                     </div>
+                    <div class="export-header-settings">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="exportIncludeHeader"
+                                style="margin-right: 8px; width: 18px; height: 18px;">
+                            <span>加上頁首（標題 / 案號 / 日期 / 繪製者）</span>
+                        </label>
+                        <div class="export-header-fields" id="exportHeaderFields" hidden>
+                            <div class="export-field-row">
+                                <label>標題<input type="text" id="exportMetaTitle" placeholder="例：王○○ 家系圖" autocomplete="off"></label>
+                                <label>案號<input type="text" id="exportMetaCaseId" placeholder="例：A-2026-0123" autocomplete="off"></label>
+                            </div>
+                            <div class="export-field-row">
+                                <label>繪製者<input type="text" id="exportMetaAuthor" placeholder="社工姓名" autocomplete="off"></label>
+                                <label>日期<input type="date" id="exportMetaDate"></label>
+                            </div>
+                            <p class="export-field-hint">標題、案號、繪製者會存進這份個案的 JSON 檔；日期預設今天，不存檔。「複製圖片」不加頁首。</p>
+                        </div>
+                        <div class="export-pdf-settings">
+                            <span style="font-size: 13px; font-weight: 600; color: #555;">PDF 紙張：</span>
+                            <select id="exportPdfFormat" aria-label="PDF 紙張大小">
+                                <option value="a4" selected>A4</option>
+                                <option value="a3">A3</option>
+                            </select>
+                            <select id="exportPdfOrientation" aria-label="PDF 方向">
+                                <option value="auto" selected>方向自動（依圖片比例）</option>
+                                <option value="l">橫向</option>
+                                <option value="p">直向</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div class="export-options">
                     <button class="export-option-btn" data-format="png">
