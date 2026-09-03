@@ -38,6 +38,8 @@
 
 ## 測試
 
+- **一鍵回歸**：`node refactor/run_all.js`（自動帶 NODE_PATH；`--quick` 略過 golden）。
+- **三副本同步**：`node refactor/sync_mirrors.js`（js/css → geno、refactor/app；不覆蓋 geno/index.html）。
 - **邏輯層**（Node 直測 KinshipEngine）：Sprint 1 時 18/18 pass
 - **UI 層**（Playwright headless）：Sprint 1 時 14/14 pass
 - **視覺煙霧測試**：`NODE_PATH=<playwright所在node_modules> node refactor/smoke_visual.js`

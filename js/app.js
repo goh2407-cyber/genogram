@@ -7,10 +7,28 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
         <div class="property-form">
             <div class="form-group">
                 <label>關係類型</label>
-                <div style="padding: 8px; background: var(--bg-light); border-radius: 4px;">
-                    <strong id="relationshipTypeName"></strong>
+                <div class="relationship-type-row">
+                    <div class="relationship-type-chip"><strong id="relationshipTypeName"></strong></div>
+                    <button type="button" class="btn-cancel btn-compact" id="changeRelationshipTypeBtn" title="開啟關係類型清單">變更類型…</button>
                 </div>
                 <small id="relationshipEndpoints" style="color: var(--text-secondary); margin-top: 4px; display: block;"></small>
+            </div>
+            <div class="form-group" id="relationshipLinkTypeGroup" hidden>
+                <label>子女線型</label>
+                <div class="segmented" role="group" aria-label="子女線型">
+                    <button type="button" class="segmented-btn" data-link-type="biological">親生</button>
+                    <button type="button" class="segmented-btn" data-link-type="adopted">收養</button>
+                    <button type="button" class="segmented-btn" data-link-type="foster">寄養</button>
+                </div>
+            </div>
+            <div class="form-group" id="relationshipRouteGroup" hidden>
+                <label>婚姻線走法</label>
+                <div class="segmented" role="group" aria-label="婚姻線走法">
+                    <button type="button" class="segmented-btn" data-route-mode="auto" title="依情況自動：同列淨空走直線、中間夾人時 ㄩ 下折、同側多婚架 ㄇ 天橋">自動</button>
+                    <button type="button" class="segmented-btn" data-route-mode="over" title="ㄇ 上折（上方無父母線時才適用）">ㄇ</button>
+                    <button type="button" class="segmented-btn" data-route-mode="straight" title="一 直線">一</button>
+                    <button type="button" class="segmented-btn" data-route-mode="under" title="ㄩ 下折">ㄩ</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="relationshipDate">時間/說明 (顯示於線上)</label>
@@ -252,6 +270,8 @@ class GenogramApp {
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
         this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
+        // [1-2] 文件狀態：isDirty = 有變更尚未寫入檔案（另存 / Ctrl+S 寫回檔案後清除）
+        this.isDirty = false;
 
         // [Bug Fix] 初始化缺失的屬性，避免 undefined 錯誤
         this.boxSelectInitialPoint = null; // 圈選初始點（用於位移閾值判斷）
@@ -324,6 +344,7 @@ class GenogramApp {
                 });
             }
             this.updateToolbar();
+            this.updateDocumentTitle(); // [1-2]
         }, 0);
     }
 
@@ -727,23 +748,9 @@ class GenogramApp {
         const swapBtn = document.getElementById('swapRelationshipDirection');
         if (swapBtn) swapBtn.addEventListener('click', () => this.swapRelationshipDirection());
 
-        // 關係類型按鈕
+        // 關係類型按鈕（靜態清單；「最近使用」的複製鈕在開啟 modal 時動態綁同一個 handler）
         document.querySelectorAll('.rel-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                // 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)
-                const type = e.currentTarget.dataset.type;
-                // [Phase 1] 親子按鈕帶 data-link-type（biological/adopted/foster）；其餘關係無此屬性
-                const linkType = e.currentTarget.dataset.linkType || null;
-
-                // 判斷是編輯模式還是新建模式
-                if (this.editingRelationshipId) {
-                    // 編輯模式：更新現有關係的類型
-                    this.updateRelationshipType(type, linkType);
-                } else {
-                    // 新建模式：建立新關係
-                    this.createRelationship(type, linkType);
-                }
-            });
+            btn.addEventListener('click', e => this.handleRelationshipTypeButton(e));
         });
 
         // [Phase 2A.2] 婚姻線走法改為畫布上「走法鈕」（鉛筆旁，見 canvas.drawRelationshipRouteButtons）
@@ -920,6 +927,44 @@ class GenogramApp {
     /**
      * 更新工具列狀態
      */
+    /**
+     * [1-2] 標記「有變更尚未寫入檔案」並更新標題列。載入中不標記。
+     */
+    markDirty() {
+        if (this.isLoading) return;
+        this.isDirty = true;
+        this.updateDocumentTitle();
+    }
+
+    /**
+     * [1-2] 標題列：檔名 + 未儲存標記（●）。
+     * 未連結檔案 → 「未命名家系圖」；有內容但尚未存成檔案、或存檔後又有變更 → 顯示 ●。
+     * 同步更新瀏覽器分頁標題，方便多分頁時辨識。
+     */
+    updateDocumentTitle() {
+        const nameNode = document.getElementById('documentName');
+        const dirtyNode = document.getElementById('documentDirty');
+        const fileName = this.storage?.getOpenFileName?.() || null;
+        const linked = this.storage?.hasOpenFile?.() === true;
+        const hasContent = ((this.persons?.length || 0) + (this.relationships?.length || 0)
+            + (this.households?.length || 0) + (this.lifeCircles?.length || 0)) > 0;
+        const showDirty = this.isDirty && hasContent;
+        const title = fileName || '未命名家系圖';
+        if (nameNode) {
+            nameNode.textContent = title;
+            nameNode.title = !fileName
+                ? '尚未連結檔案：「另存」或「載入」後，Ctrl+S 會直接寫回該檔案'
+                : (linked ? `目前檔案：${fileName}（Ctrl+S 直接寫回）` : `目前檔案：${fileName}（唯讀載入，儲存請用「另存」）`);
+        }
+        if (dirtyNode) {
+            dirtyNode.hidden = !showDirty;
+            dirtyNode.title = linked
+                ? '有變更尚未儲存至檔案（Ctrl+S 儲存）'
+                : '內容尚未儲存為檔案（請點「另存」建立檔案）';
+        }
+        document.title = `${showDirty ? '● ' : ''}${title} | 勵馨家系圖生成器`;
+    }
+
     updateToolbar() {
         document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
 
@@ -1777,6 +1822,7 @@ class GenogramApp {
                 );
 
                 if (hasSignificantChange) {
+                    this.markDirty(); // [1-2]
                     this.history.pushState(this.dragStartSnapshot);
                 }
                 this.dragStartSnapshot = null;
@@ -1902,6 +1948,7 @@ class GenogramApp {
         if (!session) return false;
         const afterSignature = JSON.stringify(this.getState());
         if (afterSignature === session.beforeSignature) return false;
+        this.markDirty(); // [1-2]
         this.history.pushState(session.before);
         this.updateToolbar();
         return true;
@@ -3095,6 +3142,38 @@ class GenogramApp {
                 `${fromPerson ? fromPerson.name || '未命名' : '未知'} ↔ ${toPerson ? toPerson.name || '未命名' : '未知'}`;
             root.querySelector('#relationshipDate').value = relationship.date || '';
 
+            // [1-4] 面板直接變更類型 / 子女線型 / 婚姻線走法（與畫布鉛筆、走法鈕共用同一組函式）
+            root.querySelector('#changeRelationshipTypeBtn').addEventListener('click', () => {
+                this.editingRelationshipId = relationship.id;
+                this.showRelationshipEditModal();
+            });
+            const linkGroup = root.querySelector('#relationshipLinkTypeGroup');
+            linkGroup.hidden = relationship.type !== 'parent-child'; // 明確設定，避免沿用前一次選取的顯示狀態
+            if (relationship.type === 'parent-child') {
+                const currentLink = relationship.linkType || 'biological';
+                linkGroup.querySelectorAll('[data-link-type]').forEach(btn => {
+                    const active = btn.dataset.linkType === currentLink;
+                    btn.classList.toggle('is-active', active);
+                    btn.setAttribute('aria-pressed', String(active));
+                    btn.addEventListener('click', () => this.setLinkTypeById(relationship.id, btn.dataset.linkType));
+                });
+            }
+            const routeGroup = root.querySelector('#relationshipRouteGroup');
+            const isMarriage = Relationship.getCategory(relationship.type) === 'marriage';
+            routeGroup.hidden = !isMarriage; // 明確設定
+            if (isMarriage) {
+                const currentRoute = relationship.routeMode || 'auto';
+                routeGroup.querySelectorAll('[data-route-mode]').forEach(btn => {
+                    const active = btn.dataset.routeMode === currentRoute;
+                    btn.classList.toggle('is-active', active);
+                    btn.setAttribute('aria-pressed', String(active));
+                    btn.addEventListener('click', () => {
+                        this.setRouteModeById(relationship.id, btn.dataset.routeMode);
+                        this.updatePropertyPanel();
+                    });
+                });
+            }
+
             this.bindPropertyEdit(root.querySelector('#relationshipDate'), e => {
                 relationship.date = e.target.value;
             });
@@ -3719,6 +3798,83 @@ class GenogramApp {
     }
 
     /**
+     * 關係類型按鈕點擊（靜態清單與「最近使用」共用）。
+     * 使用 currentTarget 確保抓到的是按鈕本身而不是內部的圖示 (span)。
+     */
+    handleRelationshipTypeButton(e) {
+        const type = e.currentTarget.dataset.type;
+        // [Phase 1] 親子按鈕帶 data-link-type（biological/adopted/foster）；其餘關係無此屬性
+        const linkType = e.currentTarget.dataset.linkType || null;
+        if (!type) return;
+        this.recordRecentRelationshipType(type, linkType);
+
+        // 判斷是編輯模式還是新建模式
+        if (this.editingRelationshipId) {
+            this.updateRelationshipType(type, linkType);
+        } else {
+            this.createRelationship(type, linkType);
+        }
+    }
+
+    /**
+     * [1-5] 最近使用的關係類型（最多 6 筆，只存 localStorage，不進 JSON / history）。
+     * key = `${type}` 或 `${type}:${linkType}`（親子線分親生/收養/寄養）。
+     */
+    static RECENT_REL_KEY = 'genogram_recent_rel_types';
+    static RECENT_REL_MAX = 6;
+
+    getRecentRelationshipTypes() {
+        try {
+            const raw = localStorage.getItem(GenogramApp.RECENT_REL_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list) ? list.filter(k => typeof k === 'string') : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    recordRecentRelationshipType(type, linkType = null) {
+        const key = linkType ? `${type}:${linkType}` : type;
+        const next = [key, ...this.getRecentRelationshipTypes().filter(k => k !== key)]
+            .slice(0, GenogramApp.RECENT_REL_MAX);
+        try { localStorage.setItem(GenogramApp.RECENT_REL_KEY, JSON.stringify(next)); } catch (_) { /* 私密模式等 */ }
+    }
+
+    /**
+     * [1-5] 開 modal 時把「最近使用」渲染到最上方（複製靜態按鈕，含圖例線）；關閉時清掉。
+     * 只在 modal 開啟期間存在，不影響任何依靜態 DOM 的檢查。
+     */
+    renderRecentRelationshipTypes() {
+        const group = document.getElementById('recentRelationshipGroup');
+        const grid = document.getElementById('recentRelationshipGrid');
+        if (!group || !grid) return;
+        grid.innerHTML = '';
+        const keys = this.getRecentRelationshipTypes();
+        const clones = [];
+        for (const key of keys) {
+            const [type, linkType] = key.split(':');
+            const selector = linkType
+                ? `.rel-btn[data-type="${type}"][data-link-type="${linkType}"]:not([data-recent])`
+                : `.rel-btn[data-type="${type}"]:not([data-link-type]):not([data-recent])`;
+            const source = this.elements.relationshipModal.querySelector(selector);
+            if (!source) continue;
+            const clone = source.cloneNode(true);
+            clone.dataset.recent = '1';
+            clone.addEventListener('click', e => this.handleRelationshipTypeButton(e));
+            clones.push(clone);
+        }
+        clones.forEach(c => grid.appendChild(c));
+        group.hidden = clones.length === 0;
+    }
+
+    clearRecentRelationshipTypesUI() {
+        const group = document.getElementById('recentRelationshipGroup');
+        const grid = document.getElementById('recentRelationshipGrid');
+        if (grid) grid.innerHTML = '';
+        if (group) group.hidden = true;
+    }
+
+    /**
      * 顯示關係選擇對話框
      */
     showRelationshipModal() {
@@ -3726,6 +3882,7 @@ class GenogramApp {
         this.commitPropertyEditSession();
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none'; // 新建模式不顯示對調
+        this.renderRecentRelationshipTypes(); // [1-5]
         this.modalManager.open(this.elements.relationshipModal);
     }
 
@@ -3757,6 +3914,7 @@ class GenogramApp {
         }
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = ''; // 編輯模式才顯示對調方向
+        this.renderRecentRelationshipTypes(); // [1-5]
         this.modalManager.open(this.elements.relationshipModal);
     }
 
@@ -3765,6 +3923,7 @@ class GenogramApp {
      */
     closeRelationshipModal() {
         this.modalManager.close(this.elements.relationshipModal);
+        this.clearRecentRelationshipTypesUI(); // [1-5]
         const sb = document.getElementById('swapRelationshipDirection');
         if (sb) sb.style.display = 'none';
 
@@ -3827,6 +3986,26 @@ class GenogramApp {
         this.updateStatus('婚姻線走法：' + label, 'info');
         this.autoSave();
         this.render();
+    }
+
+    /**
+     * [1-4] 依 id 變更親子線型（親生/收養/寄養）；屬性面板直接呼叫，不經 modal。
+     * @param {string} id
+     * @param {'biological'|'adopted'|'foster'} linkType
+     */
+    setLinkTypeById(id, linkType) {
+        const rel = this.relationships.find(r => r.id === id);
+        if (!rel || rel.type !== 'parent-child') return;
+        if (!['biological', 'adopted', 'foster'].includes(linkType)) return;
+        if ((rel.linkType || 'biological') === linkType) return;
+        this.saveState();
+        rel.linkType = linkType;
+        this._dataVersion++; // 線型變動 → 快取失效
+        const label = { biological: '親生', adopted: '收養', foster: '寄養' }[linkType];
+        this.updateStatus(`子女線型：${label}`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
+        this.autoSave();
+        this.render();
+        this.updatePropertyPanel();
     }
 
     /**
@@ -5479,6 +5658,7 @@ class GenogramApp {
         try {
             if (this.isPreviewingLayout) this.cancelPreviewedLayout();
             this.commitPropertyEditSession();
+            this.markDirty(); // [1-2]
             this.history.pushState(this.getState());
             this.updateToolbar();
             return true;
@@ -5582,6 +5762,7 @@ class GenogramApp {
             this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
                 ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
+            this.markDirty(); // [1-2] 復原/重做後內容與檔案不同步
             this.autoSave();
             this.render();
         } else this.render();
@@ -5622,6 +5803,7 @@ class GenogramApp {
             this.selectedLifeCircleId = this.lifeCircles.some(lc => lc.id === selectedLifeCircleId)
                 ? selectedLifeCircleId : null;
             this.updatePropertyPanel();
+            this.markDirty(); // [1-2] 復原/重做後內容與檔案不同步
             this.autoSave();
             this.render();
         } else this.render();
@@ -5704,6 +5886,8 @@ class GenogramApp {
         const result = await this.storage.saveToFile(this.persons, this.relationships, this.households || [], this.lifeCircles || []);
 
         if (result === true) {
+            this.isDirty = false; // [1-2] 已寫回檔案
+            this.updateDocumentTitle();
             this.updateStatus(`已成功儲存至檔案: ${this.storage.getOpenFileName()}`, 'success');
         } else {
             // 如果無法直接寫入（沒連結或不支援）
@@ -5728,6 +5912,8 @@ class GenogramApp {
         if (success) {
             this.updateStatus(`已成功導出: ${this.storage.getOpenFileName()}`, 'success');
             this.autoSave();
+            this.isDirty = false; // [1-2] 另存成功 = 檔案與畫面一致
+            this.updateDocumentTitle();
         }
     }
 
@@ -5764,10 +5950,18 @@ class GenogramApp {
             this.fitToView({ onlyIfNeeded: true });
         });
 
+        this.isDirty = false; // [1-2] 剛載入 = 與檔案一致
+        this.updateDocumentTitle();
+
+        // [1-3] 只有真的改了東西才提示，且用使用者看得懂的說法（原「調整/去重/移除」是工程用語）
         if ((norm.normalized + norm.deduped + norm.dropped) > 0) {
+            const parts = [];
+            if (norm.normalized) parts.push(`修正親子方向 ${norm.normalized} 筆`);
+            if (norm.deduped) parts.push(`合併重複關係 ${norm.deduped} 筆`);
+            if (norm.dropped) parts.push(`移除無效關係 ${norm.dropped} 筆`);
             this.updateStatus(
-                `已套用舊檔相容修正：調整 ${norm.normalized}、去重 ${norm.deduped}、移除 ${norm.dropped}`,
-                'info'
+                `已自動整理舊版檔案的關係資料：${parts.join('、')}`,
+                'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert }
             );
         }
     }
@@ -6096,6 +6290,7 @@ class GenogramApp {
      */
     autoSave() {
         if (this.isLoading) return;
+        this.updateDocumentTitle(); // [1-2] 每次變更後重新評估「有內容 + 未存檔」→ 標題列 ●
 
         if (this.autoSaveTimer) {
             clearTimeout(this.autoSaveTimer);
@@ -6135,6 +6330,7 @@ class GenogramApp {
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
             this.normalizeLoadedFamilyRelationships();
+            this.isDirty = true; // [1-2] 從瀏覽器暫存恢復：內容尚未在任何檔案裡
 
             // 還原視圖狀態
             // [Bug Fix] 視圖狀態應寫入 canvas 物件而非 app
@@ -6224,6 +6420,7 @@ class GenogramApp {
             })
         };
 
+        this.markDirty(); // [1-2]
         this.history.pushState(beforeState);
 
         // 2. 隱藏預覽 UI

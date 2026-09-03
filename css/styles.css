@@ -361,7 +361,8 @@ body {
 /* 狀態提示條 */
 .status-bar {
     position: absolute;
-    top: 14px;
+    top: auto;
+    bottom: 76px; /* [1-3] 移到畫布底部、縮放列與排列預覽列之上；不再遮住上排人物 */
     left: 50%;
     transform: translateX(-50%);
     padding: 8px 22px;
@@ -402,7 +403,7 @@ body {
 .status-bar.hidden {
     opacity: 0;
     visibility: hidden;
-    transform: translate(-50%, -6px);
+    transform: translate(-50%, 6px);
 }
 
 /* 縮放控制 */
@@ -1203,6 +1204,25 @@ body {
     width: 60px;
 }
 
+/* [1-5] 關係類型對話框：加寬 + 三欄，38 種類型少捲一半；窄視窗退回兩欄 */
+.modal--wide {
+    max-width: 680px;
+}
+
+.modal--wide .btn-grid {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 1023px) {
+    .modal--wide .btn-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.recent-relationship-group h4 {
+    color: var(--brand);
+}
+
 .help-modal-content {
     line-height: 1.65;
 }
@@ -1286,6 +1306,28 @@ body {
     background: var(--bg-light);
     border-color: #c3ccd9;
 }
+
+/* [1-4] 關係屬性面板：類型列 + 分段按鈕（子女線型 / 婚姻線走法） */
+/* 作者樣式的 display 會蓋過 UA 的 [hidden]，面板群組用 hidden 切換時必須明確關掉 */
+.property-form .form-group[hidden] { display: none !important; }
+.relationship-type-row { display: flex; align-items: center; gap: 8px; }
+.relationship-type-chip { flex: 1; min-width: 0; padding: 8px; background: var(--bg-light); border-radius: 4px; }
+.btn-compact { padding: 6px 10px; font-size: 12.5px; white-space: nowrap; }
+.segmented { display: flex; border: 1.5px solid var(--border-color); border-radius: var(--border-radius-sm); overflow: hidden; }
+.segmented-btn {
+    flex: 1;
+    padding: 7px 6px;
+    background: #fff;
+    border: 0;
+    border-left: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.segmented-btn:first-child { border-left: 0; }
+.segmented-btn:hover { background: var(--bg-light); }
+.segmented-btn.is-active { background: var(--brand); color: #fff; font-weight: 600; }
 
 /* ===================================
    性別選擇對話框
@@ -1656,6 +1698,7 @@ body {
     border-left: 1px solid var(--line-ui);
 }
 .document-name { color: var(--ink-muted); font-size: 13px; font-weight: 500; }
+.document-dirty { margin-left: 6px; color: var(--brand); font-size: 11px; line-height: 1; vertical-align: 1px; cursor: help; }
 
 .global-actions { margin-left: auto; }
 .global-actions .tool-group { display: flex; gap: var(--space-1); }

@@ -5774,7 +5774,9 @@ class GenogramCanvas {
         if (category === 'marriage' && path.length >= 2 && info.point.y > path[0].y + 2) {
             nx = -nx; ny = -ny;
         }
-        return { point: info.point, nx, ny, baseOffset: 24 };
+        // [HUD] baseOffset 乘 hud → 鈕與線的距離固定 24 螢幕像素；hud 供呼叫端縮放半徑/間距
+        const hud = this.hudUnit();
+        return { point: info.point, nx, ny, baseOffset: 24 * hud, hud };
     }
 
     drawRelationshipEditButton(relationship, fromPerson, toPerson, allRelationships = []) {
@@ -5786,8 +5788,9 @@ class GenogramCanvas {
         const info = { point: geom.point };
         const nx = geom.nx, ny = geom.ny;
 
-        const buttonRadius = 14;
-        const offsetDist = geom.baseOffset; // 預設 24；被其他角色擋住時已往外推
+        const hud = geom.hud;
+        const buttonRadius = 14 * hud; // 螢幕固定 14px
+        const offsetDist = geom.baseOffset; // 螢幕固定 24px（已乘 hud）
 
         const x = info.point.x + nx * offsetDist;
         const y = info.point.y + ny * offsetDist;
@@ -5809,7 +5812,7 @@ class GenogramCanvas {
 
         // 繪製邊框
         this.ctx.strokeStyle = '#4a90d9';
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2 * hud;
         this.ctx.stroke();
 
         // 關閉陰影
@@ -5819,6 +5822,7 @@ class GenogramCanvas {
         // 繪製鉛筆圖示（向量繪製，避免 emoji 在不同平台渲染不一）
         this.ctx.save();
         this.ctx.translate(x, y);
+        this.ctx.scale(hud, hud); // 鉛筆字形螢幕固定大小
         this.ctx.rotate(Math.PI / 4);
         this.ctx.strokeStyle = '#4a90d9';
         this.ctx.lineWidth = 1.6;
@@ -5838,8 +5842,8 @@ class GenogramCanvas {
 
         // [Fix D] 鉛筆外側再加一顆「對調方向 ⇄」鈕（方向性關係才顯示；婚姻非方向性不顯示）
         if (relationship.getCategory() !== 'marriage') {
-            const sx = info.point.x + nx * (geom.baseOffset + 30);
-            const sy = info.point.y + ny * (geom.baseOffset + 30);
+            const sx = info.point.x + nx * (geom.baseOffset + 30 * hud);
+            const sy = info.point.y + ny * (geom.baseOffset + 30 * hud);
             this.ctx.save();
             this.ctx.shadowColor = 'rgba(0,0,0,0.3)';
             this.ctx.shadowBlur = 4; this.ctx.shadowOffsetX = 1; this.ctx.shadowOffsetY = 1;
@@ -5847,15 +5851,17 @@ class GenogramCanvas {
             this.ctx.beginPath();
             this.ctx.arc(sx, sy, buttonRadius, 0, Math.PI * 2);
             this.ctx.fill();
-            this.ctx.strokeStyle = '#4a90d9'; this.ctx.lineWidth = 2; this.ctx.stroke();
+            this.ctx.strokeStyle = '#4a90d9'; this.ctx.lineWidth = 2 * hud; this.ctx.stroke();
             this.ctx.shadowColor = 'transparent'; this.ctx.shadowBlur = 0;
-            // ⇄ 向量字形：上橫線右箭頭、下橫線左箭頭
+            // ⇄ 向量字形：上橫線右箭頭、下橫線左箭頭（以鈕心為原點、依 hud 縮放 → 螢幕固定大小）
+            this.ctx.translate(sx, sy);
+            this.ctx.scale(hud, hud);
             this.ctx.lineWidth = 1.6; this.ctx.lineJoin = 'round'; this.ctx.lineCap = 'round';
             this.ctx.beginPath();
-            this.ctx.moveTo(sx - 5, sy - 3); this.ctx.lineTo(sx + 5, sy - 3);
-            this.ctx.moveTo(sx + 2, sy - 6); this.ctx.lineTo(sx + 5, sy - 3); this.ctx.lineTo(sx + 2, sy);
-            this.ctx.moveTo(sx + 5, sy + 3); this.ctx.lineTo(sx - 5, sy + 3);
-            this.ctx.moveTo(sx - 2, sy + 6); this.ctx.lineTo(sx - 5, sy + 3); this.ctx.lineTo(sx - 2, sy);
+            this.ctx.moveTo(-5, -3); this.ctx.lineTo(5, -3);
+            this.ctx.moveTo(2, -6); this.ctx.lineTo(5, -3); this.ctx.lineTo(2, 0);
+            this.ctx.moveTo(5, 3); this.ctx.lineTo(-5, 3);
+            this.ctx.moveTo(-2, 6); this.ctx.lineTo(-5, 3); this.ctx.lineTo(-2, 0);
             this.ctx.stroke();
             this.ctx.restore();
         }
@@ -5869,14 +5875,17 @@ class GenogramCanvas {
      */
     _routeButtonCenters(path) {
         const geom = this._editButtonGeom(path, 'marriage');
-        // 垂直偏移到鉛筆外側清空區（baseOffset 已含避障推離）；水平固定螢幕左→右（自 ㄇ 一 ㄩ）。
-        const baseX = geom.point.x + geom.nx * (geom.baseOffset + 32);
-        const baseY = geom.point.y + geom.ny * (geom.baseOffset + 32);
-        const spacing = 30;
+        const hud = geom.hud;
+        // 垂直偏移到鉛筆外側清空區（baseOffset 已含 hud）；水平固定螢幕左→右（自 ㄇ 一 ㄩ）。
+        // [HUD] 間距與半徑皆乘 hud → 螢幕固定像素，不隨縮放放大縮小。
+        const baseX = geom.point.x + geom.nx * (geom.baseOffset + 32 * hud);
+        const baseY = geom.point.y + geom.ny * (geom.baseOffset + 32 * hud);
+        const spacing = 30 * hud;
+        const r = 13 * hud;
         const modes = ['auto', 'over', 'straight', 'under'];
         return modes.map((mode, i) => {
             const k = i - 1.5; // -1.5,-0.5,0.5,1.5 → 置中
-            return { mode, x: baseX + k * spacing, y: baseY };
+            return { mode, x: baseX + k * spacing, y: baseY, r };
         });
     }
 
@@ -5890,7 +5899,7 @@ class GenogramCanvas {
         const centers = this._routeButtonCenters(path);
         const labels = { auto: '自', over: 'ㄇ', straight: '一', under: 'ㄩ' };
         const cur = relationship.routeMode || 'auto';
-        const r = 13;
+        const hud = this.hudUnit();
         for (const c of centers) {
             const active = c.mode === cur;
             this.ctx.save();
@@ -5898,15 +5907,15 @@ class GenogramCanvas {
             this.ctx.shadowBlur = 4; this.ctx.shadowOffsetX = 1; this.ctx.shadowOffsetY = 1;
             this.ctx.fillStyle = active ? '#ed1261' : '#ffffff';
             this.ctx.beginPath();
-            this.ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+            this.ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.strokeStyle = active ? '#ed1261' : '#4a90d9';
-            this.ctx.lineWidth = 2; this.ctx.stroke();
+            this.ctx.lineWidth = 2 * hud; this.ctx.stroke();
             this.ctx.shadowColor = 'transparent'; this.ctx.shadowBlur = 0;
             this.ctx.fillStyle = active ? '#ffffff' : '#4a90d9';
-            this.ctx.font = '13px "Microsoft JhengHei", sans-serif';
+            this.ctx.font = `${13 * hud}px "Microsoft JhengHei", sans-serif`;
             this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(labels[c.mode], c.x, c.y + 0.5);
+            this.ctx.fillText(labels[c.mode], c.x, c.y + 0.5 * hud);
             this.ctx.restore();
         }
     }
@@ -5920,7 +5929,7 @@ class GenogramCanvas {
         if (path.length < 2) return null;
         const centers = this._routeButtonCenters(path);
         for (const c of centers) {
-            if (Math.hypot(px - c.x, py - c.y) <= 13 + 4) return c.mode;
+            if (Math.hypot(px - c.x, py - c.y) <= c.r + 4 * this.hudUnit()) return c.mode;
         }
         return null;
     }
@@ -5934,9 +5943,9 @@ class GenogramCanvas {
         const path = this.getRelationshipPath(fromPerson, toPerson, relationship, allRelationships);
         if (path.length < 2) return false;
         const geom = this._editButtonGeom(path, relationship.getCategory());
-        const off = geom.baseOffset + 30;
+        const off = geom.baseOffset + 30 * geom.hud;
         const bx = geom.point.x + geom.nx * off, by = geom.point.y + geom.ny * off;
-        return Math.hypot(px - bx, py - by) <= 14 + 5;
+        return Math.hypot(px - bx, py - by) <= (14 + 5) * geom.hud;
     }
 
     /**
@@ -5956,7 +5965,7 @@ class GenogramCanvas {
         // [Fix] 與 drawRelationshipEditButton 共用 _editButtonGeom（錨點 + 法向一致）
         const geom = this._editButtonGeom(path, relationship.getCategory());
 
-        const buttonRadius = 14;
+        const buttonRadius = 14 * geom.hud;
         const offsetDist = geom.baseOffset;
 
         const buttonX = geom.point.x + geom.nx * offsetDist;
@@ -5966,7 +5975,18 @@ class GenogramCanvas {
         const dy = py - buttonY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        return distance <= buttonRadius + 5; // 增加一些容差
+        return distance <= buttonRadius + 5 * geom.hud; // 增加一些容差（螢幕 5px）
+    }
+
+    /**
+     * [HUD] 畫布上的互動鈕（快速新增 / 鉛筆 / ⇄ / 走法）以「螢幕固定像素」呈現。
+     * 回傳 1 螢幕像素對應的世界單位（= 1/scale）；scale=1 時為 1，既有幾何與 golden 完全不變。
+     * 縮到 40% 時鈕不再只剩 7px、放大到 200% 時也不會變成巨大圓盤。
+     * @returns {number}
+     */
+    hudUnit() {
+        const s = Number.isFinite(this.scale) && this.scale > 0 ? this.scale : 1;
+        return 1 / s;
     }
 
     /**
@@ -5987,27 +6007,10 @@ class GenogramCanvas {
      */
     drawQuickAddButtons(person) {
         if (!person) return;
+        const hud = this.hudUnit();
 
-        const { x, y } = person;
-        const btnRadius = 18;
-
-        Object.entries(GenogramCanvas.QUICK_BUTTONS).forEach(([type, btn]) => {
-            // 跳過懷孕按鈕：男性、懷孕、死亡者、男跨女 (MTF)
-            if (type === 'pregnancy') {
-                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased || person.transgender === 'mtf') {
-                    return; // 跳過不繪製
-                }
-            }
-
-            // 懷孕符號不顯示：伴侶、兒子、女兒
-            if (person.gender === 'pregnancy') {
-                if (type === 'partner' || type === 'son' || type === 'daughter') {
-                    return;
-                }
-            }
-
-            const bx = x + btn.offsetX;
-            const by = y + btn.offsetY;
+        for (const btn of this.getQuickButtonLayout(person)) {
+            const { x: bx, y: by, radius: btnRadius } = btn;
 
             // 按鈕背景（白底 + 色環 + 柔和陰影 — emoji 在各平台渲染不一，改用向量 glyph）
             this.ctx.save();
@@ -6022,22 +6025,26 @@ class GenogramCanvas {
             this.ctx.shadowBlur = 0;
             this.ctx.shadowOffsetY = 0;
             this.ctx.strokeStyle = btn.color;
-            this.ctx.lineWidth = 2;
+            this.ctx.lineWidth = 2 * hud;
             this.ctx.stroke();
             this.ctx.restore();
 
-            // 按鈕圖示（家系圖符號語意的小 glyph）
-            this.drawQuickButtonGlyph(type, bx, by, btn.color);
+            // 按鈕圖示（家系圖符號語意的小 glyph；以鈕心為原點依 hud 縮放 → 螢幕固定大小）
+            this.ctx.save();
+            this.ctx.translate(bx, by);
+            this.ctx.scale(hud, hud);
+            this.drawQuickButtonGlyph(btn.type, 0, 0, btn.color);
+            this.ctx.restore();
 
             // 按鈕標籤（小字說明）
             this.ctx.save();
-            this.ctx.font = '10px "Noto Sans TC", sans-serif';
+            this.ctx.font = `${10 * hud}px "Noto Sans TC", sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'top';
             this.ctx.fillStyle = '#6b7280';
-            this.ctx.fillText(btn.label, bx, by + btnRadius + 3);
+            this.ctx.fillText(btn.label, bx, by + btnRadius + 3 * hud);
             this.ctx.restore();
-        });
+        }
     }
 
     /**
@@ -6097,33 +6104,50 @@ class GenogramCanvas {
      */
     getQuickButtonAt(px, py, person) {
         if (!person) return null;
-
-        const { x, y } = person;
-        const btnRadius = 18;
-
-        for (const [type, btn] of Object.entries(GenogramCanvas.QUICK_BUTTONS)) {
-            // 跳過懷孕按鈕：男性、懷孕、死亡者、男跨女 (MTF)
-            if (type === 'pregnancy') {
-                if (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased || person.transgender === 'mtf') {
-                    continue;
-                }
-            }
-
-            // 懷孕符號不顯示：伴侶、兒子、女兒
-            if (person.gender === 'pregnancy') {
-                if (type === 'partner' || type === 'son' || type === 'daughter') {
-                    continue;
-                }
-            }
-
-            const bx = x + btn.offsetX;
-            const by = y + btn.offsetY;
-            const dist = Math.sqrt((px - bx) ** 2 + (py - by) ** 2);
-            if (dist <= btnRadius) {
-                return type;
-            }
+        for (const btn of this.getQuickButtonLayout(person)) {
+            if (Math.hypot(px - btn.x, py - btn.y) <= btn.radius) return btn.type;
         }
         return null;
+    }
+
+    /**
+     * [HUD] 快速新增鈕的版面（draw 與 hit-test 共用同一份，保證「畫在哪就點得到哪」）。
+     * 半徑固定 18 螢幕像素。位置：縮小（hud>1）時整圈依 hud 放大，維持螢幕間距；
+     * 放大（hud<1）時以符號邊緣為錨、邊緣外的距離固定螢幕像素，鈕不會離符號越來越遠。
+     * scale=1 時與原版座標完全相同。
+     * @param {Person} person
+     * @returns {Array<{type:string,x:number,y:number,radius:number,label:string,color:string}>}
+     */
+    getQuickButtonLayout(person) {
+        if (!person) return [];
+        const hud = this.hudUnit();
+        const half = (typeof person.getSize === 'function' ? person.getSize() : 50) / 2;
+        const place = off => {
+            if (hud >= 1) return off * hud;
+            const anchor = Math.max(-half, Math.min(half, off));
+            return anchor + (off - anchor) * hud;
+        };
+        const layout = [];
+        for (const [type, btn] of Object.entries(GenogramCanvas.QUICK_BUTTONS)) {
+            // 跳過懷孕按鈕：男性、懷孕、死亡者、男跨女 (MTF)
+            if (type === 'pregnancy'
+                && (person.gender === 'male' || person.gender === 'pregnancy' || person.isDeceased || person.transgender === 'mtf')) {
+                continue;
+            }
+            // 懷孕符號不顯示：伴侶、兒子、女兒
+            if (person.gender === 'pregnancy' && (type === 'partner' || type === 'son' || type === 'daughter')) {
+                continue;
+            }
+            layout.push({
+                type,
+                x: person.x + place(btn.offsetX),
+                y: person.y + place(btn.offsetY),
+                radius: 18 * hud,
+                label: btn.label,
+                color: btn.color
+            });
+        }
+        return layout;
     }
 
     /**
@@ -6135,18 +6159,13 @@ class GenogramCanvas {
      */
     isPointInQuickAddZone(px, py, person) {
         if (!person) return false;
-
-        const { x, y } = person;
-
-        // 計算擴展區域的邊界 (包含所有按鈕)
-        // 上: -75 (parent), 下: +75 (children), 左/右: ±55 (sibling/partner)
-        const padding = 30; // 額外的容差
-        const minX = x - 55 - padding;
-        const maxX = x + 55 + padding;
-        const minY = y - 75 - padding;
-        const maxY = y + 75 + padding;
-
-        return px >= minX && px <= maxX && py >= minY && py <= maxY;
+        const padding = 30 * this.hudUnit(); // 額外的容差
+        let minX = person.x, maxX = person.x, minY = person.y, maxY = person.y;
+        for (const btn of this.getQuickButtonLayout(person)) {
+            minX = Math.min(minX, btn.x - btn.radius); maxX = Math.max(maxX, btn.x + btn.radius);
+            minY = Math.min(minY, btn.y - btn.radius); maxY = Math.max(maxY, btn.y + btn.radius);
+        }
+        return px >= minX - padding && px <= maxX + padding && py >= minY - padding && py <= maxY + padding;
     }
 
     /**
