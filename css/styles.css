@@ -1629,6 +1629,54 @@ body {
     accent-color: var(--brand);
 }
 
+/* [HH-2/HH-3] 同住框：圖例虛線框樣本、成員標籤、加入列 */
+.legend-extra { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.legend-swatch-household {
+    display: inline-block;
+    width: 40px;
+    height: 14px;
+    box-sizing: border-box;
+    border: 2px dashed #333;
+    border-radius: 6px;
+}
+.household-members { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; background: var(--bg-light); border-radius: 4px; font-size: 13px; min-height: 34px; }
+.household-member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px 3px 9px;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 12.5px;
+    line-height: 1.3;
+}
+.chip-remove {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+}
+.chip-remove::before { content: '\2715'; }
+.chip-remove:hover { background: #fde8ee; color: var(--brand); }
+.household-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.household-add-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font: inherit;
+    font-size: 13px;
+    background: #fff;
+}
+
 /* [2-3] 開啟檔案對話框：最近檔案清單 */
 .open-file-hint { margin: 0 0 10px; font-size: 13px; color: var(--ink-muted); line-height: 1.5; }
 .open-file-privacy { margin: 12px 0 0; }

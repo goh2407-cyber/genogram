@@ -3673,7 +3673,14 @@ class GenogramCanvas {
         const leftItemsCount = leftSections.reduce((total, section) => total + section.items.length, 0);
         const rightItemsCount = rightSections.reduce((total, section) => total + section.items.length, 0);
 
-        const maxItemsPerColumn = Math.max(leftItemsCount + 4, rightItemsCount + 4); // +4 for titles
+        // [HH-2] 「圖形符號」小節（標題 + 同住框 1 項）放在較短的欄位末端，高度一併計入
+        const symbolRows = 2.5;
+        const leftRows = leftItemsCount + leftSections.length * 1.5;
+        const rightRows = rightItemsCount + rightSections.length * 1.5;
+        const symbolsOnLeft = leftRows <= rightRows;
+        const maxItemsPerColumn = Math.max(
+            leftItemsCount + 4 + (symbolsOnLeft ? symbolRows : 0),
+            rightItemsCount + 4 + (symbolsOnLeft ? 0 : symbolRows)); // +4 for titles
 
         const columnWidth = 180;
         const totalWidth = columnWidth * 2 + columnGap + padding * 2;
@@ -3702,6 +3709,29 @@ class GenogramCanvas {
                 lineWidth, lineHeight, titleFontSize, fontSize);
             currentYRight += (section.items.length + 1.5) * lineHeight;
         });
+
+        // [HH-2] 圖形符號：同住框（虛線框內為同住成員）
+        const symbolX = symbolsOnLeft ? x + padding : rightX;
+        let symbolY = symbolsOnLeft ? currentYLeft : currentYRight;
+        ctx.save();
+        ctx.fillStyle = '#333333';
+        ctx.font = `bold ${titleFontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
+        ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'left';
+        ctx.fillText('圖形符號', symbolX, symbolY + titleFontSize);
+        symbolY += lineHeight * 1.2;
+        const swatchY = symbolY + lineHeight / 2 - 4;
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 2;
+        ctx.setLineDash(DASH_PATTERNS.household);
+        this.roundRect(ctx, symbolX, swatchY - 7, lineWidth, 14, 5);
+        ctx.stroke();
+        ctx.setLineDash(DASH_PATTERNS.solid);
+        ctx.fillStyle = '#333333';
+        ctx.font = `${fontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('同住框', symbolX + lineWidth + 10, swatchY);
+        ctx.restore();
     }
 
     /**
@@ -5145,12 +5175,15 @@ class GenogramCanvas {
                 this.ctx.closePath();
             };
 
-            // 選擇繪製方式
+            // 選擇繪製方式（記錄實際用了膠囊還是凹包，供名稱定位）
+            let usedDogBone = false;
             const tryDrawDogBone = () => {
                 if (isDogBone) {
                     const success = drawDogBone();
+                    usedDogBone = success;
                     if (success) return;
                 }
+                usedDogBone = false;
                 drawHull();
             };
 
@@ -5170,6 +5203,32 @@ class GenogramCanvas {
             this.ctx.strokeStyle = isSelected ? '#4a90d9' : '#333';
             tryDrawDogBone();
             this.ctx.stroke();
+
+            // [HH-2] 框名稱：畫在框頂部正上方（白 halo；先關掉虛線，否則 strokeText 也會變虛線）
+            if (household.label) {
+                let ax, ay;
+                if (usedDogBone) {
+                    ax = (minX + maxX) / 2;
+                    ay = minY - 8;
+                } else {
+                    let top = hullPoints[0];
+                    hullPoints.forEach(p => { if (p.y < top.y) top = p; });
+                    ax = top.x;
+                    ay = top.y;
+                }
+                this.ctx.save();
+                this.ctx.setLineDash(DASH_PATTERNS.solid);
+                this.ctx.font = `600 13px ${this.fontFamily}`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'bottom';
+                this.ctx.lineWidth = 4;
+                this.ctx.lineJoin = 'round';
+                this.ctx.strokeStyle = '#ffffff';
+                this.ctx.strokeText(household.label, ax, ay - 6);
+                this.ctx.fillStyle = isSelected ? '#4a90d9' : '#333';
+                this.ctx.fillText(household.label, ax, ay - 6);
+                this.ctx.restore();
+            }
         });
 
         this.ctx.restore();
@@ -5207,6 +5266,20 @@ class GenogramCanvas {
                 }
             }
 
+        });
+
+        // 1.5 [HH-1] 每位成員符號下方保留一段「固定文字區」，框線不再切到預設位置的姓名。
+        // 守 2026-08-11 靜態外框規格：只用符號座標 + 常數，不讀 getPersonLabelGeometry、
+        // 不受文字位置／寬度影響（文字微調時框線完全不動，verify_hh_lc H7）。
+        // 高度 = 8 + 姓名列；有備註者再加固定兩行備註高度（是否有備註是資料，不是位置）。
+        members.forEach(m => {
+            const nameZone = 8 + this.fontSize + 4;
+            const noteZone = m.notes ? (this.fontSize * 0.8 + 2) * 2 : 0;
+            const bottom = m.y + personRadius + nameZone + noteZone + padding * 0.6;
+            const halfW = personRadius + padding * 0.6;
+            [[m.x - halfW, bottom], [m.x, bottom], [m.x + halfW, bottom]].forEach(([px, py]) => {
+                if (!isNaN(px) && !isNaN(py)) points.push({ x: px, y: py });
+            });
         });
 
         // 2. 加入成員間的連接線點 (User Request: 泡泡要包住連接線)

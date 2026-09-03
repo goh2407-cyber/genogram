@@ -41,11 +41,19 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
     household: `
         <div class="property-form">
             <div class="form-group">
-                <label id="householdMemberCount"></label>
-                <div id="householdMembers" style="padding: 8px 12px; background: var(--bg-light); border-radius: 4px; font-size: 13px; line-height: 1.6;"></div>
+                <label for="householdLabel">名稱（顯示於框上，可空）</label>
+                <input type="text" id="householdLabel" placeholder="例如：外婆家、安置機構、2024 起同住" autocomplete="off">
             </div>
             <div class="form-group">
-                <label for="householdNotes">備註</label>
+                <label id="householdMemberCount"></label>
+                <div id="householdMembers" class="household-members" aria-live="polite"></div>
+                <div class="household-add-row">
+                    <select id="householdAddSelect" aria-label="加入成員"><option value="">加入成員…</option></select>
+                    <button type="button" class="btn-cancel btn-compact" id="householdAddBtn">加入</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="householdNotes">備註（僅面板顯示，不畫在圖上）</label>
                 <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明"></textarea>
             </div>
             <div style="margin-top: 12px;">
@@ -534,6 +542,26 @@ class GenogramApp {
             });
             group.appendChild(sectionElement);
         });
+
+        // [HH-2] 圖形符號（非關係線）：同住框。刻意不用 .legend-group / data-legend-group，
+        // 側欄「三大關係群組」契約（verify_legend_consistency）不受影響。
+        const symbols = document.createElement('section');
+        symbols.className = 'legend-extra';
+        symbols.dataset.legendExtra = 'symbols';
+        const symbolsTitle = document.createElement('h4');
+        symbolsTitle.className = 'legend-group-title';
+        symbolsTitle.textContent = '圖形符號';
+        const householdItem = document.createElement('div');
+        householdItem.className = 'legend-item legend-symbol-item';
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch-household';
+        swatch.setAttribute('aria-hidden', 'true');
+        const swatchLabel = document.createElement('span');
+        swatchLabel.className = 'legend-label';
+        swatchLabel.textContent = '同住框（虛線框內為同住成員）';
+        householdItem.append(swatch, swatchLabel);
+        symbols.append(symbolsTitle, householdItem);
+        container.appendChild(symbols);
     }
 
     setViewOption(key, value, { render = true } = {}) {
@@ -900,14 +928,25 @@ class GenogramApp {
                 statusText = '連接工具：依序點擊兩個人物建立關係';
                 this.connectingFrom = null;
                 break;
-            case 'household':
+            case 'household': {
                 // [UX Fix] 改用點選模式，更直覺好用
-                if (this.selectedPersonIds.length > 0) {
-                    statusText = `已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框`;
-                } else {
-                    statusText = '同住圈選：點選角色加入選取，按 Enter 建立';
+                // [HH-4] 已經多選 ≥2 人 → 直接建框（createHousehold 內會切回選取工具並提示）
+                if (this.selectedPersonIds.length >= 2) {
+                    this.householdSelection = [...this.selectedPersonIds];
+                    this.createHousehold();
+                    return;
                 }
+                // 只選 1 人 → 先放進選取清單，讓使用者繼續點人或按 Enter
+                if (this.selectedPersonIds.length === 0 && this.selectedPersonId) {
+                    this.selectedPersonIds = [this.selectedPersonId];
+                    this.selectedPersonId = null;
+                    this.updatePropertyPanel();
+                }
+                statusText = this.selectedPersonIds.length > 0
+                    ? `已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框（再點人可增減）`
+                    : '同住圈選：點選角色加入選取，按 Enter 建立';
                 break;
+            }
             case 'lifeCircle':
                 statusText = '生活圈繪製：點擊增加頂點，雙擊或 Enter 完成，Esc 取消';
                 break;
@@ -3293,13 +3332,47 @@ class GenogramApp {
             const household = this.households.find(h => h.id === this.selectedHouseholdId);
             if (household) {
                 const root = this.setPropertyPanelTemplate('household');
-                const memberNames = household.ids
-                    .map(id => this.personMap.get(id))
-                    .filter(p => p)
-                    .map(p => p.name || '未命名')
-                    .join('、');
                 root.querySelector('#householdMemberCount').textContent = `同住家庭（${household.ids.length} 位成員）`;
-                root.querySelector('#householdMembers').textContent = memberNames || '（無成員）';
+                // [HH-2] 名稱（畫在框上）
+                root.querySelector('#householdLabel').value = household.label || '';
+                this.bindPropertyEdit(root.querySelector('#householdLabel'), e => {
+                    household.label = e.target.value.trim();
+                });
+                // [HH-3] 成員標籤（✕ 移出）+ 加入下拉；✕ 用 CSS 畫，不進 textContent
+                const membersHost = root.querySelector('#householdMembers');
+                membersHost.replaceChildren();
+                household.ids.forEach(id => {
+                    const p = this.personMap.get(id);
+                    if (!p) return;
+                    const chip = document.createElement('span');
+                    chip.className = 'household-member-chip';
+                    chip.dataset.personId = id;
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'chip-name';
+                    nameEl.textContent = p.name || '未命名';
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'chip-remove';
+                    removeBtn.setAttribute('aria-label', `將 ${p.name || '未命名'} 移出同住框`);
+                    removeBtn.title = '移出同住框';
+                    removeBtn.addEventListener('click', () => this.removeHouseholdMember(household.id, id));
+                    chip.append(nameEl, removeBtn);
+                    membersHost.appendChild(chip);
+                });
+                if (!household.ids.length) membersHost.textContent = '（無成員）';
+                const select = root.querySelector('#householdAddSelect');
+                this.persons.filter(p => !household.ids.includes(p.id)).forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    const age = typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age;
+                    opt.textContent = (p.name || '未命名') + (age !== null && age !== undefined && age !== '' ? `（${age}）` : '');
+                    select.appendChild(opt);
+                });
+                root.querySelector('#householdAddBtn').addEventListener('click', () => {
+                    const pid = select.value;
+                    if (!pid) { this.updateStatus('請先從下拉選單選擇要加入的成員', 'warning'); return; }
+                    this.addHouseholdMember(household.id, pid);
+                });
                 root.querySelector('#householdNotes').value = household.notes || '';
                 this.bindPropertyEdit(root.querySelector('#householdNotes'), e => {
                     household.notes = e.target.value;
@@ -3645,6 +3718,50 @@ class GenogramApp {
     /**
      * 建立同住家庭
      */
+    /**
+     * [HH-3] 從同住框移出一位成員；歸零則刪框。一筆 history。
+     */
+    removeHouseholdMember(householdId, personId) {
+        const idx = this.households.findIndex(h => h.id === householdId);
+        if (idx < 0) return;
+        const household = this.households[idx];
+        if (!household.ids.includes(personId)) return;
+        this.saveState();
+        const remain = household.ids.filter(id => id !== personId);
+        if (remain.length === 0) {
+            this.households = this.households.filter(h => h.id !== householdId);
+            if (this.selectedHouseholdId === householdId) this.selectedHouseholdId = null;
+            this.updateStatus('同住框已無成員，已移除', 'info');
+        } else {
+            this.households[idx] = { ...household, ids: remain };
+            this.updateStatus('已將成員移出同住框', 'info');
+        }
+        this._dataVersion++;
+        this.updatePropertyPanel();
+        this.autoSave();
+        this.render();
+    }
+
+    /**
+     * [HH-3] 把一位成員加入同住框；若已在其他框則先移出（舊框歸零即刪）。一筆 history。
+     */
+    addHouseholdMember(householdId, personId) {
+        const target = this.households.find(h => h.id === householdId);
+        if (!target || !this.personMap.has(personId) || target.ids.includes(personId)) return;
+        this.saveState();
+        this.households = this.households
+            .map(h => h.id === householdId
+                ? { ...h, ids: [...h.ids, personId] }
+                : { ...h, ids: h.ids.filter(id => id !== personId) })
+            .filter(h => h.ids.length > 0);
+        this._dataVersion++;
+        const p = this.personMap.get(personId);
+        this.updateStatus(`已將 ${p.name || '未命名'} 加入同住框`, 'info');
+        this.updatePropertyPanel();
+        this.autoSave();
+        this.render();
+    }
+
     createHousehold() {
         if (this.householdSelection.length < 1) {
             this.updateStatus('請至少選取一位成員', 'error');
