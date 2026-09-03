@@ -86,6 +86,8 @@ class GenogramCanvas {
         this.fontFamily = 'Noto Sans TC, sans-serif';
         this.suppressQuickAddButtons = false;
         this.ageReferenceDate = null; // [2-1] 年齡基準日（null = 今天），由 App.render 注入；匯出同用
+        // [3-3] 螢幕 LOD：目前檢視縮放（App.render 注入；匯出期間固定 1）。低縮放時姓名放大、備註隱藏，只影響螢幕。
+        this.lodScale = 1;
 
         // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
         this._familyRoutePlans = [];
@@ -839,15 +841,29 @@ class GenogramCanvas {
         };
     }
 
+    /** [3-3] 低縮放時姓名放大倍率（螢幕 LOD）：<75% 才放大，最多 1.6 倍；匯出期間 lodScale=1 → 1 */
+    static LOD = Object.freeze({ nameScaleBelow: 0.75, nameMaxFactor: 1.6, hideNotesBelow: 0.5 });
+
+    lodNameFactor() {
+        const s = Number.isFinite(this.lodScale) && this.lodScale > 0 ? this.lodScale : 1;
+        const L = GenogramCanvas.LOD;
+        return s < L.nameScaleBelow ? Math.min(L.nameMaxFactor, L.nameScaleBelow / s) : 1;
+    }
+
     drawPersonText(person, options = {}) {
         const geometry = this.getPersonLabelGeometry(person, options);
         const S = GenogramCanvas.DRAW_PERSON_STYLES;
+        const nameFactor = this.lodNameFactor();
+        const hideNotes = (this.lodScale || 1) < GenogramCanvas.LOD.hideNotesBelow;
         this.ctx.shadowBlur = 0;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         geometry.rows.forEach(row => {
+            if (row.kind === 'note' && hideNotes) return; // [3-3] 縮太小時備註只剩雜訊，螢幕上不畫（匯出不受影響）
             const halo = row.kind === 'name' ? S.nameHalo : S.notesHalo;
-            this.ctx.font = row.font;
+            // [3-3] 姓名字級依 LOD 放大（幾何/命中仍用基準字級；只有螢幕繪製變大）
+            this.ctx.font = row.kind === 'name' && nameFactor !== 1
+                ? `${row.fontSize * nameFactor}px ${this.fontFamily}` : row.font;
             this.ctx.fillStyle = row.kind === 'name' ? '#333' : '#666';
             this.ctx.lineWidth = halo.lineWidth;
             this.ctx.strokeStyle = halo.color;
@@ -1182,6 +1198,7 @@ class GenogramCanvas {
         const category = typeof relationship.getCategory === 'function'
             ? relationship.getCategory() : Relationship.getCategory(relationship.type);
         let marriageRoute = null;
+        let horizontalSegment = null; // [2-4] 裝飾所在的水平線段（供文字避開被夾者）
         if (category === 'marriage') {
             marriageRoute = this.getMarriageRoute(
                 fromPerson, toPerson, relationship, relationships);
@@ -1195,6 +1212,9 @@ class GenogramCanvas {
                 ? Math.atan2(decorationSegment[1].y - decorationSegment[0].y,
                     decorationSegment[1].x - decorationSegment[0].x)
                 : 0;
+            if (decorationSegment && Math.abs(decorationSegment[1].y - decorationSegment[0].y) < 0.5) {
+                horizontalSegment = decorationSegment;
+            }
         } else {
             // 一般模式
             // 單位法向量 (normal vector)
@@ -1229,6 +1249,39 @@ class GenogramCanvas {
         const totalHeight = lines.length * lineHeight;
         const padding = 4;
 
+        // [2-4] 同列直線婚姻線穿過中間人物時，日期文字沿線左右滑到「不壓住任何人物符號」的最近位置。
+        // 只動文字、不動線（使用者 2026-09-02 決定線的走法維持字面直線）。ㄩ 下折（文字在橫桿下方）不套用。
+        const textBelowBar = marriageRoute && marriageRoute.attachmentSegment
+            && marriageRoute.attachmentSegment.start.y > Math.max(fromPerson.y, toPerson.y) + this.personSize / 2;
+        let raiseAboveSymbols = false; // [2-4] 左右都塞不下時的退路：文字抬到被夾者符號頂端之上
+        if (horizontalSegment && !textBelowBar && Array.isArray(persons) && lines.length) {
+            const half = this.personSize / 2 + 3;
+            const boxHalfW = maxWidth / 2 + padding;
+            const boxTop = finalY - 8 - totalHeight - padding;
+            const boxBottom = finalY - 8;
+            const blockers = persons.filter(p => p && p.id !== fromPerson.id && p.id !== toPerson.id
+                && typeof p.x === 'number' && typeof p.y === 'number'
+                && p.y + half > boxTop && p.y - half < boxBottom);
+            if (blockers.length) {
+                const segMinX = Math.min(horizontalSegment[0].x, horizontalSegment[1].x) + boxHalfW + 4;
+                const segMaxX = Math.max(horizontalSegment[0].x, horizontalSegment[1].x) - boxHalfW - 4;
+                const isFree = cx => !blockers.some(p => Math.abs(p.x - cx) < half + boxHalfW);
+                if (!isFree(finalX) && segMaxX >= segMinX) {
+                    let best = null;
+                    for (let shift = 10; shift <= 4000 && best === null; shift += 10) {
+                        const left = finalX - shift, right = finalX + shift;
+                        if (left >= segMinX && isFree(left)) { best = left; break; }
+                        if (right <= segMaxX && isFree(right)) { best = right; break; }
+                        if (left < segMinX && right > segMaxX) break;
+                    }
+                    if (best !== null) finalX = best;
+                    else raiseAboveSymbols = true;
+                } else if (!isFree(finalX)) {
+                    raiseAboveSymbols = true;
+                }
+            }
+        }
+
         // 移動到文字位置並旋轉
         this.ctx.translate(finalX, finalY);
 
@@ -1255,6 +1308,8 @@ class GenogramCanvas {
             > Math.max(fromPerson.y, toPerson.y) + this.personSize / 2) {
             textOffsetY = totalHeight + 8;
         }
+        // [2-4] 退路：抬到被夾者符號頂端之上（符號半徑 + 6）
+        if (raiseAboveSymbols) textOffsetY = -(this.personSize / 2 + 6);
 
         // 畫半透明背景
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
@@ -3291,8 +3346,11 @@ class GenogramCanvas {
         for (const cached of this._familyPlanCache?.values?.() || []) {
             if (cached?.plan) familyPlans.add(cached.plan);
         }
+        const lodScale = this.lodScale;
+        this.lodScale = 1; // [3-3] 匯出永遠用基準字級，不受目前螢幕縮放影響
         return {
             ctx: this.ctx,
+            lodScale,
             viewOptions: this.viewOptions,
             personMap: this.personMap,
             lastPersons: this.lastPersons,
@@ -3319,6 +3377,7 @@ class GenogramCanvas {
             else delete entry.plan.family;
         });
         this.ctx = state.ctx;
+        this.lodScale = state.lodScale; // [3-3]
         this.viewOptions = state.viewOptions;
         this.personMap = state.personMap;
         this.lastPersons = state.lastPersons;
@@ -3603,6 +3662,7 @@ class GenogramCanvas {
         if (header.caseId) parts.push(`案號：${header.caseId}`);
         if (header.date) parts.push(`日期：${header.date}`);
         if (header.author) parts.push(`繪製者：${header.author}`);
+        if (header.deidentified) parts.push('去識別化版本'); // [3-1]
         return parts.join('　　');
     }
 

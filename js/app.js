@@ -302,6 +302,10 @@ class GenogramApp {
         this.lcVertexDrag = null;           // [LC-1] 拖曳中的生活圈頂點 {lc, index}
         this.lcPress = null;                // [LC-2] 生活圈工具按下未放開 {start, moved}
         this.ellipsePreview = null;         // [LC-2] 拖拉橢圓預覽 {start, current}
+        // [3-2] 觸控：手指追蹤（pointerId → client 座標）、雙指縮放狀態、放開一指後忽略剩餘手指直到全部放開
+        this.touchPointers = new Map();
+        this.pinch = null;
+        this.touchIgnoreUntilEmpty = false;
 
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
@@ -424,6 +428,7 @@ class GenogramApp {
             zoomIn: document.getElementById('zoomIn'),
             zoomOut: document.getElementById('zoomOut'),
             fitView: document.getElementById('fitView'),
+            locateIP: document.getElementById('locateIP'), // [3-3] 定位案主
             zoomReset: document.getElementById('zoomReset'),
             canvasContainer: document.getElementById('canvasContainer'),
             labelPositionPopover: document.getElementById('labelPositionPopover'),
@@ -806,6 +811,7 @@ class GenogramApp {
         this.elements.zoomIn.addEventListener('click', () => this.zoomStep(1));
         this.elements.zoomOut.addEventListener('click', () => this.zoomStep(-1));
         this.elements.fitView.addEventListener('click', () => this.fitToView());
+        this.elements.locateIP?.addEventListener('click', () => this.locateIdentifiedPatient()); // [3-3]
         this.elements.zoomReset.addEventListener('click', () => this.resetZoom());
 
         // 性別選擇對話框
@@ -1219,10 +1225,21 @@ class GenogramApp {
         // [Fix] 只處理主鍵（左鍵/觸控/筆）：右鍵、中鍵不該加生活圈頂點或觸發拖曳
         if (typeof e.button === 'number' && e.button > 0) return;
 
+        // [3-2] 觸控：追蹤手指；第二指落下 → 取消單指操作、進入雙指縮放/平移；
+        // 雙指結束後剩餘的手指一律忽略，直到全部放開（避免放開一指瞬間把人物拖走）
+        if (e.pointerType === 'touch') {
+            this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this.touchPointers.size >= 2) {
+                this.beginPinch();
+                return;
+            }
+            if (this.touchIgnoreUntilEmpty) return;
+        }
+
         // Pointer capture for robust drag handling
         if (e.target === this.canvas.canvas) {
             this.activePointerId = e.pointerId;
-            this.canvas.canvas.setPointerCapture(e.pointerId);
+            try { this.canvas.canvas.setPointerCapture(e.pointerId); } catch (_) { /* 合成事件或已失效的 pointer */ }
         }
 
         // [Snap] 每次 pointerdown 都重置拖曳吸附狀態，
@@ -1596,6 +1613,12 @@ class GenogramApp {
      * 處理指標移動 (Pointer Events 統一滑鼠與觸控)
      */
     handlePointerMove(e) {
+        // [3-2] 觸控：更新手指位置；雙指中 → 只做縮放/平移；雙指結束後的殘留手指忽略
+        if (e.pointerType === 'touch' && this.touchPointers.has(e.pointerId)) {
+            this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this.pinch) { this.updatePinch(); return; }
+            if (this.touchIgnoreUntilEmpty) return;
+        }
         if (!this.canvas) return; // 確保 canvas 已初始化
 
         const point = this.canvas.getMousePos(e);
@@ -1825,10 +1848,29 @@ class GenogramApp {
      * 處理指標放開 (Pointer Events 統一滑鼠與觸控)
      */
     handlePointerUp(e) {
-        // 釋放 pointer capture
-        if (this.activePointerId !== null && this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
-            this.canvas.canvas.releasePointerCapture(this.activePointerId);
+        // [3-2] 觸控：手指放開
+        if (e.pointerType === 'touch') {
+            this.touchPointers.delete(e.pointerId);
+            if (this.pinch) {
+                if (this.touchPointers.size < 2) {
+                    this.pinch = null;
+                    this.touchIgnoreUntilEmpty = this.touchPointers.size > 0;
+                    this.autoSave(); // 視角（scale/offset）寫入暫存
+                }
+                return;
+            }
+            if (this.touchIgnoreUntilEmpty) {
+                if (this.touchPointers.size === 0) this.touchIgnoreUntilEmpty = false;
+                return;
+            }
         }
+
+        // 釋放 pointer capture
+        try {
+            if (this.activePointerId !== null && this.canvas.canvas.hasPointerCapture(this.activePointerId)) {
+                this.canvas.canvas.releasePointerCapture(this.activePointerId);
+            }
+        } catch (_) { /* 合成事件或已失效的 pointer */ }
         this.activePointerId = null;
 
         // [LC-2] 生活圈工具放開：拖過 → 依拖曳矩形建橢圓（16 點）；沒拖 → 放第 1 個頂點
@@ -2123,6 +2165,71 @@ class GenogramApp {
     /**
      * 處理滾輪縮放
      */
+    /**
+     * [3-2] 進入雙指縮放：取消任何單指操作（拖曳座標還原到起點、不寫 history），
+     * 記下起始兩指距離、起始縮放、兩指中點對應的世界座標。
+     */
+    beginPinch() {
+        if (this.dragStartSnapshot && this.canvas.isDragging) {
+            const snap = this.dragStartSnapshot;
+            (snap.persons || []).forEach(sp => {
+                const live = this.personMap.get(sp.id);
+                if (live) { live.x = sp.x; live.y = sp.y; }
+            });
+            (snap.lifeCircles || []).forEach(slc => {
+                const live = this.lifeCircles.find(l => l.id === slc.id);
+                if (live && Array.isArray(slc.points)) live.points = slc.points.map(p => ({ x: p.x, y: p.y }));
+            });
+        }
+        this.dragStartSnapshot = null;
+        this.canvas.isDragging = false;
+        this.canvas.isPanning = false;
+        this.canvas.draggedPerson = null;
+        this.canvas.draggedHousehold = null;
+        this.canvas.draggedLifeCircle = null;
+        this.lcVertexDrag = null;
+        this.lcPress = null;
+        this.ellipsePreview = null;
+        this.isBoxSelecting = false;
+        this.dragVirtual = null;
+        this.dragGuides = null;
+        this.canvas.dragGuides = null;
+        if (this.placementSession) this.cancelPlacement();
+
+        const [a, b] = [...this.touchPointers.values()];
+        const rect = this.canvas.canvas.getBoundingClientRect();
+        const mid = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+        this.pinch = {
+            startDist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+            startScale: this.canvas.scale,
+            worldMid: {
+                x: (mid.x - this.canvas.offsetX) / this.canvas.scale,
+                y: (mid.y - this.canvas.offsetY) / this.canvas.scale
+            }
+        };
+        this.touchIgnoreUntilEmpty = true;
+        this.updateStatus('雙指縮放／平移', 'info');
+        this.render();
+    }
+
+    /**
+     * [3-2] 雙指移動：依兩指距離比例縮放（夾在 minScale～maxScale），並讓起始中點對應的世界點跟著目前中點
+     */
+    updatePinch() {
+        if (!this.pinch || this.touchPointers.size < 2) return;
+        const [a, b] = [...this.touchPointers.values()];
+        const rect = this.canvas.canvas.getBoundingClientRect();
+        const mid = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+        const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        const scale = Math.max(this.canvas.minScale,
+            Math.min(this.canvas.maxScale, this.pinch.startScale * dist / this.pinch.startDist));
+        this.canvas.scale = scale;
+        this.canvas.offsetX = mid.x - this.pinch.worldMid.x * scale;
+        this.canvas.offsetY = mid.y - this.pinch.worldMid.y * scale;
+        this.updateZoomDisplay();
+        this.render();
+    }
+
     handleWheel(e) {
         if (e.ctrlKey) {
             e.preventDefault();
@@ -5238,6 +5345,7 @@ class GenogramApp {
         this.canvas.personMap = this.personMap;
         this.canvas.viewOptions = this.viewOptions;
         this.canvas.ageReferenceDate = this.ageReferenceDate; // [2-1]
+        this.canvas.lodScale = this.canvas.scale; // [3-3] 螢幕 LOD（匯出期間 canvas 自行固定為 1）
         if (this.labelEditingPersonId !== this.selectedPersonId
             || !this.personMap.has(this.labelEditingPersonId)) {
             this.labelEditingPersonId = null;
@@ -5355,6 +5463,35 @@ class GenogramApp {
 
         this.updateZoomDisplay();
         this.render();
+    }
+
+    /**
+     * [3-3] 定位案主：縮放回 100%、把案主置中並選取；多位案主時每按一次輪到下一位。
+     */
+    locateIdentifiedPatient() {
+        const ips = this.persons.filter(p => p.isIdentifiedPatient);
+        if (!ips.length) {
+            this.updateStatus('尚未標記案主：選取人物後在屬性面板勾選「案主 / 關注對象」', 'warning',
+                { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert });
+            return;
+        }
+        let index = 0;
+        if (ips.length > 1) {
+            const currentIdx = ips.findIndex(p => p.id === this._lastLocatedIpId);
+            index = (currentIdx + 1) % ips.length;
+        }
+        const target = ips[index];
+        this._lastLocatedIpId = target.id;
+        this.canvas.scale = 1;
+        this.canvas.offsetX = this.canvas.width / 2 - target.x;
+        this.canvas.offsetY = this.canvas.height / 2 - target.y;
+        this.clearAllSelections();
+        this.selectPerson(target.id);
+        this.updateZoomDisplay();
+        this.render();
+        this.updateStatus(ips.length > 1
+            ? `已定位案主 ${index + 1}/${ips.length}：${target.name || '未命名'}（再按一次切到下一位）`
+            : `已定位案主：${target.name || '未命名'}`, 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passive });
     }
 
     fitToView({ onlyIfNeeded = false } = {}) {
@@ -6576,11 +6713,16 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions, header);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap; // [3-1] 關係/家庭線查表用複本；結束後還原
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
@@ -6630,6 +6772,56 @@ class GenogramApp {
         try { localStorage.setItem(GenogramApp.EXPORT_PREFS_KEY, JSON.stringify({ ...this._readExportPrefs(), ...patch })); } catch (_) { /* ignore */ }
     }
 
+    /**
+     * [3-1] 年齡 → 年齡帶（十年一段：0-9、10-19…）；無法解析回 null
+     */
+    static ageBand(age) {
+        const n = typeof age === 'number' ? age
+            : (typeof age === 'string' && age.trim() !== '' ? Number(age) : NaN);
+        if (!Number.isFinite(n) || n < 0) return null;
+        const lo = Math.floor(n / 10) * 10;
+        return `${lo}-${lo + 9}`;
+    }
+
+    /**
+     * [3-1] 匯出用資料集。deidentify=true 時回傳「複本」：姓名→代號（案主／男1／女1…，依 y、x 排序確定）、
+     * 年齡→年齡帶、備註清空、出生/死亡年月移除；id 與座標不變，關係／同住框／生活圈照舊引用。
+     * 磁碟資料與畫面完全不動。
+     */
+    getExportDataset(deidentify = false) {
+        if (!deidentify) return { persons: this.persons, personMap: this.personMap };
+        const order = [...this.persons].sort((a, b) => (a.y - b.y) || (a.x - b.x) || String(a.id).localeCompare(String(b.id)));
+        const ips = order.filter(p => p.isIdentifiedPatient);
+        const counters = { male: 0, female: 0, other: 0 };
+        const prefix = { male: '男', female: '女', other: '人' };
+        const names = new Map();
+        order.forEach(p => {
+            if (p.isIdentifiedPatient) {
+                names.set(p.id, ips.length > 1 ? `案主${ips.indexOf(p) + 1}` : '案主');
+                return;
+            }
+            const g = p.gender === 'male' || p.gender === 'female' ? p.gender : 'other';
+            counters[g] += 1;
+            names.set(p.id, `${prefix[g]}${counters[g]}`);
+        });
+        const persons = this.persons.map(p => {
+            const json = p.toJSON();
+            const band = GenogramApp.ageBand(typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age);
+            delete json.birthDate;
+            delete json.deathDate;
+            return Person.fromJSON({ ...json, name: names.get(p.id), age: band, notes: '' });
+        });
+        return { persons, personMap: new Map(persons.map(p => [p.id, p])) };
+    }
+
+    /**
+     * [3-1] 去識別化的頁首：標題改為中性（標題常含個案姓名）、標記去識別化版本；案號／日期／繪製者保留
+     */
+    deidentifyHeader(header) {
+        if (!header) return header;
+        return { ...header, title: header.title ? '家系圖（去識別化）' : '', deidentified: true };
+    }
+
     static formatLocalDate(d = new Date()) {
         const p = n => String(n).padStart(2, '0');
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -6663,6 +6855,8 @@ class GenogramApp {
         if (dateInput && !dateInput.value) dateInput.value = GenogramApp.formatLocalDate();
         const include = document.getElementById('exportIncludeHeader');
         if (include) include.checked = prefs.includeHeader === true;
+        const deid = document.getElementById('exportDeidentify');
+        if (deid) deid.checked = false; // [3-1] 每次開啟都重新選擇，不記憶
         const fields = document.getElementById('exportHeaderFields');
         if (fields) fields.hidden = !(include && include.checked);
         const pdfFormat = document.getElementById('exportPdfFormat');
@@ -6715,26 +6909,29 @@ class GenogramApp {
         const timestamp = new Date().toISOString().slice(0, 10);
         // [2-2] 頁首與 PDF 紙張設定（不勾「加上頁首」時 header = null，輸出與以往相同）
         const { header, pdfOptions } = this.readExportHeaderSettings();
+        // [3-1] 去識別化（只動輸出）
+        const deidentify = document.getElementById('exportDeidentify')?.checked === true;
+        const deidNote = deidentify ? '（去識別化版本）' : '';
 
         switch (format) {
             case 'png':
-                await this.exportPNG(showNotes, showLegend, scale, header);
-                this.updateStatus('已匯出 PNG 圖片', 'success');
+                await this.exportPNG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 PNG 圖片' + deidNote, 'success');
                 break;
 
             case 'jpeg':
-                await this.exportJPEG(showNotes, showLegend, scale, header);
-                this.updateStatus('已匯出 JPEG 圖片', 'success');
+                await this.exportJPEG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 JPEG 圖片' + deidNote, 'success');
                 break;
 
             case 'svg':
-                await this.exportSVG(showNotes, showLegend, scale, header);
-                this.updateStatus('已匯出 SVG 向量圖', 'success');
+                await this.exportSVG(showNotes, showLegend, scale, header, deidentify);
+                this.updateStatus('已匯出 SVG 向量圖' + deidNote, 'success');
                 break;
 
             case 'pdf':
-                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions);
-                this.updateStatus('已匯出 PDF 文件', 'success');
+                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions, deidentify);
+                this.updateStatus('已匯出 PDF 文件' + deidNote, 'success');
                 break;
 
             case 'json':
@@ -6750,11 +6947,16 @@ class GenogramApp {
     /**
      * 匯出 JPEG
      */
-    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale,
-            this.viewOptions, header);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToJPEG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], 0.92, deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
             this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
@@ -6766,13 +6968,18 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions, header);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
@@ -6799,11 +7006,16 @@ class GenogramApp {
     /**
      * 匯出 PDF
      */
-    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}, deidentify = false) {
         await this.waitForCurrentCanvasFonts();
-        const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-            this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-            this.viewOptions, header);
+        const ds = this.getExportDataset(deidentify);
+        this.canvas.personMap = ds.personMap;
+        let dataUrl = null;
+        try {
+            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+        } finally { this.canvas.personMap = this.personMap; }
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
@@ -6904,9 +7116,16 @@ class GenogramApp {
                 }
             }
 
-            const dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
-                this.viewOptions);
+            // [3-1] 沿用匯出對話框的「去識別化」勾選（複製到 LINE/Word 也常需要去識別）
+            const deidentify = document.getElementById('exportDeidentify')?.checked === true;
+            const ds = this.getExportDataset(deidentify);
+            this.canvas.personMap = ds.personMap;
+            let dataUrl = null;
+            try {
+                dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
+                    this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                    this.viewOptions);
+            } finally { this.canvas.personMap = this.personMap; }
             if (!dataUrl) {
                 this.updateStatus('產生圖片失敗', 'error');
                 return;

@@ -339,6 +339,7 @@ body {
 #genogramCanvas {
     display: block;
     cursor: default;
+    touch-action: none; /* [3-2] 雙指縮放/平移由程式處理，不讓瀏覽器搶手勢 */
 }
 
 .routing-warning {

@@ -236,6 +236,9 @@
                     <button class="zoom-btn" id="fitView" type="button" title="符合全圖" aria-label="符合全圖">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg>
                     </button>
+                    <button class="zoom-btn" id="locateIP" type="button" title="定位案主（回到 100% 並置中；多位案主時輪流）" aria-label="定位案主">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22"/><circle cx="12" cy="12" r="7.5"/></svg>
+                    </button>
                     <button class="zoom-btn" id="zoomReset" title="重置縮放">⊙</button>
                 </div>
                 <!-- [NEW - G 方案] 自動排列預覽確認浮動欄 -->
@@ -564,10 +567,10 @@
                         <li><strong>建立關係：</strong>使用「連接 (C)」先點第一個人再點第二個人，從清單選擇類型；親子線可選 <strong>親生 / 收養 / 寄養</strong>。</li>
                         <li><strong>修改關係：</strong>用「選取 (V)」點關係線，線旁出現鉛筆（改類型）、⇄（對調方向）；右側面板也可直接改類型、子女線型與婚姻線走法。</li>
                         <li><strong>婚姻線走法：</strong>選取婚姻線後，鉛筆旁有「自 / ㄇ / 一 / ㄩ」四個走法鈕；預設自動：同列淨空走直線、中間夾人時下折 ㄩ 避開。</li>
-                        <li><strong>同住框：</strong>用「範圍圈選 (B)」框選成員後按「同住 (H)」；框可整體拖曳。</li>
-                        <li><strong>生活圈：</strong>用「生活圈 (L)」在畫布點頂點，雙擊或 Enter 完成，可命名與換色。</li>
+                        <li><strong>同住框：</strong>用「範圍圈選 (B)」或 Shift 多選成員後按「同住 (H)」即建框；框可整體拖曳。選取框後右側可命名（顯示在框上）、用 ✕ 移出成員或從下拉加入成員；框線會自動保留成員姓名的空間。</li>
+                        <li><strong>生活圈：</strong>用「生活圈 (L)」按住拖曳直接拉出橢圓，或逐點點頂點（Backspace 退回上一點）、雙擊或 Enter 完成。選取後可拖曳頂點改形狀、雙擊邊線新增頂點、Alt＋點頂點刪除；面板可命名、換色、設定名稱位置與說明。</li>
                         <li><strong>檢視：</strong>右側「檢視」頁籤可暫時隱藏姓名、年齡、備註、醫學標記、情感線、同住框、生活圈（不刪資料，匯出圖片會遵循），並可設定「年齡基準日」看某個時間點的年齡。</li>
-                        <li><strong>縮放：</strong>滾輪縮放；右鍵拖曳或空白鍵＋拖曳平移；左下角可「符合全圖」與重設 100%。</li>
+                        <li><strong>縮放：</strong>滾輪縮放；右鍵拖曳或空白鍵＋拖曳平移；左下角可「符合全圖」、重設 100%、「定位案主」（回到 100% 並置中案主，多位時輪流）。平板可雙指縮放與平移。縮得很小時姓名會自動放大、備註暫時隱藏（只影響螢幕，匯出不變）。</li>
                     </ul>
                 </div>
                 <div class="help-section">
@@ -578,7 +581,7 @@
                         <li><strong>另存：</strong>選擇位置與檔名，匯出 JSON 備份；之後 Ctrl+S 會直接更新這個檔案。</li>
                         <li><strong>載入：</strong>按「載入」會先列出最近開過的檔案，點一下即可重開並連結；也可「瀏覽檔案…」。載入大型檔案會自動符合全圖。</li>
                         <li><strong>共用電腦：</strong>「載入」視窗內的「清除本機暫存並關閉個案」會清掉瀏覽器暫存與最近檔案清單，回到空白畫布；不會刪除你另存的 JSON 檔。</li>
-                        <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。「複製圖片」可直接貼到 Word / LINE。</li>
+                        <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。勾「去識別化」可把姓名換成代號（案主／男1／女1…）、年齡換成年齡帶、隱藏備註與關係說明，適合交給督導、法院或教學使用，磁碟檔案不變。「複製圖片」可直接貼到 Word / LINE。</li>
                     </ul>
                 </div>
                 <div class="help-section">
@@ -646,6 +649,11 @@
                             </div>
                             <p class="export-field-hint">標題、案號、繪製者會存進這份個案的 JSON 檔；日期預設今天，不存檔。「複製圖片」不加頁首。</p>
                         </div>
+                        <label style="display: flex; align-items: center; cursor: pointer; margin-top: 10px;">
+                            <input type="checkbox" id="exportDeidentify"
+                                style="margin-right: 8px; width: 18px; height: 18px;">
+                            <span>去識別化（姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性）</span>
+                        </label>
                         <div class="export-pdf-settings">
                             <span style="font-size: 13px; font-weight: 600; color: #555;">PDF 紙張：</span>
                             <select id="exportPdfFormat" aria-label="PDF 紙張大小">
