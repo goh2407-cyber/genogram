@@ -88,6 +88,7 @@ class GenogramCanvas {
         this.ageReferenceDate = null; // [2-1] 年齡基準日（null = 今天），由 App.render 注入；匯出同用
         // [3-3] 螢幕 LOD：目前檢視縮放（App.render 注入；匯出期間固定 1）。低縮放時姓名放大、備註隱藏，只影響螢幕。
         this.lodScale = 1;
+        this._householdBoundsCache = new Map(); // [HH-5c] householdId → { sig, bounds }
 
         // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
         this._familyRoutePlans = [];
@@ -747,6 +748,7 @@ class GenogramCanvas {
         this._familyPlanCache = new Map();
         this._familyRoutePlans = [];
         this._familyRelationshipPaths = new Map();
+        this._householdBoundsCache = new Map(); // [HH-5c]
     }
 
     getPersonLabelGeometry(person, options = {}, placement = undefined) {
@@ -4565,6 +4567,12 @@ class GenogramCanvas {
                     const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
                     const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
 
+                    // [HH-5b] 零長度邊（重複點）會讓 dx/len 變 NaN → arcTo 亂跳；退化為直線
+                    if (len1 < 1e-6 || len2 < 1e-6) {
+                        if (i === 0) this.ctx.moveTo(p1.x, p1.y);
+                        this.ctx.lineTo(p2.x, p2.y);
+                        continue;
+                    }
                     const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
 
                     if (i === 0) {
@@ -4678,6 +4686,8 @@ class GenogramCanvas {
         const corridorHalf = padding * 0.7;
         const exclusion = personRadius + corridorHalf + 6; // 障礙物中心到任何取樣點的最小距離
         const clearance = exclusion + corridorHalf + 4;   // 走廊中心線繞道時與障礙物中心的距離
+        const corridorSegments = []; // [HH-5c] 走廊線段（含繞道）
+        const lineSegments = [];     // [HH-5c] 成員間的關係線段
 
         // 1.5 [HH-5] 成員連通走廊（MST），遇障礙物繞道
         if (members.length >= 2) {
@@ -4689,6 +4699,7 @@ class GenogramCanvas {
                     const p = path[i], q = path[i + 1];
                     const len = Math.hypot(q.x - p.x, q.y - p.y);
                     if (len < 1e-6) continue;
+                    corridorSegments.push([p, q]);
                     const nx = -(q.y - p.y) / len, ny = (q.x - p.x) / len;
                     const steps = Math.max(1, Math.ceil(len / 16));
                     for (let s = 0; s <= steps; s++) {
@@ -4709,6 +4720,7 @@ class GenogramCanvas {
 
             // 只有當雙方都在同一個同住框內時，才把線段包進去
             if (p1 && p2) {
+                lineSegments.push([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
                 // 在線段上取取樣點 (中間 3 個點)
                 const samples = 3;
                 for (let i = 1; i <= samples; i++) {
@@ -4726,26 +4738,13 @@ class GenogramCanvas {
             }
         });
 
-        // [HH-5] 剔除落在障礙物排除半徑內的取樣點（不論來源）
+        // 取樣點（給膠囊外接框與相容用途）：剔除落在障礙物排除半徑內者
         const filtered = obstacles.length
             ? points.filter(pt => !obstacles.some(o => Math.hypot(pt.x - o.x, pt.y - o.y) < exclusion))
             : points;
         const samples = filtered.length >= 3 ? filtered : points;
         if (samples.length === 0) return null;
 
-        // 計算凹包 (Concave Hull) 產生「縮腰」效果；[HH-5] 有障礙物被包住就逐步收緊
-        let hullPoints = this.getConcaveHull(samples, 100);
-        let enclosed = obstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints));
-        for (let concavity = 85; enclosed.length && concavity >= 40; concavity -= 15) {
-            const candidate = this.getConcaveHull(samples, concavity);
-            const stillEnclosed = obstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, candidate));
-            if (stillEnclosed.length <= enclosed.length) {
-                hullPoints = candidate;
-                enclosed = stillEnclosed;
-            }
-        }
-
-        // 計算外接矩形 (用於相容性或快速檢測)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         samples.forEach(p => {
             minX = Math.min(minX, p.x);
@@ -4754,19 +4753,257 @@ class GenogramCanvas {
             maxY = Math.max(maxY, p.y);
         });
 
-        // [HH-5] 膠囊（狗骨頭）會把整個外接框包起來：有障礙物落在外接框內就不允許用膠囊
+        // [HH-5c] 快取：成員座標、附近障礙物、走廊與連線一樣 → 直接沿用上次結果
+        const nearObstacles = obstacles.filter(o =>
+            o.x > minX - exclusion && o.x < maxX + exclusion && o.y > minY - exclusion && o.y < maxY + exclusion);
+        const sig = JSON.stringify([
+            members.map(m => [m.id, Math.round(m.x * 10), Math.round(m.y * 10)]),
+            nearObstacles.map(o => [o.id, Math.round(o.x * 10), Math.round(o.y * 10)]),
+            corridorSegments.map(([p, q]) => [Math.round(p.x), Math.round(p.y), Math.round(q.x), Math.round(q.y)]),
+            lineSegments.map(([p, q]) => [Math.round(p.x), Math.round(p.y), Math.round(q.x), Math.round(q.y)])
+        ]);
+        const cached = this._householdBoundsCache && this._householdBoundsCache.get(household.id);
+        if (cached && cached.sig === sig) return cached.bounds;
+
+        // [HH-5c] 外框 = 光柵化聯集輪廓：成員泡泡 ∪ 走廊帶 ∪ 成員間連線帶 − 障礙物圓（marching squares）。
+        // 由建構保證單一簡單多邊形、不自交、無尖刺；障礙物一律在框外。
+        const shapes = {
+            disks: members.map(m => ({ x: m.x, y: m.y, r: personRadius + padding })),
+            bands: corridorSegments.map(([p, q]) => ({ p, q, half: corridorHalf, isLine: false }))
+                .concat(lineSegments.map(([p, q]) => ({ p, q, half: corridorHalf, isLine: true }))),
+            holes: nearObstacles.map(o => ({ x: o.x, y: o.y, r: exclusion })),
+            cuts: []
+        };
+        let hullPoints = this._rasterOutline(shapes, members);
+        if (!hullPoints) {
+            // 某個障礙物的挖洞把區域切斷（成員不在最大輪廓內）→ 由「最靠近成員」的洞開始逐一放棄，
+            // 直到成員都在同一輪廓內；寧可包到那一個人，也不能少成員
+            const nearest = h => Math.min(...members.map(m => Math.hypot(m.x - h.x, m.y - h.y)));
+            let keep = shapes.holes.slice().sort((h1, h2) => nearest(h1) - nearest(h2));
+            while (!hullPoints && keep.length) {
+                keep = keep.slice(1);
+                hullPoints = this._rasterOutline({ ...shapes, holes: keep }, members);
+            }
+            if (!hullPoints) hullPoints = GenogramCanvas.dedupePath(this.getConcaveHull(samples, 100), true);
+        }
+        // [HH-5e] 非成員被多條帶子圍成「島」（外輪廓仍包住它）時：
+        //   第一階段：拿掉穿過它附近的關係線帶（裝飾用，走廊已保證連通）
+        //   第二階段：仍被包住 → 從它挖一條通道到最近的外框頂點（島變成灣），最多兩輪
+        const distToBand = (o, b) => {
+            const dx = b.q.x - b.p.x, dy = b.q.y - b.p.y, l2 = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((o.x - b.p.x) * dx + (o.y - b.p.y) * dy) / l2));
+            return Math.hypot(o.x - (b.p.x + dx * t), o.y - (b.p.y + dy * t));
+        };
+        let enclosedObs = nearObstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints));
+        let current = shapes;
+        if (enclosedObs.length) {
+            const kept = current.bands.filter(b => !b.isLine || !enclosedObs.some(o => distToBand(o, b) < exclusion + b.half + 4));
+            if (kept.length !== current.bands.length) {
+                const alt = this._rasterOutline({ ...current, bands: kept }, members);
+                if (alt) { current = { ...current, bands: kept }; hullPoints = alt; }
+                enclosedObs = nearObstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints));
+            }
+        }
+        for (let round = 0; round < 2 && enclosedObs.length; round++) {
+            const cuts = enclosedObs.map(o => {
+                let best = hullPoints[0], bestD = Infinity;
+                hullPoints.forEach(v => { const d = Math.hypot(v.x - o.x, v.y - o.y); if (d < bestD) { bestD = d; best = v; } });
+                return { p: { x: o.x, y: o.y }, q: { x: best.x, y: best.y }, half: exclusion * 0.75 };
+            });
+            const alt = this._rasterOutline({ ...current, cuts: (current.cuts || []).concat(cuts) }, members);
+            if (!alt) break; // 通道會切斷成員連通 → 放棄，接受這個人被包住
+            current = { ...current, cuts: (current.cuts || []).concat(cuts) };
+            hullPoints = alt;
+            enclosedObs = nearObstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints));
+        }
+        const enclosed = obstacles.filter(o => GenogramCanvas.pointInPolygon(o.x, o.y, hullPoints)).map(o => o.id);
+
+        // 膠囊（狗骨頭）會把整個外接框包起來：有障礙物落在外接框內就不允許用膠囊
         const dogBoneAllowed = !obstacles.some(o =>
             o.x > minX - 8 && o.x < maxX + 8 && o.y > minY - 8 && o.y < maxY + 8);
 
-        return {
+        const bounds = {
             points: samples,
             hullPoints,
             minX, minY, maxX, maxY,
             width: maxX - minX,
             height: maxY - minY,
             dogBoneAllowed,
-            enclosedObstacles: enclosed.map(o => o.id)
+            enclosedObstacles: enclosed
         };
+        if (this._householdBoundsCache) this._householdBoundsCache.set(household.id, { sig, bounds });
+        return bounds;
+    }
+
+    /**
+     * [HH-5c] 光柵化聯集輪廓。cell 預設 5 世界像素（太大時自動放粗到 ≤ 60k 格）；
+     * 網格外圈多一格保證邊界為「外」；輪廓經 Chaikin 兩次平滑 + 共線簡化。
+     * @returns {Array<{x:number,y:number}>|null} 面積最大的輪廓；成員中心不全在其中時回 null（呼叫端退路）
+     */
+    _rasterOutline(shapes, members) {
+        const pad = 4;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        shapes.disks.forEach(d => {
+            minX = Math.min(minX, d.x - d.r); maxX = Math.max(maxX, d.x + d.r);
+            minY = Math.min(minY, d.y - d.r); maxY = Math.max(maxY, d.y + d.r);
+        });
+        shapes.bands.forEach(b => [b.p, b.q].forEach(pt => {
+            minX = Math.min(minX, pt.x - b.half); maxX = Math.max(maxX, pt.x + b.half);
+            minY = Math.min(minY, pt.y - b.half); maxY = Math.max(maxY, pt.y + b.half);
+        }));
+        if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        let cell = 5;
+        const area = Math.max(1, (maxX - minX) * (maxY - minY));
+        if (area / (cell * cell) > 60000) cell = Math.sqrt(area / 60000);
+        const nx = Math.ceil((maxX - minX) / cell) + 3;
+        const ny = Math.ceil((maxY - minY) / cell) + 3;
+        const ox = minX - cell, oy = minY - cell;
+        const inside = new Uint8Array(nx * ny);
+        const holes = shapes.holes.filter(h => h.x + h.r > minX && h.x - h.r < maxX && h.y + h.r > minY && h.y - h.r < maxY);
+        const prep = b => {
+            const dx = b.q.x - b.p.x, dy = b.q.y - b.p.y;
+            return { ...b, dx, dy, l2: dx * dx + dy * dy, h2: b.half * b.half };
+        };
+        const bands = shapes.bands.map(prep);
+        const cuts = (shapes.cuts || []).map(prep); // [HH-5e] 要挖掉的通道帶
+        const inBand = (x, y, b) => {
+            let t = b.l2 ? ((x - b.p.x) * b.dx + (y - b.p.y) * b.dy) / b.l2 : 0;
+            t = t < 0 ? 0 : (t > 1 ? 1 : t);
+            const fx = b.p.x + b.dx * t, fy = b.p.y + b.dy * t;
+            return (x - fx) ** 2 + (y - fy) ** 2 <= b.h2;
+        };
+        for (let j = 0; j < ny; j++) {
+            const y = oy + j * cell;
+            for (let i = 0; i < nx; i++) {
+                const x = ox + i * cell;
+                let on = false;
+                for (const d of shapes.disks) { if ((x - d.x) ** 2 + (y - d.y) ** 2 <= d.r * d.r) { on = true; break; } }
+                if (!on) {
+                    for (const b of bands) { if (inBand(x, y, b)) { on = true; break; } }
+                }
+                if (on) {
+                    for (const h of holes) { if ((x - h.x) ** 2 + (y - h.y) ** 2 < h.r * h.r) { on = false; break; } }
+                }
+                if (on && cuts.length) {
+                    for (const cb of cuts) { if (inBand(x, y, cb)) { on = false; break; } }
+                }
+                inside[j * nx + i] = on ? 1 : 0;
+            }
+        }
+        const loops = GenogramCanvas.marchingSquares(inside, nx, ny, (gx, gy) => ({ x: ox + gx * cell, y: oy + gy * cell }));
+        if (!loops.length) return null;
+        const area2 = poly => Math.abs(poly.reduce((s, p, k) => {
+            const q = poly[(k + 1) % poly.length];
+            return s + p.x * q.y - q.x * p.y;
+        }, 0)) / 2;
+        loops.sort((a, b) => area2(b) - area2(a));
+        const main = loops[0];
+        if (!members.every(m => GenogramCanvas.pointInPolygon(m.x, m.y, main))) return null;
+        let poly = GenogramCanvas.chaikin(main, 2);
+        poly = GenogramCanvas.simplifyClosed(poly, 6);
+        poly = GenogramCanvas.dedupePath(poly, true);
+        return poly.length >= 3 ? poly : null;
+    }
+
+    /**
+     * 二值 marching squares（邊中點為頂點；鞍點 5/10 固定切法），回傳多個封閉輪廓（世界座標）
+     */
+    static marchingSquares(grid, nx, ny, toWorld) {
+        const segs = [];
+        const mid = {
+            t: (i, j) => [i + 0.5, j], r: (i, j) => [i + 1, j + 0.5],
+            b: (i, j) => [i + 0.5, j + 1], l: (i, j) => [i, j + 0.5]
+        };
+        const table = {
+            1: [['l', 'b']], 2: [['b', 'r']], 3: [['l', 'r']], 4: [['t', 'r']],
+            5: [['l', 't'], ['b', 'r']], 6: [['t', 'b']], 7: [['l', 't']], 8: [['t', 'l']],
+            9: [['t', 'b']], 10: [['t', 'r'], ['l', 'b']], 11: [['t', 'r']], 12: [['l', 'r']],
+            13: [['b', 'r']], 14: [['l', 'b']]
+        };
+        for (let j = 0; j < ny - 1; j++) {
+            for (let i = 0; i < nx - 1; i++) {
+                const tl = grid[j * nx + i], tr = grid[j * nx + i + 1];
+                const br = grid[(j + 1) * nx + i + 1], bl = grid[(j + 1) * nx + i];
+                const idx = (tl << 3) | (tr << 2) | (br << 1) | bl;
+                if (idx === 0 || idx === 15) continue;
+                (table[idx] || []).forEach(([a, b]) => segs.push([mid[a](i, j), mid[b](i, j)]));
+            }
+        }
+        const key = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+        const adj = new Map();
+        segs.forEach((s, si) => {
+            [key(s[0]), key(s[1])].forEach(k => {
+                if (!adj.has(k)) adj.set(k, []);
+                adj.get(k).push(si);
+            });
+        });
+        const used = new Uint8Array(segs.length);
+        const loops = [];
+        for (let s = 0; s < segs.length; s++) {
+            if (used[s]) continue;
+            used[s] = 1;
+            const start = segs[s][0];
+            const loop = [start];
+            let cur = segs[s][1];
+            let guard = 0;
+            while (guard++ < segs.length + 2) {
+                if (key(cur) === key(start)) break;
+                loop.push(cur);
+                const k = key(cur);
+                const next = (adj.get(k) || []).find(si => !used[si]);
+                if (next === undefined) break;
+                used[next] = 1;
+                const seg = segs[next];
+                cur = key(seg[0]) === k ? seg[1] : seg[0];
+            }
+            if (loop.length >= 3) loops.push(loop.map(([gx, gy]) => toWorld(gx, gy)));
+        }
+        return loops;
+    }
+
+    /** Chaikin 角切平滑（封閉多邊形） */
+    static chaikin(points, iterations = 1) {
+        let pts = points;
+        for (let it = 0; it < iterations; it++) {
+            const out = [];
+            for (let i = 0; i < pts.length; i++) {
+                const p = pts[i], q = pts[(i + 1) % pts.length];
+                out.push({ x: 0.75 * p.x + 0.25 * q.x, y: 0.75 * p.y + 0.25 * q.y });
+                out.push({ x: 0.25 * p.x + 0.75 * q.x, y: 0.25 * p.y + 0.75 * q.y });
+            }
+            pts = out;
+        }
+        return pts;
+    }
+
+    /**
+     * 封閉多邊形依弧長等距重取樣（step 世界像素）。取代逐點共線刪除：
+     * 逐點刪除在 Chaikin 後的密集點上會連鎖崩塌成八邊形（每個點都貼近鄰點的弦），重取樣則穩定且保形。
+     */
+    static simplifyClosed(points, step = 6) {
+        if (!Array.isArray(points) || points.length < 3) return points;
+        const n = points.length;
+        const out = [points[0]];
+        let acc = 0;
+        for (let i = 0; i < n; i++) {
+            const a = points[i], b = points[(i + 1) % n];
+            const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+            if (segLen === 0) continue;
+            let pos = step - acc; // 下一個取樣點距 a 的距離
+            while (pos <= segLen) {
+                const t = pos / segLen;
+                out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+                pos += step;
+            }
+            acc = segLen - (pos - step);
+        }
+        // 最後一點若貼近起點就去掉（封閉）
+        if (out.length > 3) {
+            const f = out[0], l = out[out.length - 1];
+            if (Math.hypot(f.x - l.x, f.y - l.y) < step * 0.5) out.pop();
+        }
+        return out.length >= 3 ? out : points;
     }
 
     /**
@@ -4794,26 +5031,32 @@ class GenogramCanvas {
     }
 
     /**
-     * [HH-5] 走廊 A→B 遇到障礙物（距線段 < clearance）時，在障礙物旁插入繞道點；遞迴處理兩段，最多 4 層。
-     * 繞道方向：障礙物在線段哪一側就往另一側推；障礙物恰好在線上時往成員質心那側。
+     * [HH-5] 走廊 A→B 遇到障礙物（距線段 < clearance）時，以「前、旁、後」三個繞道點繞過障礙物；
+     * 同一障礙物只處理一次（skipIds），兩側子段只再檢查其他障礙物，最多 3 層 → 不會在同一個障礙物旁反覆插點。
+     * 端點本身就貼著障礙物（成員與非成員相鄰、距離 < clearance）時不繞，交給取樣排除半徑處理。
+     * 繞道方向：障礙物在線段哪一側就往另一側推；恰好在線上時往成員質心那側。
      * 純函數、確定性（同輸入同輸出），供 draw / hit-test / 匯出共用。
      */
-    _routeAroundObstacles(a, b, obstacles, clearance, centroid, depth) {
-        if (depth > 4 || !obstacles.length) return [a, b];
+    _routeAroundObstacles(a, b, obstacles, clearance, centroid, depth, skipIds = new Set()) {
+        if (depth > 3 || !obstacles.length) return [a, b];
         const dx = b.x - a.x, dy = b.y - a.y;
         const len2 = dx * dx + dy * dy;
-        if (len2 < 1e-6) return [a, b];
+        if (len2 < 1) return [a, b];
         let hit = null;
         obstacles.forEach(o => {
+            if (skipIds.has(o.id)) return;
             const t = ((o.x - a.x) * dx + (o.y - a.y) * dy) / len2;
-            if (t <= 0.02 || t >= 0.98) return; // 端點附近（成員本身）不算
+            if (t <= 0 || t >= 1) return;
             const fx = a.x + dx * t, fy = a.y + dy * t;
             const d = Math.hypot(o.x - fx, o.y - fy);
-            if (d < clearance && (!hit || t < hit.t)) hit = { o, t, fx, fy, d };
+            if (d >= clearance) return;
+            // 不因障礙物貼近端點而放棄繞道：同一障礙物只處理一次（skipIds）已足以防止無限遞迴
+            if (!hit || t < hit.t) hit = { o, t, fx, fy, d };
         });
         if (!hit) return [a, b];
         const len = Math.sqrt(len2);
-        let nx = -dy / len, ny = dx / len; // 單位法向
+        const ux = dx / len, uy = dy / len;
+        let nx = -uy, ny = ux; // 單位法向
         const side = (hit.fx - hit.o.x) * nx + (hit.fy - hit.o.y) * ny; // 線段在障礙物的哪一側
         if (Math.abs(side) < 1e-6) {
             const toC = (centroid.x - hit.o.x) * nx + (centroid.y - hit.o.y) * ny;
@@ -4821,10 +5064,31 @@ class GenogramCanvas {
         } else if (side < 0) {
             nx = -nx; ny = -ny;
         }
-        const w = { x: hit.o.x + nx * clearance, y: hit.o.y + ny * clearance };
-        const left = this._routeAroundObstacles(a, w, obstacles, clearance, centroid, depth + 1);
-        const right = this._routeAroundObstacles(w, b, obstacles, clearance, centroid, depth + 1);
-        return left.slice(0, -1).concat(right);
+        const o = hit.o;
+        const p1 = { x: o.x - ux * clearance + nx * clearance, y: o.y - uy * clearance + ny * clearance };
+        const p2 = { x: o.x + nx * clearance, y: o.y + ny * clearance };
+        const p3 = { x: o.x + ux * clearance + nx * clearance, y: o.y + uy * clearance + ny * clearance };
+        const skip = new Set(skipIds);
+        skip.add(o.id);
+        const head = this._routeAroundObstacles(a, p1, obstacles, clearance, centroid, depth + 1, skip);
+        const tail = this._routeAroundObstacles(p3, b, obstacles, clearance, centroid, depth + 1, skip);
+        return GenogramCanvas.dedupePath(head.concat([p2], tail));
+    }
+
+    /** 連續重複（距離 < 0.5）的點只留一個；封閉多邊形時也比對頭尾 */
+    static dedupePath(points, closed = false) {
+        const out = [];
+        for (const p of points) {
+            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+            const last = out[out.length - 1];
+            if (last && Math.hypot(last.x - p.x, last.y - p.y) < 0.5) continue;
+            out.push(p);
+        }
+        if (closed && out.length > 1) {
+            const f = out[0], l = out[out.length - 1];
+            if (Math.hypot(f.x - l.x, f.y - l.y) < 0.5) out.pop();
+        }
+        return out;
     }
 
     /** 射線法：點是否在多邊形內 */

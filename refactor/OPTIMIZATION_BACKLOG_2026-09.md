@@ -183,11 +183,18 @@
 - 狀態：完成 2026-09-03（commit 9696621 修正）
 
 ### HH-5. 同住框自動繞開非成員 ✅
-- [x] 非成員 = 障礙物：成員以最小生成樹連通、走廊遇障礙物繞道（`_routeAroundObstacles`，純函數、確定性）；所有取樣點剔除障礙物排除半徑內者；凹包由 100 逐步收緊到 40 直到沒有障礙物中心在框內；外接框內有障礙物時不用膠囊
-- [x] draw / hit-test / 匯出共用 `getHouseholdBounds`（回傳 `dogBoneAllowed`、`enclosedObstacles`）
-- 起因：使用者截圖「居草屯」不在同住裡卻被框到，要手動微調人物位置才會繞過
-- 驗證：新測試 `verify_household_obstacle.js`；`verify_household_edit.js` HH-5 兩項；`verify_hh_lc` H1–H7 綠
+- [x] 第一版（凹包 + 收緊）在模糊測試 63 組版面中出現 5 組自交、2 組繪圖尖刺（使用者截圖亦見尖刺）→ **改為光柵化聯集輪廓**：
+  成員泡泡（r=符號半徑+25）∪ 成員最小生成樹走廊（遇障礙物三點繞道）∪ 成員間關係線帶 − 非成員圓（排除半徑 48.5），
+  cell=5 px 光柵 → marching squares 取最大輪廓 → Chaikin 平滑兩次 → 弧長 6px 重取樣。由建構保證單一簡單多邊形、不自交、無尖刺。
+- [x] 非成員被帶子圍成「島」時：先拿掉穿過它附近的關係線帶；仍被包住就從它挖一條通道到最近外框（島→灣）；通道會切斷成員連通時放棄（寧可包到人不能少成員）
+- [x] 障礙物挖洞切斷成員連通時，由最靠近成員的洞開始逐一放棄
+- [x] 簽章快取（成員座標／附近障礙物／走廊／連線一致就沿用）；外接框內有障礙物時不用膠囊
+- [x] draw / hit-test / 匯出共用 `getHouseholdBounds`（回傳 `dogBoneAllowed`、`enclosedObstacles`）；凹包只留作最後退路
+- 起因：使用者截圖「居草屯」不在同住裡卻被框到，要手動微調人物位置才會繞過；第一版又在「太近」時出現尖刺
+- 驗證：`verify_household_fuzz.js`（63 組隨機版面 + 使用者版面×3 間距：無自交／尖刺／非有限值／零長度、成員在內、非成員在外 全 0 違規）、
+  `verify_household_obstacle.js` 6/6、`verify_household_edit.js` 16/16、`verify_hh_lc` H1–H7 綠
 - 狀態：完成 2026-09-03
+- 可調參數：走廊半寬 `padding*0.7`（目前 17.5，想要框更「胖」可加大，但更容易碰到非成員）
 
 ### LC-1. 生活圈頂點可編輯
 - [x] 選取狀態下拖單一頂點；雙擊邊線插入頂點；Alt+點頂點刪除（至少保留 3 點）；皆進 history
@@ -233,3 +240,4 @@
 | 2026-09-03 | 3-2 雙指縮放/平移 | verify_pinch 9/9 | touch-action none |
 | 2026-09-03 | 3-1 去識別化匯出 | verify_deidentify 11/11 | 只動輸出 |
 | 2026-09-03 | 3-4 拆檔第一階段 | run_all 全綠、golden 16/16 | canvas-export.js、property-panel-templates.js |
+| 2026-09-03 | HH-5 同住框繞開非成員（光柵輪廓） | household_fuzz 63 組零硬性違規；obstacle 6/6；hh_lc 綠 | 取代凹包；HH-1 撤回 |
