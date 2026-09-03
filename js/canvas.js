@@ -6356,19 +6356,20 @@ class GenogramCanvas {
         this.ctx.stroke(path);
         this.ctx.setLineDash(DASH_PATTERNS.solid);
 
-        // [New] 標籤：畫在最上緣頂點上方（白色 halo 確保可讀；原本 label 從未顯示）
+        // [New] 標籤（白色 halo 確保可讀）。[LC-3] 位置可選：top（預設，最上緣頂點上方）/ center（質心）/ bottom（最下緣頂點下方）
         if (lc.label) {
-            let top = lc.points[0];
-            lc.points.forEach(p => { if (p.y < top.y) top = p; });
+            const anchor = GenogramCanvas.lifeCircleLabelAnchor(lc);
             this.ctx.save();
+            this.ctx.setLineDash(DASH_PATTERNS.solid);
             this.ctx.font = `600 13px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'bottom';
+            this.ctx.textBaseline = anchor.baseline;
             this.ctx.lineWidth = 4;
+            this.ctx.lineJoin = 'round';
             this.ctx.strokeStyle = '#ffffff';
-            this.ctx.strokeText(lc.label, top.x, top.y - 6);
+            this.ctx.strokeText(lc.label, anchor.x, anchor.y);
             this.ctx.fillStyle = this.lifeCircleStrokeColor(fillColor, 1);
-            this.ctx.fillText(lc.label, top.x, top.y - 6);
+            this.ctx.fillText(lc.label, anchor.x, anchor.y);
             this.ctx.restore();
         }
 
@@ -6386,6 +6387,48 @@ class GenogramCanvas {
     /**
      * 由生活圈半透明填色推導邊框/標籤色（同 RGB、較高 alpha）
      */
+    /**
+     * [LC-3] 生活圈名稱錨點（螢幕與匯出共用）
+     * @returns {{x:number,y:number,baseline:CanvasTextBaseline}}
+     */
+    static lifeCircleLabelAnchor(lc) {
+        const pts = lc.points || [];
+        const mode = lc.labelPosition === 'center' || lc.labelPosition === 'bottom' ? lc.labelPosition : 'top';
+        if (mode === 'center') {
+            const n = pts.length || 1;
+            return { x: pts.reduce((s, p) => s + p.x, 0) / n, y: pts.reduce((s, p) => s + p.y, 0) / n, baseline: 'middle' };
+        }
+        if (mode === 'bottom') {
+            let bottom = pts[0];
+            pts.forEach(p => { if (p.y > bottom.y) bottom = p; });
+            return { x: bottom.x, y: bottom.y + 6, baseline: 'top' };
+        }
+        let top = pts[0];
+        pts.forEach(p => { if (p.y < top.y) top = p; });
+        return { x: top.x, y: top.y - 6, baseline: 'bottom' };
+    }
+
+    /**
+     * [LC-2] 拖拉橢圓預覽（生活圈工具按住拖曳時）
+     */
+    drawEllipsePreview(start, current) {
+        if (!start || !current) return;
+        this.ctx.save();
+        this.applyTransform();
+        const cx = (start.x + current.x) / 2, cy = (start.y + current.y) / 2;
+        const rx = Math.max(20, Math.abs(current.x - start.x) / 2), ry = Math.max(20, Math.abs(current.y - start.y) / 2);
+        this.ctx.beginPath();
+        this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(74, 144, 226, 0.08)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#4a90d9';
+        this.ctx.lineWidth = 2 * this.hudUnit();
+        this.ctx.setLineDash(DASH_PATTERNS.selection);
+        this.ctx.stroke();
+        this.ctx.setLineDash(DASH_PATTERNS.solid);
+        this.ctx.restore();
+    }
+
     lifeCircleStrokeColor(fillColor, alpha = 0.65) {
         const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(fillColor || '');
         if (m) {

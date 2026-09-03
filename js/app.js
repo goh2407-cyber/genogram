@@ -66,10 +66,25 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <label for="lifeCircleLabel">生活圈名稱（顯示於圈上）</label>
                 <input type="text" id="lifeCircleLabel" placeholder="例如：學校、教會、社區據點">
             </div>
+            <div class="form-group-row">
+                <div class="form-group">
+                    <label for="lifeCircleLabelPosition">名稱位置</label>
+                    <select id="lifeCircleLabelPosition">
+                        <option value="top">頂部（圈外上方）</option>
+                        <option value="center">中央</option>
+                        <option value="bottom">底部（圈外下方）</option>
+                    </select>
+                </div>
+            </div>
             <div class="form-group">
                 <label>顏色</label>
                 <div id="lifeCircleSwatches" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
             </div>
+            <div class="form-group">
+                <label for="lifeCircleNotes">說明（僅面板顯示，不畫在圖上）</label>
+                <textarea id="lifeCircleNotes" rows="2" placeholder="例如：每週三下午課後照顧；聯絡人 ○○老師"></textarea>
+            </div>
+            <p class="property-help">選取後可拖曳頂點改形狀；雙擊邊線新增頂點；Alt＋點頂點刪除。</p>
             <div style="margin-top: 12px;">
                 <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
             </div>
@@ -284,6 +299,9 @@ class GenogramApp {
         this.currentLifeCirclePoints = [];  // 目前繪製中的頂點
         this.selectedLifeCircleId = null;   // 選中的生活圈 ID
         this.lifeCircleMousePos = null;     // 繪製時的滑鼠位置（用於預覽線）
+        this.lcVertexDrag = null;           // [LC-1] 拖曳中的生活圈頂點 {lc, index}
+        this.lcPress = null;                // [LC-2] 生活圈工具按下未放開 {start, moved}
+        this.ellipsePreview = null;         // [LC-2] 拖拉橢圓預覽 {start, current}
 
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
@@ -986,6 +1004,9 @@ class GenogramApp {
             this.canvas.draggedHousehold = null;
             this.canvas.draggedLifeCircle = null; // [Fix] 漏清會劫持下一次拖曳
         }
+        this.lcVertexDrag = null;   // [LC-1]
+        this.lcPress = null;        // [LC-2]
+        this.ellipsePreview = null; // [LC-2]
 
         // 清理框選狀態
         this.isBoxSelecting = false;
@@ -1234,10 +1255,11 @@ class GenogramApp {
         // 生活圈繪製模式
         if (this.currentTool === 'lifeCircle') {
             if (!this.isDrawingLifeCircle) {
-                // 開始新的生活圈繪製
-                this.isDrawingLifeCircle = true;
-                this.currentLifeCirclePoints = [point];
-                this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成');
+                // [LC-2] 先記下按下點：放開時未移動 → 第 1 個頂點；按住拖曳 → 直接拉出橢圓
+                this.lcPress = { start: point, moved: false };
+                this.updateStatus('點一下放第 1 個頂點；或按住拖曳直接拉出橢圓');
+                this.render();
+                return;
             } else {
                 // 增加頂點
                 this.currentLifeCirclePoints.push(point);
@@ -1462,6 +1484,32 @@ class GenogramApp {
             }
 
             // 3. 檢查是否點擊到生活圈「邊界帶」
+            // [LC-1] 已選取的生活圈：點頂點 → 拖曳該頂點；Alt+點頂點 → 刪除（至少保留 3 點）
+            if (this.selectedLifeCircleId && this.viewOptions.showLifeCircles) {
+                const selLc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+                const vi = selLc ? this.getLifeCircleVertexAt(selLc, point.x, point.y) : -1;
+                if (selLc && vi >= 0) {
+                    if (e.altKey) {
+                        if (selLc.points.length <= 3) {
+                            this.updateStatus('生活圈至少需要 3 個頂點，無法再刪除', 'warning');
+                            return;
+                        }
+                        this.saveState();
+                        selLc.points.splice(vi, 1);
+                        this.updateStatus('已刪除頂點', 'info');
+                        this.autoSave();
+                        this.render();
+                        return;
+                    }
+                    this.dragStartSnapshot = this.getState();
+                    this.canvas.isDragging = true;
+                    this.canvas.dragStart = point;
+                    this.lcVertexDrag = { lc: selLc, index: vi };
+                    this.updateStatus('拖曳調整頂點；Alt+點頂點可刪除、雙擊邊線可新增頂點', 'info');
+                    return;
+                }
+            }
+
             // [Fix] 生活圈改邊界帶命中且優先於同住框：圈邊框壓在框內部時仍點得到圈，
             // 圈內空白則讓給同住框 / 畫布平移
             const clickedLifeCircle = this.getLifeCircleAt(point.x, point.y);
@@ -1558,6 +1606,17 @@ class GenogramApp {
             return;
         }
 
+        // [LC-2] 生活圈工具按住拖曳 → 橢圓預覽（超過 8 螢幕像素才算拖）
+        if (this.currentTool === 'lifeCircle' && this.lcPress) {
+            const dist = Math.hypot(point.x - this.lcPress.start.x, point.y - this.lcPress.start.y);
+            if (this.lcPress.moved || dist > 8 / ((this.canvas && this.canvas.scale) || 1)) {
+                this.lcPress.moved = true;
+                this.ellipsePreview = { start: this.lcPress.start, current: point };
+                this.render();
+            }
+            return;
+        }
+
         // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
         if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
             this.lifeCircleMousePos = point;
@@ -1598,6 +1657,17 @@ class GenogramApp {
         if (this.canvas.isDragging) {
             let dx = point.x - this.canvas.dragStart.x;
             let dy = point.y - this.canvas.dragStart.y;
+
+            // [LC-1] 生活圈單一頂點拖曳
+            if (this.lcVertexDrag) {
+                const { lc, index } = this.lcVertexDrag;
+                if (lc.points[index]) {
+                    lc.points[index].x = point.x;
+                    lc.points[index].y = point.y;
+                }
+                this.render();
+                return;
+            }
 
             // 生活圈拖曳
             if (this.canvas.draggedLifeCircle) {
@@ -1760,6 +1830,25 @@ class GenogramApp {
             this.canvas.canvas.releasePointerCapture(this.activePointerId);
         }
         this.activePointerId = null;
+
+        // [LC-2] 生活圈工具放開：拖過 → 依拖曳矩形建橢圓（16 點）；沒拖 → 放第 1 個頂點
+        if (this.currentTool === 'lifeCircle' && this.lcPress) {
+            const press = this.lcPress;
+            const preview = this.ellipsePreview;
+            this.lcPress = null;
+            this.ellipsePreview = null;
+            if (press.moved && preview) {
+                this.finishLifeCircle(GenogramApp.ellipsePoints(press.start, preview.current, 16));
+            } else {
+                this.isDrawingLifeCircle = true;
+                this.currentLifeCirclePoints = [press.start];
+                this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成；Backspace 退回上一點');
+                this.render();
+            }
+            return;
+        }
+        // [LC-1] 頂點拖曳結束：清除頂點狀態，後面走一般拖曳 commit（dragStartSnapshot → history）
+        if (this.lcVertexDrag) this.lcVertexDrag = null;
 
         if (this.isBoxSelecting) {
             this.isBoxSelecting = false;
@@ -2059,6 +2148,23 @@ class GenogramApp {
         }
 
         const point = this.canvas.getMousePos(e);
+
+        // [LC-1] 雙擊已選取生活圈的邊線（非頂點）→ 在最近的邊插入一個頂點
+        if (this.currentTool === 'select' && this.selectedLifeCircleId && this.viewOptions.showLifeCircles) {
+            const selLc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+            const tol = 12 / ((this.canvas && this.canvas.scale) || 1);
+            if (selLc && this.getLifeCircleVertexAt(selLc, point.x, point.y) < 0
+                && this.canvas.isPointOnLifeCircleEdge(selLc, point.x, point.y, tol)) {
+                const seg = GenogramApp.nearestSegmentIndex(selLc.points, point);
+                this.saveState();
+                selLc.points.splice(seg + 1, 0, { x: point.x, y: point.y });
+                this.updateStatus('已新增頂點，可直接拖曳調整', 'info');
+                this.autoSave();
+                this.render();
+                return;
+            }
+        }
+
         const person = this.getPersonAt(point.x, point.y);
         if (person) {
             this.selectPerson(person.id);
@@ -2192,6 +2298,17 @@ class GenogramApp {
             case 'Delete':
             case 'Backspace':
                 e.preventDefault();
+                // [LC-2] 生活圈繪製中：退回上一個頂點（沒有頂點了就取消繪製），不刪任何物件
+                if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
+                    this.currentLifeCirclePoints.pop();
+                    if (this.currentLifeCirclePoints.length === 0) {
+                        this.cancelLifeCircle();
+                    } else {
+                        this.updateStatus(`已退回一個頂點，剩 ${this.currentLifeCirclePoints.length} 個`, 'info');
+                        this.render();
+                    }
+                    break;
+                }
                 this.deleteSelected();
                 break;
             case 'Escape':
@@ -3389,6 +3506,18 @@ class GenogramApp {
             if (lc) {
                 const root = this.setPropertyPanelTemplate('lifeCircle');
                 root.querySelector('#lifeCircleLabel').value = lc.label || '';
+                // [LC-3] 名稱位置 / 說明
+                const posSel = root.querySelector('#lifeCircleLabelPosition');
+                posSel.value = ['top', 'center', 'bottom'].includes(lc.labelPosition) ? lc.labelPosition : 'top';
+                this.bindPropertyEdit(posSel, e => {
+                    lc.labelPosition = e.target.value === 'top' ? undefined : e.target.value;
+                    if (lc.labelPosition === undefined) delete lc.labelPosition; // 預設值不寫入 JSON
+                }, { eventName: 'change', commitOnChange: true });
+                const notesEl = root.querySelector('#lifeCircleNotes');
+                notesEl.value = lc.notes || '';
+                this.bindPropertyEdit(notesEl, e => {
+                    if (e.target.value) lc.notes = e.target.value; else delete lc.notes;
+                }, { render: false });
                 const swatchHost = root.querySelector('#lifeCircleSwatches');
                 GenogramApp.LIFE_CIRCLE_COLORS.forEach(color => {
                     const button = document.createElement('button');
@@ -3810,10 +3939,11 @@ class GenogramApp {
     /**
      * 完成生活圈繪製
      */
-    finishLifeCircle() {
+    finishLifeCircle(presetPoints = null) {
         // [Fix] 去除相鄰重複頂點（雙擊完成前的兩次 pointerdown 會塞入同一點，
         // Catmull-Rom 遇重複點會在收尾處畫出打結小圈）；頭尾也比對一次
-        let pts = this.currentLifeCirclePoints.filter((p, i, a) =>
+        // [LC-2] presetPoints（拖拉橢圓）直接採用
+        let pts = (presetPoints || this.currentLifeCirclePoints).filter((p, i, a) =>
             i === 0 || Math.hypot(p.x - a[i - 1].x, p.y - a[i - 1].y) > 8
         );
         if (pts.length >= 2) {
@@ -3861,6 +3991,8 @@ class GenogramApp {
         this.isDrawingLifeCircle = false;
         this.currentLifeCirclePoints = [];
         this.lifeCircleMousePos = null;
+        this.lcPress = null;
+        this.ellipsePreview = null;
         this.updateStatus('生活圈繪製已取消', 'info');
         this.render();
     }
@@ -3868,6 +4000,50 @@ class GenogramApp {
     /**
      * 獲取下一個生活圈的顏色
      */
+    /**
+     * [LC-2] 以拖曳矩形（對角兩點）產生 n 點橢圓多邊形；最小半徑 20，避免退化
+     */
+    static ellipsePoints(a, b, n = 16) {
+        const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        const rx = Math.max(20, Math.abs(b.x - a.x) / 2), ry = Math.max(20, Math.abs(b.y - a.y) / 2);
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const t = (i / n) * Math.PI * 2;
+            pts.push({ x: Math.round((cx + rx * Math.cos(t)) * 100) / 100, y: Math.round((cy + ry * Math.sin(t)) * 100) / 100 });
+        }
+        return pts;
+    }
+
+    /**
+     * [LC-1] 點到多邊形哪一條邊最近（回傳起點索引 i，邊為 points[i]→points[(i+1)%n]）
+     */
+    static nearestSegmentIndex(points, pt) {
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < points.length; i++) {
+            const p = points[i], q = points[(i + 1) % points.length];
+            const dx = q.x - p.x, dy = q.y - p.y;
+            const len2 = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / len2));
+            const d = Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+    }
+
+    /**
+     * [LC-1] 點是否落在生活圈某頂點上（螢幕 12px 容差）；回傳索引或 -1
+     */
+    getLifeCircleVertexAt(lc, x, y) {
+        if (!lc || !Array.isArray(lc.points)) return -1;
+        const tol = 12 / ((this.canvas && this.canvas.scale) || 1);
+        let best = -1, bestD = Infinity;
+        lc.points.forEach((p, i) => {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d <= tol && d < bestD) { bestD = d; best = i; }
+        });
+        return best;
+    }
+
     getNextLifeCircleColor() {
         // [Fix] 改取「第一個未被使用」的顏色：原本以 length 取模，刪除後再建會與既有圈撞色
         const colors = GenogramApp.LIFE_CIRCLE_COLORS;
@@ -5102,6 +5278,10 @@ class GenogramApp {
         // 繪製生活圈預覽（正在繪製中，維持最上層）
         if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
             this.canvas.drawLifeCirclePreview(this.currentLifeCirclePoints, this.lifeCircleMousePos);
+        }
+        // [LC-2] 拖拉橢圓預覽
+        if (this.ellipsePreview) {
+            this.canvas.drawEllipsePreview(this.ellipsePreview.start, this.ellipsePreview.current);
         }
     }
 
