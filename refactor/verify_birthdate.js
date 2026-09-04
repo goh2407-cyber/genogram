@@ -180,6 +180,30 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
     });
     check('Person JSON 含 birthDate，不含基準日', persisted.json.birthDate === '1990-01' && !('ageReferenceDate' in persisted.json), JSON.stringify(persisted.personKeys));
 
+    // ---- Panel layout: two-column rows must never force a horizontal scrollbar (user report 2026-09-03) ----
+    await page.evaluate(() => {
+        const tab = document.querySelector('[data-inspector-tab="properties"], .inspector-tab[aria-controls="propertyPanel"], #propertiesTab');
+        if (tab) tab.click(); // earlier steps switched to the view tab; measure the properties tab
+        const app = window.app; const p = app.personMap.get(window.__pid); p.isDeceased = true; app.selectPerson(p.id); app.updatePropertyPanel();
+    });
+    const measureFit = () => page.evaluate(() => {
+        const panel = document.getElementById('propertyContent');
+        const inspector = document.getElementById('inspectorPanel');
+        const pr = panel.getBoundingClientRect();
+        const ids = ['personAge', 'personGender', 'personBirthDate', 'personDeathDate'];
+        const rects = ids.map(id => document.getElementById(id).getBoundingClientRect());
+        return { panelW: Math.round(pr.width), overflowPx: Math.round(Math.max(...rects.map(r => r.right)) - pr.right), leftOk: Math.min(...rects.map(r => r.left)) >= pr.left - 1,
+                 noHScroll: panel.scrollWidth <= panel.clientWidth + 1 && inspector.scrollWidth <= inspector.clientWidth + 1 };
+    });
+    const fits = {};
+    for (const w of [1440, 1200]) { // below ~1100 the inspector auto-collapses to a 52px rail, nothing to measure
+        await page.setViewportSize({ width: w, height: 800 });
+        await page.waitForTimeout(150);
+        fits[w] = await measureFit();
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    Object.entries(fits).forEach(([w, f]) => check(`panel fields fit at viewport ${w} (no horizontal scroll, edges inside panel)`, f.panelW > 0 && f.overflowPx <= 0 && f.noHScroll && f.leftOk, JSON.stringify(f)));
+
     await browser.close();
     const failed = results.filter(x => !x.ok);
     results.forEach(x => console.log(`${x.ok ? 'PASS' : 'FAIL'} | ${x.name}${x.ok ? '' : ' — ' + x.detail}`));

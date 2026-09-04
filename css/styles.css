@@ -721,11 +721,21 @@ body {
 
 .form-group-row {
     display: flex;
+    flex-wrap: wrap; /* panel too narrow for two columns -> stack instead of horizontal scroll */
     gap: 12px;
 }
 
 .form-group-row .form-group {
-    flex: 1;
+    flex: 1 1 130px;
+    min-width: 0; /* let inputs shrink below their intrinsic width */
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .label-selection-outline {
