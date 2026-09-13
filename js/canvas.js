@@ -3400,15 +3400,25 @@ class GenogramCanvas {
         };
     }
 
-    getLegendRenderSections(viewOptions = {}) {
+    getLegendRenderSections(viewOptions = {}, usedTypes = null) {
         const view = this.normalizeViewOptions(viewOptions);
-        return Relationship.getLegendSections({
+        const sections = Relationship.getLegendSections({
             showEmotional: view.showEmotionalRelationships
         }).map(section => ({
             ...section,
             title: section.exportTitle,
-            items: section.entries.map(entry => this.getLegendRenderItem(entry)).filter(Boolean)
-        }));
+            items: section.entries.filter(entry => usedTypes === null || usedTypes.has(
+                entry.type === 'parent-child' ? `parent-child:${entry.linkType}` : entry.type))
+                .map(entry => this.getLegendRenderItem(entry)).filter(Boolean)
+        })).filter(section => section.items.length > 0);
+        if (usedTypes === null || usedTypes.has('household')) {
+            const rows = column => sections.filter(section => section.column === column)
+                .reduce((total, section) => total + section.items.length + 1.5, 0);
+            sections.push({ id: 'symbols', title: '圖形符號',
+                column: rows('left') <= rows('right') ? 'left' : 'right',
+                items: [{ type: 'household', label: '同住框' }] });
+        }
+        return sections;
     }
 
     /**

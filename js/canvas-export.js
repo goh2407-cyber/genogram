@@ -16,6 +16,42 @@
 GenogramCanvas.EXPORT_HEADER = Object.freeze({ padX: 40, padTop: 24, titleSize: 22, metaSize: 13, gap: 8, padBottom: 16 });
 
 Object.assign(GenogramCanvas.prototype, {
+    getUsedExportLegendTypes(visible) {
+        const usedTypes = new Set(visible.relationships.map(rel => rel.type));
+        visible.relationships.forEach(rel => {
+            if (rel.type === 'parent-child') usedTypes.add(`parent-child:${rel.linkType || 'biological'}`);
+        });
+        if (visible.households.length) usedTypes.add('household');
+        return usedTypes;
+    },
+
+    measureExportLegend(viewOptions = {}, usedTypes = null) {
+        const sections = this.getLegendRenderSections(viewOptions, usedTypes);
+        if (!sections.length) return { width: 0, height: 0 };
+        const rows = column => sections.filter(section => section.column === column)
+            .reduce((total, section) => total + section.items.length + 1.5, 0);
+        return { width: 180 * 2 + 32 + 16 * 2, height: Math.max(rows('left'), rows('right')) * 26 + 16 * 2 };
+    },
+
+    _getExportScale(scale, totalWidth, totalHeight) {
+        if (![scale, totalWidth, totalHeight].every(value => Number.isFinite(value) && value > 0)) {
+            throw new Error('匯出尺寸或解析度無效');
+        }
+        let effectiveScale = Math.min(scale, 16384 / Math.max(totalWidth, totalHeight),
+            Math.sqrt(268000000 / (totalWidth * totalHeight)));
+        // 向上取整後仍須符合面積上限。
+        let width = Math.ceil(totalWidth * effectiveScale);
+        let height = Math.ceil(totalHeight * effectiveScale);
+        while (width > 16384 || height > 16384 || width * height > 268000000) {
+            effectiveScale = Math.min(effectiveScale,
+                width > 1 ? (width - 1) / totalWidth : Infinity,
+                height > 1 ? (height - 1) / totalHeight : Infinity) * (1 - Number.EPSILON);
+            width = Math.ceil(totalWidth * effectiveScale);
+            height = Math.ceil(totalHeight * effectiveScale);
+        }
+        this.lastExportEffectiveScale = effectiveScale;
+        return effectiveScale;
+    },
     /**
      * 匯出專用的人物繪製
      * @param {Object} person - 人物物件
@@ -87,7 +123,7 @@ Object.assign(GenogramCanvas.prototype, {
      * @param {number} scale - 匯出縮放倍率 (解析度)
      */
     exportToPNG(persons, relationships, households = [], lifeCircles = [], showNotes = true,
-        showLegend = true, scale = 3, viewOptions = {}, header = null) {
+        showLegend = true, scale = 3, viewOptions = {}, header = null, legendAll = false) {
         const exportState = this._captureExportDerivedState();
         try {
         const visible = this.getVisibleExportData(
@@ -105,22 +141,23 @@ Object.assign(GenogramCanvas.prototype, {
         const margin = 50; // Re-define margin for legend calculation
 
         // ===== 圖例設定 =====
-        // 如果不顯示圖例，寬度設為 0
-        const legendWidth = showLegend ? 440 : 0;
-        const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
+        const usedTypes = legendAll ? null : this.getUsedExportLegendTypes(visible);
+        const { width: legendWidth, height: legendHeight } = showLegend
+            ? this.measureExportLegend(effectiveView, usedTypes) : { width: 0, height: 0 };
+        const legendPadding = legendWidth ? 40 : 0;
 
         // 總畫布尺寸
         const totalWidth = contentWidth + legendWidth + legendPadding;
         const headerHeight = this._exportHeaderHeight(header); // [2-2] 頁首高度（無頁首 = 0，輸出與以往逐像素相同）
-        const totalHeight = headerHeight + Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
+        const totalHeight = headerHeight + Math.max(contentHeight, (legendHeight ? legendHeight + margin * 2 : contentHeight));
 
         // 建立臨時畫布
+        const exportScale = this._getExportScale(scale, totalWidth, totalHeight);
         const exportCanvas = document.createElement('canvas');
-        const exportScale = scale; // 使用傳入的 scale
-        exportCanvas.width = totalWidth * exportScale;
-        exportCanvas.height = totalHeight * exportScale;
+        exportCanvas.width = Math.ceil(totalWidth * exportScale);
+        exportCanvas.height = Math.ceil(totalHeight * exportScale);
         const exportCtx = exportCanvas.getContext('2d');
+        if (!exportCtx) throw new Error('無法建立匯出畫布');
         exportCtx.scale(exportScale, exportScale);
 
         // [Bug Fix #6] 強制填充純白背景，不留透明度
@@ -178,15 +215,17 @@ Object.assign(GenogramCanvas.prototype, {
         this.ctx.restore();
 
         // 5. 繪製圖例 (靠右對齊) - 只有當 showLegend 為 true 時才繪製
-        if (showLegend) {
+        if (legendWidth) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = headerHeight + (totalHeight - headerHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView, usedTypes);
         }
 
         if (headerHeight) this.drawExportHeader(exportCtx, totalWidth, header);
 
-        return exportCanvas.toDataURL('image/png');
+        const dataUrl = exportCanvas.toDataURL('image/png');
+        if (!dataUrl || dataUrl === 'data:,') throw new Error('無法產生匯出圖片');
+        return dataUrl;
         } finally {
             this._restoreExportDerivedState(exportState);
         }
@@ -205,7 +244,7 @@ Object.assign(GenogramCanvas.prototype, {
      * @returns {string|null} - Data URL 或 null
      */
     exportToJPEG(persons, relationships, households = [], lifeCircles = [], quality = 0.92,
-        showNotes = true, showLegend = true, scale = 3, viewOptions = {}, header = null) {
+        showNotes = true, showLegend = true, scale = 3, viewOptions = {}, header = null, legendAll = false) {
         const exportState = this._captureExportDerivedState();
         try {
         const visible = this.getVisibleExportData(
@@ -222,19 +261,21 @@ Object.assign(GenogramCanvas.prototype, {
         const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
         const margin = 50; // Re-define margin for legend calculation
 
-        const legendWidth = showLegend ? 440 : 0;
-        const legendPadding = showLegend ? 40 : 0;
-        const legendHeight = effectiveView.showEmotionalRelationships ? 850 : 480;
+        const usedTypes = legendAll ? null : this.getUsedExportLegendTypes(visible);
+        const { width: legendWidth, height: legendHeight } = showLegend
+            ? this.measureExportLegend(effectiveView, usedTypes) : { width: 0, height: 0 };
+        const legendPadding = legendWidth ? 40 : 0;
 
         const totalWidth = contentWidth + legendWidth + legendPadding;
         const headerHeight = this._exportHeaderHeight(header); // [2-2] 頁首高度（無頁首 = 0，輸出與以往逐像素相同）
-        const totalHeight = headerHeight + Math.max(contentHeight, (showLegend ? legendHeight + margin * 2 : contentHeight));
+        const totalHeight = headerHeight + Math.max(contentHeight, (legendHeight ? legendHeight + margin * 2 : contentHeight));
 
+        const exportScale = this._getExportScale(scale, totalWidth, totalHeight);
         const exportCanvas = document.createElement('canvas');
-        const exportScale = scale; // 使用傳入的 scale
-        exportCanvas.width = totalWidth * exportScale;
-        exportCanvas.height = totalHeight * exportScale;
+        exportCanvas.width = Math.ceil(totalWidth * exportScale);
+        exportCanvas.height = Math.ceil(totalHeight * exportScale);
         const exportCtx = exportCanvas.getContext('2d');
+        if (!exportCtx) throw new Error('無法建立匯出畫布');
         exportCtx.scale(exportScale, exportScale);
 
         // JPEG 需要純白背景
@@ -286,15 +327,17 @@ Object.assign(GenogramCanvas.prototype, {
 
         this.ctx.restore();
 
-        if (showLegend) {
+        if (legendWidth) {
             const legendX = totalWidth - legendWidth - legendPadding / 2;
             const legendY = headerHeight + (totalHeight - headerHeight - legendHeight) / 2;
-            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView);
+            this.drawExportLegend(exportCtx, legendX, legendY, effectiveView, usedTypes);
         }
 
         if (headerHeight) this.drawExportHeader(exportCtx, totalWidth, header);
 
-        return exportCanvas.toDataURL('image/jpeg', quality);
+        const dataUrl = exportCanvas.toDataURL('image/jpeg', quality);
+        if (!dataUrl || dataUrl === 'data:,') throw new Error('無法產生匯出圖片');
+        return dataUrl;
         } finally {
             this._restoreExportDerivedState(exportState);
         }
@@ -360,35 +403,22 @@ Object.assign(GenogramCanvas.prototype, {
         return h;
     },
 
-    drawExportLegend(ctx, x, y, viewOptions = {}) {
+    drawExportLegend(ctx, x, y, viewOptions = {}, usedTypes = null) {
         const padding = 16;
         const lineHeight = 26;
         const lineWidth = 40;
         const fontSize = 13;
         const titleFontSize = 14;
-        const sectionGap = 16;
         const columnGap = 32; // 欄位間距
 
-        const sections = this.getLegendRenderSections(viewOptions);
-        const leftSections = sections.filter(section => section.column === 'left');
-        const rightSections = sections.filter(section => section.column === 'right');
-
-        // 計算尺寸
-        const leftItemsCount = leftSections.reduce((total, section) => total + section.items.length, 0);
-        const rightItemsCount = rightSections.reduce((total, section) => total + section.items.length, 0);
-
-        // [HH-2] 「圖形符號」小節（標題 + 同住框 1 項）放在較短的欄位末端，高度一併計入
-        const symbolRows = 2.5;
-        const leftRows = leftItemsCount + leftSections.length * 1.5;
-        const rightRows = rightItemsCount + rightSections.length * 1.5;
-        const symbolsOnLeft = leftRows <= rightRows;
-        const maxItemsPerColumn = Math.max(
-            leftItemsCount + 4 + (symbolsOnLeft ? symbolRows : 0),
-            rightItemsCount + 4 + (symbolsOnLeft ? 0 : symbolRows)); // +4 for titles
-
+        const sections = this.getLegendRenderSections(viewOptions, usedTypes);
+        const { width: totalWidth, height: totalHeight } = this.measureExportLegend(viewOptions, usedTypes);
+        if (!totalWidth) return;
+        const leftSections = sections.filter(section => section.column === 'left' && section.id !== 'symbols');
+        const rightSections = sections.filter(section => section.column === 'right' && section.id !== 'symbols');
+        const symbols = sections.find(section => section.id === 'symbols');
+        const symbolsOnLeft = symbols?.column === 'left';
         const columnWidth = 180;
-        const totalWidth = columnWidth * 2 + columnGap + padding * 2;
-        const totalHeight = maxItemsPerColumn * lineHeight + padding * 2;
 
         // 繪製背景
         ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
@@ -413,6 +443,8 @@ Object.assign(GenogramCanvas.prototype, {
                 lineWidth, lineHeight, titleFontSize, fontSize);
             currentYRight += (section.items.length + 1.5) * lineHeight;
         });
+
+        if (!symbols) return;
 
         // [HH-2] 圖形符號：同住框（虛線框內為同住成員）
         const symbolX = symbolsOnLeft ? x + padding : rightX;

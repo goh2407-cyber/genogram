@@ -148,12 +148,12 @@ const expectedSections = [
         const canvas = window.app.canvas;
         const hasAdapters = typeof canvas.getLegendRenderItem === 'function'
             && typeof canvas.getLegendRenderSections === 'function';
-        const serializeSections = sections => sections.map(section => ({
+        const serializeSections = sections => sections.filter(section => section.id !== 'symbols').map(section => ({
             id: section.id,
             title: section.title,
             labels: section.items.map(item => item.label)
         }));
-        const fullSections = hasAdapters ? canvas.getLegendRenderSections() : [];
+        const fullSections = hasAdapters ? canvas.getLegendRenderSections({}, null) : [];
         const hiddenSections = hasAdapters ? canvas.getLegendRenderSections({
             showEmotionalRelationships: false
         }) : [];
@@ -184,6 +184,9 @@ const expectedSections = [
         const hiddenDrawn = drawn.splice(0);
         canvas.drawLegendSection = originalDrawLegendSection;
         return {
+            usedSections: serializeSections(canvas.getLegendRenderSections({}, new Set(['married', 'admiration', 'parent-child:adopted']))),
+            emptySections: canvas.getLegendRenderSections({}, new Set()).length,
+            symbols: fullSections.filter(section => section.id === 'symbols').map(section => section.items[0].label),
             hasAdapters,
             fullSections: serializeSections(fullSections),
             hiddenSections: serializeSections(hiddenSections),
@@ -218,6 +221,13 @@ const expectedSections = [
         labels: section.entries.map(entry => entry[2])
     }));
     const expectedHidden = expectedExport.filter(section => !section.id.startsWith('emotional-'));
+    check('used-only legend omits unused entries and entire empty sections',
+        JSON.stringify(exportResult.usedSections) === JSON.stringify([
+            { id: 'family', title: '家庭與伴侶', labels: ['收養子女', '結婚'] },
+            { id: 'emotional-positive', title: '情感關係（正向）', labels: ['崇拜'] }
+        ]), JSON.stringify(exportResult.usedSections));
+    check('empty used types have no legend sections', exportResult.emptySections === 0);
+    check('full legend includes household symbol', JSON.stringify(exportResult.symbols) === JSON.stringify(['同住框']));
     check('Canvas exposes shared legend render adapters', exportResult.hasAdapters);
     check('export legend sections and entry order come from shared metadata',
         JSON.stringify(exportResult.fullSections) === JSON.stringify(expectedExport),
