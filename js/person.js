@@ -153,7 +153,7 @@ class Person {
      * @returns {string}
      */
     generateId() {
-        return 'person_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        return 'person_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
     }
 
     /**

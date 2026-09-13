@@ -5,7 +5,7 @@
  * 唯一規則：
  * - parent-child 關係一律 fromPersonId = parent, toPersonId = child
  * - 座標只負責顯示，不參與親屬語意判斷（GENERATION_POLICY 第 2 條）
- * - 舊資料的方向一致性由 App.migrateRelationships() 在載入時保證
+ * - 舊資料的方向一致性由 App.normalizeLoadedFamilyRelationships() 在載入時保證
  */
 class KinshipEngine {
     constructor(persons = [], relationships = []) {
