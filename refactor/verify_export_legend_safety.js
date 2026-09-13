@@ -7,7 +7,10 @@ const root = path.resolve(__dirname, '..');
 const sandbox = { console, setTimeout, clearTimeout,
     document: { addEventListener() {} }, window: { jspdf: {} } };
 vm.createContext(sandbox);
-for (const file of ['relationship.js', 'canvas.js', 'canvas-export.js', 'app.js']) {
+for (const file of ['relationship.js', 'canvas.js', 'canvas-marriage.js', 'canvas-decorations.js',
+    'canvas-family.js', 'canvas-household.js', 'canvas-export.js', 'app.js', 'app-pointer.js',
+    'app-hittest.js', 'app-quick-add.js', 'app-property-panel.js', 'app-relationship-workflow.js',
+    'app-snap-placement.js', 'app-io.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, 'js', file), 'utf8'), sandbox, { filename: file });
 }
 const { Canvas, App } = vm.runInContext('({ Canvas: GenogramCanvas, App: GenogramApp })', sandbox);
