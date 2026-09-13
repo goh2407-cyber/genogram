@@ -3307,10 +3307,7 @@ class GenogramApp {
         section.appendChild(heading);
         const siblings = this.getFullSiblings(person);
         if (!siblings.length) {
-            const empty = document.createElement('div');
-            empty.className = 'property-help';
-            empty.textContent = '（尚無同父母的兄弟姊妹）';
-            section.appendChild(empty);
+            section.hidden = true;
             return section;
         }
         const help = document.createElement('div');
@@ -3570,7 +3567,6 @@ class GenogramApp {
         });
         const checkedById = {
             personDeceased: Boolean(person.isDeceased),
-            personIP: Boolean(person.isIdentifiedPatient),
             medSmoker: Boolean(person.medical?.isSmoker),
             medObese: Boolean(person.medical?.isObese),
             medLang: Boolean(person.medical?.hasLanguageProblem)
@@ -3578,6 +3574,25 @@ class GenogramApp {
         Object.entries(checkedById).forEach(([id, checked]) => {
             const field = root.querySelector(`#${id}`);
             if (field) field.checked = checked;
+        });
+        root.querySelector('#personIP').setAttribute('aria-pressed', String(Boolean(person.isIdentifiedPatient)));
+        // 僅記住本次工作階段的手動收合選擇，不寫入人物資料、history 或存檔。
+        if (!this.personPanelSectionState) this.personPanelSectionState = new Map();
+        const sectionDefaults = {
+            personLossSection: Boolean(person.lossType),
+            personMedicalSection: valueById.medLeftHalf !== 'none' || valueById.medBottomHalf !== 'none'
+                || checkedById.medSmoker || checkedById.medObese || checkedById.medLang
+        };
+        Object.entries(sectionDefaults).forEach(([id, defaultOpen]) => {
+            const section = root.querySelector(`#${id}`);
+            const saved = this.personPanelSectionState.get(person.id);
+            section.open = saved?.[id] ?? defaultOpen;
+            section.querySelector('summary').addEventListener('click', () => {
+                // 滑鼠與鍵盤都走原生 click；在預設切換前同步記錄，避免重建面板丟失延後的 toggle。
+                const state = this.personPanelSectionState.get(person.id) || {};
+                state[id] = !section.open;
+                this.personPanelSectionState.set(person.id, state);
+            });
         });
         if (person.transgender !== 'mtf') {
             const option = document.createElement('option');
@@ -4106,8 +4121,9 @@ class GenogramApp {
 
         // 案主
         this.bindPropertyEdit(document.getElementById('personIP'), e => {
-            person.isIdentifiedPatient = e.target.checked;
-        }, { eventName: 'change', commitOnChange: true });
+            person.isIdentifiedPatient = !person.isIdentifiedPatient;
+            e.currentTarget.setAttribute('aria-pressed', String(person.isIdentifiedPatient));
+        }, { eventName: 'click', commitOnChange: true });
 
         // [Phase 1] 生育結果（流產/人工流產/死產）
         const lossSel = document.getElementById('personLossType');

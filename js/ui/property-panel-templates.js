@@ -102,7 +102,17 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
         <form class="property-form" id="personForm">
             <div class="form-group">
                 <label for="personName">姓名/稱謂</label>
-                <input type="text" id="personName" placeholder="輸入姓名">
+                <div class="person-name-row">
+                    <input type="text" id="personName" placeholder="輸入姓名">
+                    <button type="button" id="personIP" class="person-ip-chip" aria-pressed="false">案主</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="personGender">性別</label>
+                <select id="personGender">
+                    <option value="male">男性</option>
+                    <option value="female">女性</option>
+                </select>
             </div>
             <div class="form-group-row">
                 <div class="form-group">
@@ -110,30 +120,29 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                     <input type="number" id="personAge" min="0" max="150" placeholder="年齡">
                 </div>
                 <div class="form-group">
-                    <label for="personGender">性別</label>
-                    <select id="personGender">
-                        <option value="male">男性</option>
-                        <option value="female">女性</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-group-row">
-                <div class="form-group">
                     <label for="personBirthDate">出生年月</label>
                     <input type="text" id="personBirthDate" placeholder="例：1985 或 1985-06" inputmode="numeric" autocomplete="off">
+                </div>
+            </div>
+            <p class="property-help" id="personAgeHint" hidden></p>
+            <div class="form-group-row person-deceased-row">
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="personDeceased">
+                        <label for="personDeceased">已過世</label>
+                    </div>
                 </div>
                 <div class="form-group" id="personDeathDateGroup" hidden>
                     <label for="personDeathDate">死亡年月</label>
                     <input type="text" id="personDeathDate" placeholder="例：2020-03" inputmode="numeric" autocomplete="off">
                 </div>
             </div>
-            <p class="property-help" id="personAgeHint" hidden></p>
             <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="personDeceased">
-                    <label for="personDeceased">已過世</label>
-                </div>
+                <label for="personNotes">備註</label>
+                <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
             </div>
+            <details class="person-panel-section" id="personLossSection">
+                <summary>生育結果</summary>
             <div class="form-group">
                 <label for="personLossType">生育結果</label>
                 <select id="personLossType">
@@ -142,19 +151,10 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                     <option value="abortion">人工流產</option>
                 </select>
             </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="personIP">
-                    <label for="personIP">案主 / 關注對象</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="personNotes">備註</label>
-                <textarea id="personNotes" rows="2" placeholder="備註 (顯示於姓名下方)"></textarea>
-            </div>
+            </details>
             <div id="twinSettingsHost"></div>
-            <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
-            <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-color);">醫學與狀態</h4>
+            <details class="person-panel-section" id="personMedicalSection">
+                <summary>醫學與狀態</summary>
             <div class="form-group">
                 <label for="medLeftHalf">生理/心理疾病 (左半部)</label>
                 <select id="medLeftHalf">
@@ -185,6 +185,7 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                     <label for="medLang">語言障礙 (L)</label>
                 </div>
             </div>
+            </details>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid var(--border-color);">
             <div style="margin-top: 12px;">
                 <button type="button" class="btn-cancel" id="deletePersonBtn" style="width: 100%;">刪除此成員</button>
