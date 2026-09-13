@@ -150,6 +150,7 @@ class StorageManager {
         // [R4] 比本程式新的版本：先提醒，欄位仍盡量讀；使用者存檔後看不懂的欄位會遺失
         const known = ['0.1', '1.0', '1.1'];
         const srcVersion = String(data.version || '0.1');
+        result.sourceVersion = srcVersion; // [R4b] 來源版號：< 1.1 的檔案親子方向未必正確，載入時允許用 Y 推斷
         this.lastLoadNotice = known.includes(srcVersion)
             ? null
             : `這個檔案是較新版本（${srcVersion}）建立的，本程式可能讀不到其中的新欄位；存檔後那些欄位會遺失。`;
@@ -430,7 +431,8 @@ class StorageManager {
             const view = data.view || null;
             this.currentFileName = data.filename || null; // 還原檔名
 
-            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt, meta: data.meta || null };
+            return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt, meta: data.meta || null,
+                sourceVersion: String(data.version || '0.1') }; // [R4b]
         } catch (err) {
             console.warn('載入自動儲存失敗:', err);
             return null;

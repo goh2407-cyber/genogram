@@ -2196,7 +2196,10 @@ class GenogramApp {
                 !isNaN(p.x) && !isNaN(p.y))
         );
         this.documentMeta = GenogramApp.normalizeDocumentMeta(data.meta); // [2-2]
-        const norm = this.normalizeLoadedFamilyRelationships();
+        // [R4b] 1.1 起建立關係時就保證 parent→child 方向；更早的檔案（含未標版號）才允許以 Y 座標推斷
+        const norm = this.normalizeLoadedFamilyRelationships({
+            inferDirectionFromY: GenogramApp.isLegacySchema(data.sourceVersion || data.version)
+        });
         this.selectedPersonId = null;
         this.updatePropertyPanel();
         this.autoSave();
@@ -2235,6 +2238,12 @@ class GenogramApp {
     /**
      * [2-2] 文件 meta 正規化（只保留三個字串欄位）
      */
+    /** [R4b] 版號 < 1.1（或缺）視為舊檔：親子方向未必可靠 */
+    static isLegacySchema(version) {
+        const n = parseFloat(String(version || '0'));
+        return !(Number.isFinite(n) && n >= 1.1);
+    }
+
     static normalizeDocumentMeta(meta) {
         const src = meta && typeof meta === 'object' ? meta : {};
         const pick = key => (typeof src[key] === 'string' ? src[key].trim() : '');

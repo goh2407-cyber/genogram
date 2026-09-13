@@ -723,7 +723,7 @@ Object.assign(GenogramApp.prototype, {
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
             this.documentMeta = GenogramApp.normalizeDocumentMeta(saved.meta); // [2-2]
-            this.normalizeLoadedFamilyRelationships();
+            this.normalizeLoadedFamilyRelationships({ inferDirectionFromY: GenogramApp.isLegacySchema(saved.sourceVersion) }); // [R4b]
             this.isDirty = true; // [1-2] 從瀏覽器暫存恢復：內容尚未在任何檔案裡
 
             // 還原視圖狀態
