@@ -3902,7 +3902,7 @@ class GenogramApp {
         }).filter(h => h.ids.length > 0);
 
         const newHousehold = {
-            id: 'house_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            id: 'house_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
             ids: [...this.householdSelection],
             notes: ''
         };
@@ -3952,7 +3952,7 @@ class GenogramApp {
         this.saveState();
 
         const newLifeCircle = {
-            id: 'lc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            id: 'lc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
             points: pts,
             color: this.getNextLifeCircleColor(),
             label: `生活圈 ${this.lifeCircles.length + 1}`
@@ -4160,7 +4160,7 @@ class GenogramApp {
 
                     // 如果當前人物還沒有 twinGroup，建立新的
                     if (!twinGroupId) {
-                        twinGroupId = 'twin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                        twinGroupId = 'twin_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
                         person.twinGroup = twinGroupId;
                     }
 

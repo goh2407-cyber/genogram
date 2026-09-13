@@ -239,7 +239,7 @@ class Relationship {
      * @param {Object} data
      */
     constructor(data = {}) {
-        this.id = data.id || 'rel_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        this.id = data.id || 'rel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
         this.fromPersonId = data.fromPersonId;
         this.toPersonId = data.toPersonId;
         this.type = data.type || Relationship.TYPES.MARRIED;
