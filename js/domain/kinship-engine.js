@@ -13,6 +13,17 @@ class KinshipEngine {
         this.relationships = relationships;
         this.personMap = new Map();
         persons.forEach(p => this.personMap.set(p.id, p));
+        // [B1-perf] 一次建立 parent/child 索引；引擎由 App 依 dataVersion 快取，資料變動即重建。
+        this._parentsOf = new Map();
+        this._childrenOf = new Map();
+        relationships.forEach(rel => {
+            const pc = this.normalizeParentChild(rel);
+            if (!pc) return;
+            if (!this._parentsOf.has(pc.childId)) this._parentsOf.set(pc.childId, new Set());
+            this._parentsOf.get(pc.childId).add(pc.parentId);
+            if (!this._childrenOf.has(pc.parentId)) this._childrenOf.set(pc.parentId, new Set());
+            this._childrenOf.get(pc.parentId).add(pc.childId);
+        });
     }
 
     getPerson(id) {
@@ -32,28 +43,18 @@ class KinshipEngine {
     }
 
     hasParentChildLink(parentId, childId) {
-        return this.relationships.some(rel => {
-            const pc = this.normalizeParentChild(rel);
-            return pc && pc.parentId === parentId && pc.childId === childId;
-        });
+        const set = this._childrenOf.get(parentId);
+        return Boolean(set && set.has(childId));
     }
 
     getParentIds(personId) {
-        const parents = new Set();
-        this.relationships.forEach(rel => {
-            const pc = this.normalizeParentChild(rel);
-            if (pc && pc.childId === personId) parents.add(pc.parentId);
-        });
-        return Array.from(parents);
+        const set = this._parentsOf.get(personId);
+        return set ? Array.from(set) : [];
     }
 
     getChildrenIds(personId) {
-        const children = new Set();
-        this.relationships.forEach(rel => {
-            const pc = this.normalizeParentChild(rel);
-            if (pc && pc.parentId === personId) children.add(pc.childId);
-        });
-        return Array.from(children);
+        const set = this._childrenOf.get(personId);
+        return set ? Array.from(set) : [];
     }
 
     getAncestorIds(personId, visited = new Set()) {

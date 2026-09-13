@@ -40,7 +40,7 @@
     --text-color: #1f2937;
     --text-secondary: #6b7280;
     --text-light: #ffffff;
-    --text-muted: #9ca3af;
+    --text-muted: #6b7280; /* [B1-a11y] 白底 4.6:1 */
 
     /* 關係線條顏色（圖例用） */
     --color-married: #6b66ff;
@@ -86,7 +86,7 @@
     --surface-subtle: #f5f7f8;
     --ink-strong: #17212b;
     --ink-body: #42515d;
-    --ink-muted: #74818c;
+    --ink-muted: #5f6b76; /* [B1-a11y] 白底 5.5:1 */
     --line-ui: #dfe4e8;
     --space-1: 4px;
     --space-2: 8px;
@@ -227,11 +227,6 @@ body {
 
 .tool-btn:active {
     transform: scale(0.94);
-}
-
-.tool-btn:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.6);
-    outline-offset: 1px;
 }
 
 /* 啟用中的工具：白底反色，像 segmented control 的選中段 */
@@ -399,6 +394,10 @@ body {
 
 .status-bar.error {
     background: rgba(220, 53, 69, 0.92);
+}
+
+.status-bar.warning {
+    background: rgba(217, 119, 6, 0.94);
 }
 
 .status-bar.hidden {
@@ -1845,6 +1844,8 @@ body {
     border: 1px solid transparent;
 }
 .global-actions .tool-btn:hover { background: var(--surface-subtle); border-color: var(--line-ui); }
+/* [B1-ux] 復原／重做不可用時要看得出來 */
+.tool-btn:disabled, .tool-btn[disabled] { opacity: .35; cursor: default; pointer-events: none; }
 
 .canvas-tool-dock {
     position: absolute;
@@ -1927,7 +1928,10 @@ body.inspector-collapsed .inspector-toggle svg { transform: rotate(180deg); }
 button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,97,.28); outline-offset: 2px; }
 
 @media (max-width: 1180px) {
-    .document-context { display: none; }
+    /* [B1-ux] 1024–1180px 工具列 dock 會壓到檔名區，只留未儲存 ●（有 aria-label / 滑過提示），檔名隱藏 */
+    .document-context { display: flex; align-items: center; margin-left: var(--space-2); padding-left: var(--space-2); }
+    .document-name { display: none; }
+    .document-dirty { margin-left: 0; font-size: 13px; }
     .global-actions .tool-label,
     .canvas-tool-dock .tool-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .canvas-tool-dock { flex-wrap: nowrap; }

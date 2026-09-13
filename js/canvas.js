@@ -289,8 +289,11 @@ class GenogramCanvas {
         if (!this.personMap) {
             this.personMap = new Map(this.lastPersons.map(p => [p.id, p]));
         }
+        // [B1-DPR] 跨螢幕拖視窗時 devicePixelRatio 會變，ResizeObserver 不會觸發 → 這裡補檢查
+        if (typeof window !== 'undefined' && (window.devicePixelRatio || 1) !== this.dpr) this.resize();
         this.prepareDerivedGeometry(this.lastPersons, this.lastRelationships);
-        this._refreshLabelRouteWarnings(this.lastPersons, this.lastRelationships);
+        // [B1-perf] 文字壓線警告改為 lazy：畫面上永遠隱藏，只有測試/診斷讀取 labelRoutingWarnings 時才計算
+        this._labelWarningsDirty = true;
         const view = this.normalizeViewOptions(this.viewOptions);
 
         this.clear();
@@ -751,6 +754,28 @@ class GenogramCanvas {
         this._householdBoundsCache = new Map(); // [HH-5c]
     }
 
+    /**
+     * [B1-perf] measureText 快取：key = font + text。字型載入完成時由 App 呼叫 clearTextWidthCache()。
+     */
+    measureTextWidth(text, font) {
+        if (!this._textWidthCache) this._textWidthCache = new Map();
+        const key = font + '\u0000' + text;
+        const cached = this._textWidthCache.get(key);
+        if (cached !== undefined) return cached;
+        if (this._textWidthCache.size > 4000) this._textWidthCache.clear();
+        this.ctx.save();
+        this.ctx.font = font;
+        const width = this.ctx.measureText(text).width;
+        this.ctx.restore();
+        const safe = Number.isFinite(width) ? width : 0;
+        this._textWidthCache.set(key, safe);
+        return safe;
+    }
+
+    clearTextWidthCache() {
+        if (this._textWidthCache) this._textWidthCache.clear();
+    }
+
     getPersonLabelGeometry(person, options = {}, placement = undefined) {
         const view = this.normalizeViewOptions(options);
         const manualPlacement = person?.labelPlacement
@@ -776,13 +801,7 @@ class GenogramCanvas {
                 font: `${fontSize}px ${this.fontFamily}`, lineHeight: fontSize + 2 });
         });
 
-        this.ctx.save();
-        const measured = specs.map(spec => {
-            this.ctx.font = spec.font;
-            const width = this.ctx.measureText(spec.text).width;
-            return { ...spec, width: Number.isFinite(width) ? width : 0 };
-        });
-        this.ctx.restore();
+        const measured = specs.map(spec => ({ ...spec, width: this.measureTextWidth(spec.text, spec.font) }));
 
         const blockWidth = measured.reduce((max, row) => Math.max(max, row.width), 0);
         const half = this.personSize / 2;
@@ -973,8 +992,8 @@ class GenogramCanvas {
             this.ctx.restore();
         }
 
-        // 繪製主要形狀背景
-        this.ctx.lineWidth = 2;
+        // 繪製主要形狀背景（[B1-visual] 低縮放時維持至少 1.25 螢幕像素，符號不發灰；匯出 lodScale=1 → 2 不變）
+        this.ctx.lineWidth = Math.max(2, 1.25 / (this.lodScale || 1));
         this.ctx.strokeStyle = '#333';
 
         // 根據用戶要求修改：
@@ -1847,7 +1866,7 @@ class GenogramCanvas {
                         geometry.points, obstacles.filter(obstacle => obstacle.kind !== 'text'),
                         new Set([String(from.id), String(to.id)]));
                     if (nonTextCollisions > 0 || selectedScore[1] > 0) {
-                        this.labelRoutingWarnings.push({
+                        this._labelRoutingWarnings.push({
                             relationshipId: rel.id,
                             reason: 'marriage-route-collision',
                             collisions: nonTextCollisions + selectedScore[1],
@@ -3447,7 +3466,7 @@ class GenogramCanvas {
         this._derivedGeometrySignature = signature;
         this.personLabelPlacements = new Map();
         this.marriageRouteCache = new Map();
-        this.labelRoutingWarnings = [];
+        this._labelRoutingWarnings = [];
         this._placeLabelsForRelationshipRoutes(allPersons, allRelationships);
         this._prepareMarriageRoutes(allPersons, allRelationships);
     }
@@ -3478,10 +3497,28 @@ class GenogramCanvas {
         this.personLabelPlacements = new Map();
     }
 
+    /**
+     * [B1-perf] 文字壓線警告（lazy accessor）。
+     * render() 只標記 dirty；第一次讀取時才計算，之後沿用到下一次 render。
+     * 直接指派（含 invalidateDerivedGeometry）會清掉 dirty，讓「剛重設 = 空陣列」語意不變。
+     */
+    get labelRoutingWarnings() {
+        if (this._labelWarningsDirty) {
+            this._labelWarningsDirty = false;
+            this._refreshLabelRouteWarnings(this.lastPersons, this.lastRelationships);
+        }
+        return this._labelRoutingWarnings || [];
+    }
+
+    set labelRoutingWarnings(value) {
+        this._labelRoutingWarnings = Array.isArray(value) ? value : [];
+        this._labelWarningsDirty = false;
+    }
+
     _refreshLabelRouteWarnings(persons, relationships) {
         const allPersons = Array.isArray(persons) ? persons : [];
         const allRelationships = Array.isArray(relationships) ? relationships : [];
-        this.labelRoutingWarnings = (this.labelRoutingWarnings || [])
+        this._labelRoutingWarnings = (this._labelRoutingWarnings || [])
             .filter(warning => warning.reason !== 'label-route-overlap');
         if (typeof FamilyRoutePlanner === 'undefined') return;
         const view = this.normalizeViewOptions(this.viewOptions);
@@ -3509,7 +3546,7 @@ class GenogramCanvas {
             if (!label.bounds) return;
             routes.forEach(route => {
                 if (!this._pathHitsRect(route.points, label.bounds)) return;
-                this.labelRoutingWarnings.push({
+                this._labelRoutingWarnings.push({
                     personId: person.id,
                     relationshipId: route.relationship.id,
                     reason: 'label-route-overlap'
@@ -3950,7 +3987,7 @@ class GenogramCanvas {
         }
 
         this.ctx.strokeStyle = '#333';
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = Math.max(2, 1.25 / (this.lodScale || 1)); // [B1-visual]
         const pairwise = plan.mode === 'reversed' || plan.mode === 'same-row';
         if (pairwise) {
             family.parentIds.forEach(parentId => {
