@@ -404,7 +404,7 @@ class GenogramApp {
         swatch.setAttribute('aria-hidden', 'true');
         const swatchLabel = document.createElement('span');
         swatchLabel.className = 'legend-label';
-        swatchLabel.textContent = '同住框（虛線框內為同住成員）';
+        swatchLabel.textContent = '同住圈（虛線框內為同住成員）';
         householdItem.append(swatch, swatchLabel);
         symbols.append(symbolsTitle, householdItem);
         container.appendChild(symbols);
@@ -561,7 +561,7 @@ class GenogramApp {
 
         // 新增角色按鈕 - 點擊後顯示性別選擇對話框
         this.elements.addPersonBtn.addEventListener('click', () =>
-            this.showGenderModal('parent', '新增人物'));
+            this.showGenderModal('parent', '新增成員'));
 
         // 工具列按鈕
         this.elements.selectToolBtn.addEventListener('click', () => this.setTool('select'));
@@ -769,10 +769,10 @@ class GenogramApp {
                 statusText = '選取工具：點擊選取，拖曳移動';
                 break;
             case 'boxSelect':
-                statusText = '範圍圈選：拖曳滑鼠圈選多個人物';
+                statusText = '範圍圈選：拖曳滑鼠圈選多個成員';
                 break;
             case 'connect':
-                statusText = '連接工具：依序點擊兩個人物建立關係';
+                statusText = '連接工具：依序點擊兩個成員建立關係';
                 this.connectingFrom = null;
                 break;
             case 'household': {
@@ -787,8 +787,8 @@ class GenogramApp {
                 // Enter 會直接用該人建框；再點其他人時由 pointerdown 把他一起納入
                 const preselected = this.selectedPersonIds.length || (this.selectedPersonId ? 1 : 0);
                 statusText = preselected > 0
-                    ? `已選取 ${preselected} 位成員，按 Enter 建立同住框（再點人可增減）`
-                    : '同住圈選：點選角色加入選取，按 Enter 建立';
+                    ? `已選取 ${preselected} 位成員，按 Enter 建立同住圈（再點人可增減）`
+                    : '同住圈：點選成員加入選取，按 Enter 建立';
                 break;
             }
             case 'lifeCircle':
@@ -1144,9 +1144,9 @@ class GenogramApp {
                 }
 
                 if (this.selectedPersonIds.length > 0) {
-                    this.updateStatus(`已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住框`, 'info');
+                    this.updateStatus(`已選取 ${this.selectedPersonIds.length} 位成員，按 Enter 建立同住圈`, 'info');
                 } else {
-                    this.updateStatus('同住圈選：點選角色加入選取，按 Enter 建立');
+                    this.updateStatus('同住圈：點選成員加入選取，按 Enter 建立');
                 }
                 this.render();
                 return;
@@ -1173,7 +1173,7 @@ class GenogramApp {
             } else {
                 // 如果點擊空白處，取消連接
                 this.connectingFrom = null;
-                this.updateStatus('連接工具：依序點擊兩個人物建立關係');
+                this.updateStatus('連接工具：依序點擊兩個成員建立關係');
             }
             this.render();
             return;
@@ -1225,7 +1225,7 @@ class GenogramApp {
             if (clickedLabelPerson) {
                 this.selectedPersonIds = [];
                 this.selectPerson(clickedLabelPerson.id, { labelEditing: true });
-                this.updateStatus('已選取人物文字，可在文字旁調整位置', 'info');
+                this.updateStatus('已選取成員文字，可在文字旁調整位置', 'info');
                 return;
             }
 
@@ -1273,7 +1273,7 @@ class GenogramApp {
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedPerson = clickedPerson;
-                    this.updateStatus('正在移動選取對象...', 'info');
+                    this.updateStatus('正在移動成員...', 'info');
                     return;
                 }
 
@@ -1326,7 +1326,7 @@ class GenogramApp {
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedHousehold = relHousehold;
-                    this.updateStatus('正在拖曳同住家庭 (放開滑鼠以完成)', 'info');
+                    this.updateStatus('正在拖曳同住圈 (放開滑鼠以完成)', 'info');
                     this.render();
                     return;
                 } else {
@@ -1406,7 +1406,7 @@ class GenogramApp {
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedHousehold = clickedHousehold;
-                    this.updateStatus('正在拖曳同住家庭 (放開滑鼠以完成)', 'info');
+                    this.updateStatus('正在拖曳同住圈 (放開滑鼠以完成)', 'info');
                     return;
                 }
             }
@@ -1428,7 +1428,7 @@ class GenogramApp {
                     this.canvas.isDragging = true;
                     this.canvas.dragStart = point;
                     this.canvas.draggedPerson = this.personMap.get(this.selectedPersonIds[0]);
-                    this.updateStatus('正在移動選取對象...', 'info');
+                    this.updateStatus('正在移動成員...', 'info');
                 } else {
                     // 普通點擊空白處 -> 拖曳畫布 (Pan)
                     this.selectedPersonId = null;
@@ -2291,7 +2291,7 @@ class GenogramApp {
                 // [UX Fix] 改進 Esc 處理，顯示明確的狀態訊息
                 if (this.placementSession) {
                     this.cancelPlacement();
-                    this.updateStatus('新增人物已取消', 'info');
+                    this.updateStatus('新增成員已取消', 'info');
                 } else if (this.isDrawingLifeCircle) {
                     this.cancelLifeCircle();
                 } else if (this.connectingFrom) {
@@ -2620,7 +2620,7 @@ class GenogramApp {
         const session = this.beginPlacement({ kind, basePersonId: basePerson.id, gender,
             generation: kind === 'child' ? this.getGenerationBelow(basePerson.generation) : basePerson.generation,
             ...extras });
-        this.updateStatus('請選擇新增人物的位置', 'info');
+        this.updateStatus('請選擇新增成員的位置', 'info');
         this.render();
         return session;
     }
@@ -2629,7 +2629,7 @@ class GenogramApp {
         const parentIds = this.getKinshipEngine().getParentIds(child.id);
         if (parentIds.length >= 2) {
             this.cancelPlacement();
-            this.updateStatus('此人物已有 2 位父母，無法再新增父母', 'error');
+            this.updateStatus('此成員已有 2 位父母，無法再新增父母', 'error');
             this.render();
             return null;
         }
@@ -2664,7 +2664,7 @@ class GenogramApp {
         }
         const session = this.beginPlacement(request);
         if (placement.existingPersonAdjustment) {
-            this.updateStatus('父母位置受阻，確認後會將此人物向外微調', 'info');
+            this.updateStatus('父母位置受阻，確認後會將此成員向外微調', 'info');
         }
         this.render();
         return session;
@@ -3440,7 +3440,7 @@ class GenogramApp {
             const household = this.households.find(h => h.id === this.selectedHouseholdId);
             if (household) {
                 const root = this.setPropertyPanelTemplate('household');
-                root.querySelector('#householdMemberCount').textContent = `同住家庭（${household.ids.length} 位成員）`;
+                root.querySelector('#householdMemberCount').textContent = `同住圈（${household.ids.length} 位成員）`;
                 // [HH-2] 名稱（畫在框上）
                 root.querySelector('#householdLabel').value = household.label || '';
                 this.bindPropertyEdit(root.querySelector('#householdLabel'), e => {
@@ -3461,8 +3461,8 @@ class GenogramApp {
                     const removeBtn = document.createElement('button');
                     removeBtn.type = 'button';
                     removeBtn.className = 'chip-remove';
-                    removeBtn.setAttribute('aria-label', `將 ${p.name || '未命名'} 移出同住框`);
-                    removeBtn.title = '移出同住框';
+                    removeBtn.setAttribute('aria-label', `將 ${p.name || '未命名'} 移出同住圈`);
+                    removeBtn.title = '移出同住圈';
                     removeBtn.addEventListener('click', () => this.removeHouseholdMember(household.id, id));
                     chip.append(nameEl, removeBtn);
                     membersHost.appendChild(chip);
@@ -3869,10 +3869,10 @@ class GenogramApp {
         if (remain.length === 0) {
             this.households = this.households.filter(h => h.id !== householdId);
             if (this.selectedHouseholdId === householdId) this.selectedHouseholdId = null;
-            this.updateStatus('同住框已無成員，已移除', 'info');
+            this.updateStatus('同住圈已無成員，已移除', 'info');
         } else {
             this.households[idx] = { ...household, ids: remain };
-            this.updateStatus('已將成員移出同住框', 'info');
+            this.updateStatus('已將成員移出同住圈', 'info');
         }
         this._dataVersion++;
         this.updatePropertyPanel();
@@ -3894,7 +3894,7 @@ class GenogramApp {
             .filter(h => h.ids.length > 0);
         this._dataVersion++;
         const p = this.personMap.get(personId);
-        this.updateStatus(`已將 ${p.name || '未命名'} 加入同住框`, 'info');
+        this.updateStatus(`已將 ${p.name || '未命名'} 加入同住圈`, 'info');
         this.updatePropertyPanel();
         this.autoSave();
         this.render();
@@ -3937,8 +3937,8 @@ class GenogramApp {
 
         this.setTool('select');
         this.updateStatus(movedOut > 0
-            ? `同住圈選已建立（${movedOut} 位成員已從原同住框移出）`
-            : '同住圈選已建立', 'success');
+            ? `同住圈已建立（${movedOut} 位成員已從原同住圈移出）`
+            : '同住圈已建立', 'success');
         this.autoSave();
         this.render();
     }
@@ -4682,7 +4682,7 @@ class GenogramApp {
      */
     validateMarriageRelationship(person1, person2) {
         if (!person1 || !person2) {
-            return { valid: false, message: '無法找到選取的人物' };
+            return { valid: false, message: '無法找到選取的成員' };
         }
 
         const grid = GenogramApp.GRID;
@@ -5406,7 +5406,7 @@ class GenogramApp {
     locateIdentifiedPatient() {
         const ips = this.persons.filter(p => p.isIdentifiedPatient);
         if (!ips.length) {
-            this.updateStatus('尚未標記案主：選取人物後在屬性面板勾選「案主 / 關注對象」', 'warning',
+            this.updateStatus('尚未標記案主：選取成員後在屬性面板勾選「案主 / 關注成員」', 'warning',
                 { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert });
             return;
         }
@@ -5860,7 +5860,7 @@ class GenogramApp {
                 });
             }
         }
-        this.updateStatus('請選擇新增人物的位置', 'info');
+        this.updateStatus('請選擇新增成員的位置', 'info');
         return this.placementSession;
     }
 
@@ -5969,7 +5969,7 @@ class GenogramApp {
             this.setTool('select');
             this.autoSave();
             this.render();
-            this.updateStatus('已建立人物', 'success');
+            this.updateStatus('已建立成員', 'success');
             return session;
         }
         this.placementSession = null;
@@ -6420,7 +6420,7 @@ class GenogramApp {
         this.updateStatus(`正在另存檔案: ${filename}...`, 'info');
         const success = await this.storage.downloadFile(this.persons, this.relationships, this.households || [], this.lifeCircles || [], filename, this.getDocumentExtra());
         if (success) {
-            this.updateStatus(`已成功導出: ${this.storage.getOpenFileName()}`, 'success');
+            this.updateStatus(`已成功匯出: ${this.storage.getOpenFileName()}`, 'success');
             this.autoSave();
             this.isDirty = false; // [1-2] 另存成功 = 檔案與畫面一致
             this.updateDocumentTitle();
@@ -6538,7 +6538,7 @@ class GenogramApp {
         if (!entries.length) {
             const empty = document.createElement('p');
             empty.className = 'recent-file-empty';
-            empty.textContent = '尚無最近檔案。用「瀏覽檔案…」開啟或「另存」建立檔案後，會出現在這裡。';
+            empty.textContent = '尚無最近檔案。用「從電腦載入…」載入或「另存」建立檔案後，會出現在這裡。';
             list.appendChild(empty);
             return;
         }
@@ -6556,7 +6556,7 @@ class GenogramApp {
             name.title = entry.name;
             const time = document.createElement('span');
             time.className = 'recent-file-time';
-            time.textContent = (entry.name === current ? '目前開啟 · ' : '') + GenogramApp.formatRecentTime(entry.openedAt);
+            time.textContent = (entry.name === current ? '目前載入 · ' : '') + GenogramApp.formatRecentTime(entry.openedAt);
             item.append(name, time);
             item.addEventListener('click', () => this.openRecentEntry(entry));
             list.appendChild(item);
@@ -6567,7 +6567,7 @@ class GenogramApp {
         try {
             const data = await this.storage.openRecentFile(entry);
             if (!data) {
-                this.updateStatus('未取得檔案存取權限，請改用「瀏覽檔案…」', 'warning');
+                this.updateStatus('未取得檔案存取權限，請改用「從電腦載入…」', 'warning');
                 return;
             }
             this.closeOpenFileModal();
@@ -6580,7 +6580,7 @@ class GenogramApp {
                 await this.renderRecentFiles();
                 this.updateStatus('找不到該檔案（可能已移動或刪除），已從最近檔案移除', 'error');
             } else {
-                this.updateStatus('開啟檔案失敗：' + (err && err.message ? err.message : err), 'error');
+                this.updateStatus('載入檔案失敗：' + (err && err.message ? err.message : err), 'error');
             }
         }
     }
@@ -7027,7 +7027,7 @@ class GenogramApp {
             return;
         }
 
-        const confirmed = confirm('確定要清空畫布嗎？\n\n此操作將刪除所有人物、關係線、同住框和生活圈。\n您可以使用「復原」功能復原。');
+        const confirmed = confirm('確定要清空畫布嗎？\n\n此操作將刪除所有成員、關係線、同住圈和生活圈。\n您可以使用「復原」功能復原。');
         if (!confirmed) return;
 
         this.saveState();
@@ -7319,7 +7319,7 @@ class GenogramApp {
         }
 
         if (this.persons.length === 0) {
-            this.updateStatus('畫布上沒有人物可排列', 'warning');
+            this.updateStatus('畫布上沒有成員可排列', 'warning');
             return;
         }
 

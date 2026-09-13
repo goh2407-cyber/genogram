@@ -33,9 +33,9 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 </div>
                 <div class="route-lift" id="relationshipLiftRow" title="ㄇ 天橋抬高 / ㄩ 下折加深；也可直接在畫布上按住橫桿上下拖動">
                     <span class="route-lift-label">橫桿距離</span>
-                    <button type="button" class="segmented-btn" data-lift="-15" aria-label="橫桿靠近人物">－</button>
+                    <button type="button" class="segmented-btn" data-lift="-15" aria-label="橫桿靠近成員">－</button>
                     <span class="route-lift-value" id="relationshipLiftValue">0</span>
-                    <button type="button" class="segmented-btn" data-lift="15" aria-label="橫桿遠離人物">＋</button>
+                    <button type="button" class="segmented-btn" data-lift="15" aria-label="橫桿遠離成員">＋</button>
                     <button type="button" class="segmented-btn" data-lift="reset">重設</button>
                 </div>
             </div>
@@ -66,7 +66,7 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <textarea id="householdNotes" rows="2" placeholder="同住情形補充說明"></textarea>
             </div>
             <div style="margin-top: 12px;">
-                <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住框</button>
+                <button class="btn-cancel" id="deleteHouseholdBtn" style="width: 100%;">刪除此同住圈</button>
             </div>
         </div>`,
     lifeCircle: `

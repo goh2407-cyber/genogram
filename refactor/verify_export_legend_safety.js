@@ -29,13 +29,13 @@ check('child link kinds are selected independently with biological default', () 
 });
 check('all mode retains 36 relationship samples and household symbol', () => {
     assert.equal(labels(null).length, 37);
-    assert.equal(labels(null).at(-1), '同住框');
+    assert.equal(labels(null).at(-1), '同住圈');
 });
 check('hidden layers do not contribute legend samples', () => {
     const used = types({ relationships: [{ type: 'admiration' }, { type: 'abuse' }], households: [{}],
         view: { showHouseholds: false, showEmotionalRelationships: false } });
     assert.deepEqual(labels(used), ['虐待']);
-    assert.deepEqual(labels(types({ households: [{}] })), ['同住框']);
+    assert.deepEqual(labels(types({ households: [{}] })), ['同住圈']);
 });
 check('measurement encloses every row and symbol in its assigned column', () => {
     for (const used of [null, new Set(['married']), new Set(['household']), new Set(['admiration', 'married', 'household'])]) {

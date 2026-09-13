@@ -466,7 +466,7 @@ Object.assign(GenogramCanvas.prototype, {
         ctx.fillStyle = '#333333';
         ctx.font = `${fontSize}px "Microsoft JhengHei", "Noto Sans TC", sans-serif`;
         ctx.textBaseline = 'middle';
-        ctx.fillText('同住框', symbolX + lineWidth + 10, swatchY);
+        ctx.fillText('同住圈', symbolX + lineWidth + 10, swatchY);
         ctx.restore();
     },
 

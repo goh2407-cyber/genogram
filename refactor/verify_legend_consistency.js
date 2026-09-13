@@ -227,7 +227,7 @@ const expectedSections = [
             { id: 'emotional-positive', title: '情感關係（正向）', labels: ['崇拜'] }
         ]), JSON.stringify(exportResult.usedSections));
     check('empty used types have no legend sections', exportResult.emptySections === 0);
-    check('full legend includes household symbol', JSON.stringify(exportResult.symbols) === JSON.stringify(['同住框']));
+    check('full legend includes household symbol', JSON.stringify(exportResult.symbols) === JSON.stringify(['同住圈']));
     check('Canvas exposes shared legend render adapters', exportResult.hasAdapters);
     check('export legend sections and entry order come from shared metadata',
         JSON.stringify(exportResult.fullSections) === JSON.stringify(expectedExport),

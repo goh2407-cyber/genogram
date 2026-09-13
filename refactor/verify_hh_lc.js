@@ -342,7 +342,7 @@ function check(name, cond, detail = '') {
         app.createHousehold();
         app.updatePropertyPanel();
         const hhPanel = document.getElementById('propertyContent').innerHTML;
-        const hasHhUI = hhPanel.includes('householdNotes') && hhPanel.includes('同住家庭');
+        const hasHhUI = hhPanel.includes('householdNotes') && hhPanel.includes('同住圈');
         const notesEl = document.getElementById('householdNotes');
         notesEl.value = '與外婆同住';
         notesEl.dispatchEvent(new Event('input'));
