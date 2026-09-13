@@ -6614,7 +6614,7 @@ class GenogramApp {
     /**
      * 匯出 PNG
      */
-    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
+    async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false, legendAll = false) {
         await this.waitForCurrentCanvasFonts();
         const ds = this.getExportDataset(deidentify);
         this.canvas.personMap = ds.personMap; // [3-1] 關係/家庭線查表用複本；結束後還原
@@ -6622,11 +6622,12 @@ class GenogramApp {
         try {
             dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
                 this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
-                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
         } finally { this.canvas.personMap = this.personMap; }
+        if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
-            this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
+            await this.storage.exportPNG(dataUrl, `genogram_${timestamp}.png`);
         }
     }
 
@@ -6748,6 +6749,11 @@ class GenogramApp {
     _syncExportHeaderFields() {
         const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
         const prefs = this._readExportPrefs();
+        const legendAll = document.getElementById('exportLegendAll');
+        if (legendAll) {
+            legendAll.checked = prefs.legendAll === true;
+            legendAll.onchange = () => this._writeExportPrefs({ legendAll: legendAll.checked });
+        }
         const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
         set('exportMetaTitle', meta.title);
         set('exportMetaCaseId', meta.caseId);
@@ -6796,6 +6802,8 @@ class GenogramApp {
         // 讀取是否顯示圖例的設定
         const showLegendCheckbox = document.getElementById('exportShowLegend');
         const showLegend = showLegendCheckbox ? showLegendCheckbox.checked : true;
+        const legendAll = document.getElementById('exportLegendAll')?.checked === true;
+        this._writeExportPrefs({ legendAll });
 
         // 讀取解析度設定
         const resolutionRadios = document.getElementsByName('exportResolution');
@@ -6814,24 +6822,26 @@ class GenogramApp {
         const deidentify = document.getElementById('exportDeidentify')?.checked === true;
         const deidNote = deidentify ? '（去識別化版本）' : '';
 
+        this.canvas.lastExportEffectiveScale = null;
+        try {
         switch (format) {
             case 'png':
-                await this.exportPNG(showNotes, showLegend, scale, header, deidentify);
+                await this.exportPNG(showNotes, showLegend, scale, header, deidentify, legendAll);
                 this.updateStatus('已匯出 PNG 圖片' + deidNote, 'success');
                 break;
 
             case 'jpeg':
-                await this.exportJPEG(showNotes, showLegend, scale, header, deidentify);
+                await this.exportJPEG(showNotes, showLegend, scale, header, deidentify, legendAll);
                 this.updateStatus('已匯出 JPEG 圖片' + deidNote, 'success');
                 break;
 
             case 'svg':
-                await this.exportSVG(showNotes, showLegend, scale, header, deidentify);
+                await this.exportSVG(showNotes, showLegend, scale, header, deidentify, legendAll);
                 this.updateStatus('已匯出 SVG 向量圖' + deidNote, 'success');
                 break;
 
             case 'pdf':
-                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions, deidentify);
+                await this.exportPDF(showNotes, showLegend, scale, header, pdfOptions, deidentify, legendAll);
                 this.updateStatus('已匯出 PDF 文件' + deidNote, 'success');
                 break;
 
@@ -6842,13 +6852,23 @@ class GenogramApp {
 
             default:
                 console.warn('Unknown export format:', format);
+                return;
+        }
+        if (format !== 'json' && this.canvas.lastExportEffectiveScale !== null
+            && this.canvas.lastExportEffectiveScale < scale) {
+            const effectiveScale = Math.floor(this.canvas.lastExportEffectiveScale * 100) / 100;
+            const scaleLabel = effectiveScale > 0 ? effectiveScale : this.canvas.lastExportEffectiveScale.toPrecision(2);
+            this.updateStatus('圖太大，已自動降為 ' + scaleLabel + ' 倍解析度', 'success');
+        }
+        } catch (err) {
+            this.updateStatus('匯出失敗：' + err.message, 'error');
         }
     }
 
     /**
      * 匯出 JPEG
      */
-    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
+    async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false, legendAll = false) {
         await this.waitForCurrentCanvasFonts();
         const ds = this.getExportDataset(deidentify);
         this.canvas.personMap = ds.personMap;
@@ -6856,11 +6876,12 @@ class GenogramApp {
         try {
             dataUrl = this.canvas.exportToJPEG(ds.persons, this.relationships,
                 this.households || [], this.lifeCircles || [], 0.92, deidentify ? false : showNotes, showLegend, scale,
-                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
         } finally { this.canvas.personMap = this.personMap; }
+        if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
-            this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
+            await this.storage.exportJPEG(dataUrl, `genogram_${timestamp}.jpg`);
         }
     }
 
@@ -6869,7 +6890,7 @@ class GenogramApp {
      * 注意：由於 SVG 需要完全重新繪製，這裡使用 PNG 轉 SVG 的方式
      * 真正的向量 SVG 需要更複雜的實作
      */
-    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false) {
+    async exportSVG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false, legendAll = false) {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
@@ -6879,16 +6900,21 @@ class GenogramApp {
         try {
             dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
                 this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
-                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
         } finally { this.canvas.personMap = this.personMap; }
+        if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             // 從 canvas 取得尺寸
             const img = new Image();
-            img.onload = () => {
-                const width = img.width;
-                const height = img.height;
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error('無法讀取匯出圖片'));
+                img.src = dataUrl;
+            });
+            const width = img.width;
+            const height = img.height;
 
-                const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+            const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" 
      xmlns:xlink="http://www.w3.org/1999/xlink" 
      width="${width}" height="${height}" 
@@ -6897,17 +6923,16 @@ class GenogramApp {
     <image x="0" y="0" width="${width}" height="${height}" xlink:href="${dataUrl}"/>
 </svg>`;
 
-                const timestamp = new Date().toISOString().slice(0, 10);
-                this.storage.exportSVG(svgContent, `genogram_${timestamp}.svg`);
-            };
-            img.src = dataUrl;
+            const timestamp = new Date().toISOString().slice(0, 10);
+            await this.storage.exportSVG(svgContent, `genogram_${timestamp}.svg`);
         }
     }
 
     /**
      * 匯出 PDF
      */
-    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}, deidentify = false) {
+    async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}, deidentify = false, legendAll = false) {
+        if (typeof window.jspdf === 'undefined') throw new Error('PDF 匯出模組尚未載入，請稍後再試');
         await this.waitForCurrentCanvasFonts();
         const ds = this.getExportDataset(deidentify);
         this.canvas.personMap = ds.personMap;
@@ -6915,18 +6940,21 @@ class GenogramApp {
         try {
             dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
                 this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
-                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header);
+                this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
         } finally { this.canvas.personMap = this.personMap; }
+        if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
             const img = new Image();
-            img.onload = () => {
-                const width = img.width;
-                const height = img.height;
-                const timestamp = new Date().toISOString().slice(0, 10);
-                this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`, pdfOptions);
-            };
-            img.src = dataUrl;
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error('無法讀取匯出圖片'));
+                img.src = dataUrl;
+            });
+            const width = img.width;
+            const height = img.height;
+            const timestamp = new Date().toISOString().slice(0, 10);
+            await this.storage.exportPDF(dataUrl, width, height, `genogram_${timestamp}.pdf`, pdfOptions);
         }
     }
 

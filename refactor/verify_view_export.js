@@ -43,6 +43,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         };
         const png = app.canvas.exportToPNG(app.persons, app.relationships, app.households,
             app.lifeCircles, true, true, 1, view);
+        const usedLegendTitles = legendTitles.splice(0);
+        app.canvas.exportToPNG(app.persons, app.relationships, app.households,
+            app.lifeCircles, true, true, 1, view, null, true);
         app.canvas.drawLegendSection = originalLegendSection;
         app.canvas.drawPersonForExport = originalDrawPersonForExport;
         const after = JSON.stringify(app.persons.map(person => person.toJSON()));
@@ -51,8 +54,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             householdCount: visible.households.length,
             circleCount: visible.lifeCircles.length,
             effectiveNotes: visible.viewOptions.showNotes,
-            legendTitles,
-            personOptionsApplied: personViewOptions.length === 2 && personViewOptions.every(options =>
+            legendTitles: usedLegendTitles,
+            allLegendTitles: legendTitles,
+            personOptionsApplied: personViewOptions.length === 4 && personViewOptions.every(options =>
                 options.showNames === false && options.showAges === false
                 && options.showNotes === false && options.showMedical === false),
             pngOk: typeof png === 'string' && png.startsWith('data:image/png'),
@@ -65,8 +69,10 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         result.householdCount === 0 && result.circleCount === 0, JSON.stringify(result));
     check('View notes off overrides export-dialog notes on', result.effectiveNotes === false);
     check('hidden emotional sections are removed from the export legend',
-        JSON.stringify(result.legendTitles) === JSON.stringify(['家庭與伴侶', '暴力與特殊關係']),
+        JSON.stringify(result.legendTitles) === JSON.stringify(['暴力與特殊關係']),
         JSON.stringify(result.legendTitles));
+    check('full legend retains unused family section and honors emotional visibility',
+        JSON.stringify(result.allLegendTitles) === JSON.stringify(['家庭與伴侶', '暴力與特殊關係']));
     check('person-level export options hide names ages notes and medical markers', result.personOptionsApplied);
     check('filtered export still produces PNG', result.pngOk);
     check('export never mutates Person data', result.unchanged);
@@ -295,14 +301,17 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         const originalJpeg = canvas.exportToJPEG;
         canvas.exportToPNG = (...args) => { pngCalls.push(args); return null; };
         canvas.exportToJPEG = (...args) => { jpegCalls.push(args); return null; };
-        await app.exportPNG(true, false, 1);
-        await app.exportJPEG(true, false, 1);
-        await app.exportSVG(true, false, 1);
-        await app.exportPDF(true, false, 1);
+        // Null raster results now reject instead of silently claiming success.
+        const failed = [];
+        for (const method of ['exportPNG', 'exportJPEG', 'exportSVG', 'exportPDF']) {
+            try { await app[method](true, false, 1); }
+            catch (error) { failed.push(error.message); }
+        }
         await app.copyImageToClipboard();
         canvas.exportToPNG = originalPng;
         canvas.exportToJPEG = originalJpeg;
         return {
+            emptyRejected: failed.length === 4 && failed.every(message => message === '沒有內容可匯出'),
             pngCalls: pngCalls.length,
             jpegCalls: jpegCalls.length,
             // [2-2] exportTo* 尾端多了 header 參數：改以「有轉傳同一個 viewOptions 物件」判定，不綁最後一個位置
@@ -310,6 +319,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
             jpegThreaded: jpegCalls.every(args => args.includes(app.viewOptions))
         };
     });
+    check('empty exports reject for every image format', threaded.emptyRejected);
     check('PNG-backed App paths all forward viewOptions',
         threaded.pngCalls === 4 && threaded.pngThreaded, JSON.stringify(threaded));
     check('JPEG App path forwards viewOptions',
