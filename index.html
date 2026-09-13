@@ -32,15 +32,13 @@
         <!-- 頂部工具列 -->
         <header class="global-bar" id="globalBar">
             <div class="brand-lockup">
-                <h1 class="app-title" style="display: flex; align-items: center; gap: 10px;">
+                <h1 class="app-title app-title-lockup">
                     <svg id="a" xmlns="http://www.w3.org/2000/svg" width="16.55mm" height="13.99mm"
                         viewBox="0 0 46.91 39.65">
                         <path
-                            d="m45.65,20.95c1.82.1,1.43-1.15.29-1.72-3.46-1.73-6.88-3.06-8.01-3.46-1.51-.53-1.97.44-1.97.44,0,0-4.41,5.73-4.86,6.52-.92,1.65.89,1.36.89,1.36l4.39-2.39c.92,1.06,2.65,4.94.24,7.87-.89,1.08-2.87,3.5-7.71,4.83-5.08,1.39-8.74.45-10.58-.66-.82-.5.89-4.58-4.01-3.92-4.2.57-3.35-1.43-3.52-1.93-.08-.24,0-.78-.39-.97-.42-.19-.68-.5-.68-.5-.5-.89.92-1.26.92-1.26-2.42.35-1.21-.95-1.04-1.38.11-.27.3-.32-.88-.64-1.4-.39-1.22-.82-.36-1.75.89-.96,1.06-2.01,1.1-2.06.17-.31-.82-6.52,5.14-8.48,2.8-.92,6.21-.98,10.51-.44,6.33.81,6.03-2.72,6.03-2.72-7.65-1.38-10.96-1.45-14.44-1.17-6.88.55-11.65,2.78-14.39,6.26-2.74,3.48-3.28,9.19-.52,13.81.07.12,2.77,4.64,5.65,7.03,3.24,2.7,6.68,3.88,7.88,4.33,7.19,2.52,15.47,2.22,21.82-1.05,10.96-6.47,4.61-14.73,3.89-16.35,0,0,1.99.24,4.58.38Z"
-                            style="fill:#ed1261; stroke-width:0px;" />
+                            d="m45.65,20.95c1.82.1,1.43-1.15.29-1.72-3.46-1.73-6.88-3.06-8.01-3.46-1.51-.53-1.97.44-1.97.44,0,0-4.41,5.73-4.86,6.52-.92,1.65.89,1.36.89,1.36l4.39-2.39c.92,1.06,2.65,4.94.24,7.87-.89,1.08-2.87,3.5-7.71,4.83-5.08,1.39-8.74.45-10.58-.66-.82-.5.89-4.58-4.01-3.92-4.2.57-3.35-1.43-3.52-1.93-.08-.24,0-.78-.39-.97-.42-.19-.68-.5-.68-.5-.5-.89.92-1.26.92-1.26-2.42.35-1.21-.95-1.04-1.38.11-.27.3-.32-.88-.64-1.4-.39-1.22-.82-.36-1.75.89-.96,1.06-2.01,1.1-2.06.17-.31-.82-6.52,5.14-8.48,2.8-.92,6.21-.98,10.51-.44,6.33.81,6.03-2.72,6.03-2.72-7.65-1.38-10.96-1.45-14.44-1.17-6.88.55-11.65,2.78-14.39,6.26-2.74,3.48-3.28,9.19-.52,13.81.07.12,2.77,4.64,5.65,7.03,3.24,2.7,6.68,3.88,7.88,4.33,7.19,2.52,15.47,2.22,21.82-1.05,10.96-6.47,4.61-14.73,3.89-16.35,0,0,1.99.24,4.58.38Z" class="brand-mark" />
                         <polygon
-                            points="34.59 3.92 28.41 4.29 34.85 5.04 37.77 14.11 36.65 5.1 42.82 4.73 36.39 3.97 34.58 0 34.59 3.92"
-                            style="fill:#ed1261; stroke-width:0px;" />
+                            points="34.59 3.92 28.41 4.29 34.85 5.04 37.77 14.11 36.65 5.1 42.82 4.73 36.39 3.97 34.58 0 34.59 3.92" class="brand-mark" />
                     </svg>
                     <span class="app-title-text">勵馨家系圖生成器</span>
                 </h1>
@@ -242,7 +240,7 @@
                     <button class="zoom-btn" id="zoomReset" title="重置縮放">⊙</button>
                 </div>
                 <!-- [NEW - G 方案] 自動排列預覽確認浮動欄 -->
-                <div class="layout-preview-bar" id="layoutPreviewBar" style="display: none;">
+                <div class="layout-preview-bar initially-hidden" id="layoutPreviewBar">
                     <span class="preview-message">📐 排列預覽中 — 確認套用或取消？</span>
                     <div class="preview-actions">
                         <button class="btn-apply" id="applyLayoutBtn" title="套用排列">✓ 套用</button>
@@ -329,20 +327,18 @@
                     </div>
 
                     <!-- 多元性別切換按鈕 -->
-                    <div style="text-align: center; margin-top: 10px;">
-                        <button id="toggleDiversityBtn"
-                            style="background:none; border:none; color: var(--primary-color); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 5px; margin: 0 auto;">
+                    <div class="diversity-toggle-row">
+                        <button id="toggleDiversityBtn" class="diversity-toggle" >
                             <span>🌈 多元性別選項</span>
                         </button>
                     </div>
 
                     <!-- 多元性別選項區域 (預設隱藏) -->
-                    <div id="diversitySection"
-                        style="display: none; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
-                        <div style="margin-bottom: 20px;">
-                            <h4 style="font-size: 14px; color: var(--text-secondary); margin-bottom: 10px;">非二元 / 跨性別
+                    <div id="diversitySection" class="diversity-section" >
+                        <div class="diversity-group">
+                            <h4 class="diversity-heading">非二元 / 跨性別
                             </h4>
-                            <div class="gender-selection" style="gap: 15px; padding: 0; flex-wrap: wrap;">
+                            <div class="gender-selection gender-selection--transgender">
                                 <button class="gender-btn" data-gender="male" data-transgender="ftm">
                                     <span class="icon ftm-icon"></span>
                                     <span>女跨男</span>
@@ -355,10 +351,10 @@
                         </div>
 
                         <div>
-                            <h4 style="font-size: 14px; color: var(--text-secondary); margin-bottom: 5px;">性傾向
+                            <h4 class="orientation-heading">性傾向
                             </h4>
 
-                            <div class="gender-selection" style="gap: 10px; padding: 0; flex-wrap: wrap;">
+                            <div class="gender-selection gender-selection--orientation">
                                 <button class="gender-btn" data-gender="male" data-orientation="true">
                                     <span class="icon male-icon with-triangle"></span>
                                     <span>男同性戀</span>
@@ -382,9 +378,8 @@
                             </div>
                         </div>
 
-                        <div style="text-align: center; margin-top: 20px;">
-                            <button id="backToBasicBtn"
-                                style="background:none; border:none; color: var(--text-secondary); cursor: pointer; font-size: 13px;">
+                        <div class="diversity-back-row">
+                            <button id="backToBasicBtn" class="diversity-back" >
                                 <span>⬆ 返回基本選項</span>
                             </button>
                         </div>
@@ -509,7 +504,7 @@
                 aria-labelledby="childrenModalTitle" tabindex="-1">
                 <h3 class="modal-title" id="childrenModalTitle">選擇共同子女</h3>
                 <div class="modal-content">
-                    <p style="color: #666; margin-bottom: 1rem;">點選要設為這對父母的子女（可多選）</p>
+                    <p class="children-selection-hint">點選要設為這對父母的子女（可多選）</p>
                     <div id="childrenList" class="children-selection">
                         <!-- 子女列表會動態生成 -->
                     </div>
@@ -543,7 +538,7 @@
 
     <!-- 使用說明對話框 -->
     <div class="modal-overlay" id="helpModal" hidden inert aria-hidden="true">
-        <div class="modal" style="max-width: 650px;" role="dialog" aria-modal="true"
+        <div class="modal modal--help" role="dialog" aria-modal="true"
             aria-labelledby="helpModalTitle" tabindex="-1">
             <h3 class="modal-title" id="helpModalTitle">勵馨家系圖生成器 - 使用說明</h3>
             <div class="modal-content help-modal-content">
@@ -576,7 +571,7 @@
                 <div class="help-section">
                     <h4>存檔邏輯 (重要)</h4>
                     <ul>
-                        <li><strong>標題列：</strong>顯示目前檔名；出現 <strong style="color:#ed1261;">●</strong> 表示有變更尚未寫入檔案。</li>
+                        <li><strong>標題列：</strong>顯示目前檔名；出現 <strong class="help-dirty-mark">●</strong> 表示有變更尚未寫入檔案。</li>
                         <li><strong>儲存 (Ctrl+S)：</strong>若已連結檔案（曾「載入」或「另存」），直接寫回該檔；否則先存到瀏覽器暫存，並提醒您另存。</li>
                         <li><strong>另存：</strong>選擇位置與檔名，匯出 JSON 備份；之後 Ctrl+S 會直接更新這個檔案。</li>
                         <li><strong>載入：</strong>按「載入」會先列出最近載入的檔案，點一下即可重新載入並連結；也可「從電腦載入…」。載入大型檔案會自動符合全圖。</li>
@@ -608,39 +603,34 @@
             <h3 class="modal-title" id="exportModalTitle">選擇匯出格式</h3>
             <div class="modal-content">
                 <div class="export-settings">
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="checkbox" id="exportShowNotes" checked
-                            style="margin-right: 8px; width: 18px; height: 18px;">
+                    <label class="export-setting-label">
+                        <input type="checkbox" id="exportShowNotes" checked class="export-setting-checkbox" >
                         <span>顯示備註 (成員備註 + 關係線時間/說明)</span>
                     </label>
-                    <label style="display: flex; align-items: center; cursor: pointer; margin-top: 8px;">
-                        <input type="checkbox" id="exportShowLegend" checked
-                            style="margin-right: 8px; width: 18px; height: 18px;">
+                    <label class="export-setting-label export-setting-label--spaced">
+                        <input type="checkbox" id="exportShowLegend" checked class="export-setting-checkbox" >
                         <span>顯示關係類型圖例</span>
                     </label>
-                    <label style="display: flex; align-items: center; cursor: pointer; margin-top: 8px; margin-left: 26px;">
-                        <input type="checkbox" id="exportLegendAll"
-                            style="margin-right: 8px; width: 18px; height: 18px;">
+                    <label class="export-setting-label export-setting-label--nested">
+                        <input type="checkbox" id="exportLegendAll" class="export-setting-checkbox" >
                         <span>列出全部線型（教學／督導用）</span>
                     </label>
-                    <div style="margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px;">
-                        <span style="font-size: 14px; font-weight: bold; color: #555;">解析度 (影響檔案大小):</span>
-                        <div style="display: flex; gap: 15px; margin-top: 6px;">
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="radio" name="exportResolution" value="2" checked
-                                    style="margin-right: 6px;">
+                    <div class="export-resolution-settings">
+                        <span class="export-resolution-title">解析度 (影響檔案大小):</span>
+                        <div class="export-resolution-options">
+                            <label class="export-setting-label">
+                                <input type="radio" name="exportResolution" value="2" checked class="export-resolution-radio" >
                                 <span>高解析度 (2x)</span>
                             </label>
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="radio" name="exportResolution" value="1" style="margin-right: 6px;">
+                            <label class="export-setting-label">
+                                <input type="radio" name="exportResolution" value="1" class="export-resolution-radio">
                                 <span>標準解析度 (1x)</span>
                             </label>
                         </div>
                     </div>
                     <div class="export-header-settings">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="exportIncludeHeader"
-                                style="margin-right: 8px; width: 18px; height: 18px;">
+                        <label class="export-setting-label">
+                            <input type="checkbox" id="exportIncludeHeader" class="export-setting-checkbox" >
                             <span>加上頁首（標題 / 案號 / 日期 / 繪製者）</span>
                         </label>
                         <div class="export-header-fields" id="exportHeaderFields" hidden>
@@ -654,13 +644,12 @@
                             </div>
                             <p class="export-field-hint">標題、案號、繪製者會存進這份個案的 JSON 檔；日期預設今天，不存檔。「複製圖片」不加頁首。</p>
                         </div>
-                        <label style="display: flex; align-items: center; cursor: pointer; margin-top: 10px;">
-                            <input type="checkbox" id="exportDeidentify"
-                                style="margin-right: 8px; width: 18px; height: 18px;">
+                        <label class="export-setting-label export-setting-label--separated">
+                            <input type="checkbox" id="exportDeidentify" class="export-setting-checkbox" >
                             <span>去識別化（姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性）</span>
                         </label>
                         <div class="export-pdf-settings">
-                            <span style="font-size: 13px; font-weight: 600; color: #555;">PDF 紙張：</span>
+                            <span class="export-pdf-title">PDF 紙張：</span>
                             <select id="exportPdfFormat" aria-label="PDF 紙張大小">
                                 <option value="a4" selected>A4</option>
                                 <option value="a3">A3</option>
@@ -733,7 +722,7 @@
     </div>
 
     <!-- 隱藏的檔案輸入 -->
-    <input type="file" id="fileInput" accept=".json" style="display: none;">
+    <input type="file" id="fileInput" accept=".json" class="initially-hidden">
     </div>
 
     <!-- jsPDF for PDF export -->
