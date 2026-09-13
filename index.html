@@ -48,7 +48,7 @@
             <div class="document-context"><span class="document-name" id="documentName">未命名家系圖</span><span class="document-dirty" id="documentDirty" hidden aria-label="有變更尚未儲存至檔案">●</span></div>
             <nav class="canvas-tool-dock" id="canvasToolDock" aria-label="畫布工具">
                 <div class="tool-group generation-group">
-                    <button class="tool-btn primary" id="addPerson" title="新增角色 (N)" aria-label="新增角色 (N)">
+                    <button class="tool-btn primary" id="addPerson" title="新增成員 (N)" aria-label="新增成員 (N)">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -56,7 +56,7 @@
                                 <line x1="19" y1="8" x2="19" y2="14" />
                                 <line x1="22" y1="11" x2="16" y2="11" />
                             </svg></span>
-                        <span class="tool-label">新增角色 (N)</span>
+                        <span class="tool-label">新增成員 (N)</span>
                     </button>
                 </div>
                 <div class="tool-divider"></div>
@@ -76,13 +76,13 @@
                         <span class="tool-label">範圍圈選 (B)</span>
                     </button>
 
-                    <button class="tool-btn" id="householdTool" title="同住/圈選 (H)" aria-label="同住/圈選 (H)">
+                    <button class="tool-btn" id="householdTool" title="同住圈 (H)" aria-label="同住圈 (H)">
                         <span class="icon household-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 10.5L12 3l9 7.5" />
                                 <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
                             </svg></span>
-                        <span class="tool-label">同住 (H)</span>
+                        <span class="tool-label">同住圈 (H)</span>
                     </button>
 
                     <button class="tool-btn" id="lifeCircleTool" title="生活圈 (L)" aria-label="生活圈 (L)">
@@ -292,7 +292,7 @@
                         <label class="view-option"><input type="checkbox" data-view-option="showNotes" checked><span>備註與關係說明</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showMedical" checked><span>醫學標記</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showEmotionalRelationships" checked><span>情感關係線</span></label>
-                        <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住框</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住圈</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
                     </div>
                     <div class="panel-content view-age-ref" id="viewAgeRef">
@@ -301,7 +301,7 @@
                             <input type="date" id="ageReferenceDate" aria-describedby="ageReferenceHint">
                             <button type="button" class="btn-cancel btn-compact" id="ageReferenceToday">今天</button>
                         </div>
-                        <p class="view-options-hint" id="ageReferenceHint">有填出生年月的人物，年齡依此日期自動計算；預設為今天，不會寫入檔案。</p>
+                        <p class="view-options-hint" id="ageReferenceHint">有填出生年月的成員，年齡依此日期自動計算；預設為今天，不會寫入檔案。</p>
                     </div>
                 </section>
             </aside>
@@ -526,9 +526,9 @@
     <div class="modal-overlay" id="openFileModal" hidden inert aria-hidden="true">
         <div class="modal" role="dialog" aria-modal="true"
             aria-labelledby="openFileModalTitle" tabindex="-1">
-            <h3 class="modal-title" id="openFileModalTitle">開啟檔案</h3>
+            <h3 class="modal-title" id="openFileModalTitle">載入檔案</h3>
             <div class="modal-content">
-                <p class="open-file-hint">最近開過的檔案（點一下直接開啟並連結，之後 Ctrl+S 會直接寫回；瀏覽器可能會再確認一次存取權限）。</p>
+                <p class="open-file-hint">最近載入的檔案（點一下直接載入並連結，之後 Ctrl+S 會直接寫回；瀏覽器可能會再確認一次存取權限）。</p>
                 <div id="recentFileList" class="recent-file-list" role="list" aria-label="最近檔案"></div>
                 <p class="open-file-hint open-file-privacy">共用電腦提醒：最近檔案清單與瀏覽器暫存都留在這台電腦上。離開前可按「清除本機暫存並關閉個案」，不會刪除你另存的 JSON 檔。</p>
             </div>
@@ -536,7 +536,7 @@
                 <button class="btn-cancel btn-danger-text" id="clearLocalDataBtn" type="button">清除本機暫存並關閉個案</button>
                 <span class="modal-actions-spacer" aria-hidden="true"></span>
                 <button class="btn-cancel" id="cancelOpenFile" type="button">取消</button>
-                <button class="btn-primary" id="browseFileBtn" type="button">瀏覽檔案…</button>
+                <button class="btn-primary" id="browseFileBtn" type="button">從電腦載入…</button>
             </div>
         </div>
     </div>
@@ -558,18 +558,18 @@
                 <div class="help-section">
                     <h4>基本操作</h4>
                     <ul>
-                        <li><strong>新增人物：</strong>點擊「新增角色 (N)」選擇性別後，畫布會顯示半透明格位預覽，點擊放置（按住 <strong>Alt</strong> 可精準落點，Esc 取消）。</li>
-                        <li><strong>快速新增親屬：</strong>選取人物後，周圍出現「父母 / 手足 / 伴侶 / 兒子 / 女兒 / 懷孕」按鈕，一鍵新增並自動連線。</li>
-                        <li><strong>編輯人物：</strong>選取後在右側「屬性」修改姓名、年齡、性別、已過世、案主、生育結果（流產 / 人工流產）、備註、醫學標記；同父母的手足可設定多胞胎與同卵。填「出生年月」後年齡會自動計算（過世者再填死亡年月即為享年）。</li>
-                        <li><strong>調整文字位置：</strong>點人物的姓名文字會出現位置搖桿，可拖曳微調姓名與備註的擺放。</li>
+                        <li><strong>新增成員：</strong>點擊「新增成員 (N)」選擇性別後，畫布會顯示半透明格位預覽，點擊放置（按住 <strong>Alt</strong> 可精準落點，Esc 取消）。</li>
+                        <li><strong>快速新增親屬：</strong>選取成員後，周圍出現「父母 / 手足 / 伴侶 / 兒子 / 女兒 / 懷孕」按鈕，一鍵新增並自動連線。</li>
+                        <li><strong>編輯成員：</strong>選取後在右側「屬性」修改姓名、年齡、性別、已過世、案主、生育結果（流產 / 人工流產）、備註、醫學標記；同父母的手足可設定多胞胎與同卵。填「出生年月」後年齡會自動計算（過世者再填死亡年月即為享年）。</li>
+                        <li><strong>調整文字位置：</strong>點成員的姓名文字會出現位置搖桿，可拖曳微調姓名與備註的擺放。</li>
                         <li><strong>建立關係：</strong>使用「連接 (C)」先點第一個人再點第二個人，從清單選擇類型；親子線可選 <strong>親生 / 收養 / 寄養</strong>。</li>
                         <li><strong>修改關係：</strong>用「選取 (V)」點關係線，線旁出現鉛筆（改類型）、⇄（對調方向）；右側面板也可直接改類型、子女線型與婚姻線走法。</li>
                         <li><strong>婚姻線走法：</strong>選取婚姻線後，鉛筆旁有「自 / ㄇ / 一 / ㄩ」四個走法鈕；預設自動：同列淨空走直線、中間夾人時下折 ㄩ 避開。</li>
-                        <li><strong>橫桿距離：</strong>選 ㄇ 或 ㄩ 走法後，面板可用 ＋／－ 調整橫桿與人物的距離，或直接在畫布上按住橫桿上下拖動；多段婚姻的天橋卡到上方人物時用這個調開。</li>
-                        <li><strong>同住框：</strong>用「範圍圈選 (B)」或 Shift 多選成員後按「同住 (H)」即建框；框可整體拖曳。選取框後右側可命名（顯示在框上）、用 ✕ 移出成員或從下拉加入成員；框線會自動繞開不在框內的人，不必手動微調位置。</li>
+                        <li><strong>橫桿距離：</strong>選 ㄇ 或 ㄩ 走法後，面板可用 ＋／－ 調整橫桿與成員的距離，或直接在畫布上按住橫桿上下拖動；多段婚姻的天橋卡到上方成員時用這個調開。</li>
+                        <li><strong>同住圈：</strong>用「範圍圈選 (B)」或 Shift 多選成員後按「同住圈 (H)」即建框；框可整體拖曳。選取框後右側可命名（顯示在框上）、用 ✕ 移出成員或從下拉加入成員；框線會自動繞開不在框內的人，不必手動微調位置。</li>
                         <li><strong>生活圈：</strong>用「生活圈 (L)」按住拖曳直接拉出橢圓，或逐點點頂點（Backspace 退回上一點）、雙擊或 Enter 完成。選取後可拖曳頂點改形狀、雙擊邊線新增頂點、Alt＋點頂點刪除；面板可命名、換色、設定名稱位置與說明。</li>
-                        <li><strong>檢視：</strong>右側「檢視」頁籤可暫時隱藏姓名、年齡、備註、醫學標記、情感線、同住框、生活圈（不刪資料，匯出圖片會遵循），並可設定「年齡基準日」看某個時間點的年齡。</li>
-                        <li><strong>自動排列：</strong>依親子關係分輩分列、配偶相鄰、子女置中於父母下方、手足長→幼、多段婚姻依婚期排列（最近一段最靠近本人）；先預覽再「套用」或「取消」，套用後可 Ctrl+Z 復原。沒有任何關係的人物不會被移動。</li>
+                        <li><strong>檢視：</strong>右側「檢視」頁籤可暫時隱藏姓名、年齡、備註、醫學標記、情感線、同住圈、生活圈（不刪資料，匯出圖片會遵循），並可設定「年齡基準日」看某個時間點的年齡。</li>
+                        <li><strong>自動排列：</strong>依親子關係分輩分列、配偶相鄰、子女置中於父母下方、手足長→幼、多段婚姻依婚期排列（最近一段最靠近本人）；先預覽再「套用」或「取消」，套用後可 Ctrl+Z 復原。沒有任何關係的成員不會被移動。</li>
                         <li><strong>縮放：</strong>滾輪縮放；右鍵拖曳或空白鍵＋拖曳平移；左下角可「符合全圖」、重設 100%、「定位案主」（回到 100% 並置中案主，多位時輪流）。平板可雙指縮放與平移。縮得很小時姓名會自動放大、備註暫時隱藏（只影響螢幕，匯出不變）。</li>
                     </ul>
                 </div>
@@ -579,7 +579,7 @@
                         <li><strong>標題列：</strong>顯示目前檔名；出現 <strong style="color:#ed1261;">●</strong> 表示有變更尚未寫入檔案。</li>
                         <li><strong>儲存 (Ctrl+S)：</strong>若已連結檔案（曾「載入」或「另存」），直接寫回該檔；否則先存到瀏覽器暫存，並提醒您另存。</li>
                         <li><strong>另存：</strong>選擇位置與檔名，匯出 JSON 備份；之後 Ctrl+S 會直接更新這個檔案。</li>
-                        <li><strong>載入：</strong>按「載入」會先列出最近開過的檔案，點一下即可重開並連結；也可「瀏覽檔案…」。載入大型檔案會自動符合全圖。</li>
+                        <li><strong>載入：</strong>按「載入」會先列出最近載入的檔案，點一下即可重新載入並連結；也可「從電腦載入…」。載入大型檔案會自動符合全圖。</li>
                         <li><strong>共用電腦：</strong>「載入」視窗內的「清除本機暫存並關閉個案」會清掉瀏覽器暫存與最近檔案清單，回到空白畫布；不會刪除你另存的 JSON 檔。</li>
                         <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。勾「去識別化」可把姓名換成代號（案主／男1／女1…）、年齡換成年齡帶、隱藏備註與關係說明，適合交給督導、法院或教學使用，磁碟檔案不變。「複製圖片」可直接貼到 Word / LINE。</li>
                     </ul>
@@ -587,8 +587,8 @@
                 <div class="help-section">
                     <h4>快速鍵</h4>
                     <div class="shortcut-grid">
-                        <span>N: 新增角色</span> <span>V: 選取</span> <span>C: 連接</span>
-                        <span>B: 範圍圈選</span> <span>H: 同住圈選</span> <span>L: 生活圈</span>
+                        <span>N: 新增成員</span> <span>V: 選取</span> <span>C: 連接</span>
+                        <span>B: 範圍圈選</span> <span>H: 同住圈</span> <span>L: 生活圈</span>
                         <span>Del: 刪除</span> <span>Ctrl+Z: 復原</span> <span>Ctrl+Y: 重做</span>
                         <span>Ctrl+S: 儲存</span> <span>Esc: 取消</span> <span>Shift+點擊: 多選</span>
                         <span>Alt+放置: 精準落點</span> <span>右鍵拖曳: 平移</span> <span>空白鍵+拖曳: 平移</span>
@@ -611,7 +611,7 @@
                     <label style="display: flex; align-items: center; cursor: pointer;">
                         <input type="checkbox" id="exportShowNotes" checked
                             style="margin-right: 8px; width: 18px; height: 18px;">
-                        <span>顯示備註 (人物備註 + 關係線時間/說明)</span>
+                        <span>顯示備註 (成員備註 + 關係線時間/說明)</span>
                     </label>
                     <label style="display: flex; align-items: center; cursor: pointer; margin-top: 8px;">
                         <input type="checkbox" id="exportShowLegend" checked

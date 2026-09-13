@@ -25,7 +25,7 @@ function check(name, condition, detail = '') {
 
     await page.click('#addPerson');
     check('generic add prompt names a person rather than a parent',
-        await page.locator('#statusBar').textContent() === '選擇新增人物的性別');
+        await page.locator('#statusBar').textContent() === '選擇新增成員的性別');
     await page.click('#cancelGender');
 
     const timerResult = await page.evaluate(async () => {

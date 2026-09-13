@@ -3108,7 +3108,7 @@ class GenogramCanvas {
                 .reduce((total, section) => total + section.items.length + 1.5, 0);
             sections.push({ id: 'symbols', title: '圖形符號',
                 column: rows('left') <= rows('right') ? 'left' : 'right',
-                items: [{ type: 'household', label: '同住框' }] });
+                items: [{ type: 'household', label: '同住圈' }] });
         }
         return sections;
     }
