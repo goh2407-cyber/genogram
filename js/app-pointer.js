@@ -1182,6 +1182,11 @@ Object.assign(GenogramApp.prototype, {
                     e.preventDefault();
                     this.redo();
                     break;
+                case 'o':
+                case 'O':
+                    e.preventDefault();
+                    this.handleLoadClick(); // [R4] Ctrl+O 載入
+                    break;
                 case 's':
                     e.preventDefault();
                     this.saveToFile();
@@ -1195,18 +1200,6 @@ Object.assign(GenogramApp.prototype, {
             case 'v':
             case 'V':
                 this.setTool('select');
-                break;
-            case '1':
-                this.showGenderModal('grandparent');
-                break;
-            case '2':
-                this.showGenderModal('parent');
-                break;
-            case '3':
-                this.showGenderModal('child');
-                break;
-            case '4':
-                this.showGenderModal('grandchild');
                 break;
             case 'n':
             case 'N':
@@ -1242,6 +1235,8 @@ Object.assign(GenogramApp.prototype, {
                     }
                     break;
                 }
+                // [R4] Backspace 不再等同 Delete（筆電誤刪率高）；只保留生活圈退回頂點
+                if (e.key === 'Backspace') break;
                 this.deleteSelected();
                 break;
             case 'Escape':

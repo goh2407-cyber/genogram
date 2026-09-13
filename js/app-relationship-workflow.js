@@ -594,10 +594,12 @@ Object.assign(GenogramApp.prototype, {
                 ? rel.getCategory()
                 : Relationship.getCategory(rel.type);
 
-            // 舊版相容：family 視為 parent-child
+            // 舊版相容：family 視為 parent-child（沒有方向語意，稍後才允許用 Y 軸推斷）
+            let legacyFamily = false;
             if (rel.type === 'family') {
                 rel.type = 'parent-child';
                 category = 'family';
+                legacyFamily = true;
                 stats.normalized++;
             }
 
@@ -618,15 +620,18 @@ Object.assign(GenogramApp.prototype, {
                 return;
             }
 
-            // 以 Y 軸位置統一 parent -> child 方向
+            // [R4] parent-child 一律信任 from→to（GENERATION_POLICY 第 2 條）；
+            // 只有舊版 'family' 型別沒有方向資料，才退而用 Y 軸位置推斷（上者為 parent）
             let parentId = rel.fromPersonId;
             let childId = rel.toPersonId;
-            if (p1.y < p2.y) {
-                parentId = p1.id;
-                childId = p2.id;
-            } else if (p2.y < p1.y) {
-                parentId = p2.id;
-                childId = p1.id;
+            if (legacyFamily) {
+                if (p1.y < p2.y) {
+                    parentId = p1.id;
+                    childId = p2.id;
+                } else if (p2.y < p1.y) {
+                    parentId = p2.id;
+                    childId = p1.id;
+                }
             }
 
             const pairKey = `${parentId}->${childId}`;

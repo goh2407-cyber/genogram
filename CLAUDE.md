@@ -19,7 +19,7 @@
   App 內 `this.getKinshipEngine().getParentIds(id)` 等。
 - `KinshipEngine` 僅信任 `parent-child` 關係的 `from→to` 方向
   （`from=parent, to=child`）。**不得**以 Y 座標推斷親屬方向。
-- 舊資料方向由 `App.normalizeLoadedFamilyRelationships()` 在載入時正規化。
+- 舊資料方向由 `App.normalizeLoadedFamilyRelationships()` 在載入時正規化：`parent-child` 一律信任 `from→to`，只有舊版 `family` 型別（無方向資料）才以 Y 座標推斷。存檔 schema 版號 1.1（`storage.migrate` 對更新的版號會提醒）。
 
 ## 檔案結構（2026-09-13 拆檔後）
 

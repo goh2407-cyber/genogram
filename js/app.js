@@ -269,6 +269,14 @@ class GenogramApp {
             cancelRelationship: document.getElementById('cancelRelationship'),
             exportModal: document.getElementById('exportModal'),
             cancelExport: document.getElementById('cancelExport'),
+            exportConfirmBtn: document.getElementById('exportConfirmBtn'), // [R4]
+            confirmModal: document.getElementById('confirmModal'), // [R4] 品牌確認框
+            confirmTitle: document.getElementById('confirmTitle'),
+            confirmMessage: document.getElementById('confirmMessage'),
+            confirmOk: document.getElementById('confirmOk'),
+            confirmCancel: document.getElementById('confirmCancel'),
+            emptyState: document.getElementById('emptyState'), // [R4] 空白畫布引導
+            emptyStateAddBtn: document.getElementById('emptyStateAddBtn'),
             helpModal: document.getElementById('helpModal'),
             helpBtn: document.getElementById('helpBtn'),
             closeHelpBtn: document.getElementById('closeHelp'),
@@ -305,10 +313,58 @@ class GenogramApp {
             [this.elements.openFileModal, () => this.closeOpenFileModal(), '#browseFileBtn'],
             [this.elements.childrenModal, () => this.closeChildrenModal(), '#skipChildren'],
             [this.elements.helpModal, () => this.closeHelpModal(), '#closeHelp'],
-            [this.elements.exportModal, () => this.closeExportModal(), '.export-option-btn']
+            [this.elements.exportModal, () => this.closeExportModal(), '.export-option-btn'],
+            [this.elements.confirmModal, () => this._resolveConfirm(false), '#confirmCancel'] // [R4]
         ];
         registrations.forEach(([overlay, requestClose, initialFocus]) =>
             this.modalManager.register(overlay, { requestClose, initialFocus }));
+    }
+
+    /**
+     * [R4] 空白畫布引導卡：沒有任何成員、也不在放置流程中時顯示
+     */
+    updateEmptyState() {
+        const el = this.elements.emptyState;
+        if (!el) return;
+        // 只在「真的什麼都沒有」且處於選取工具時顯示，才不會擋住生活圈／同住圈工具的點擊
+        const nothing = this.persons.length === 0 && (this.lifeCircles || []).length === 0
+            && (this.households || []).length === 0;
+        const show = nothing && !this.placementSession && !this.isLoading && this.currentTool === 'select';
+        el.hidden = !show;
+    }
+
+    /**
+     * [R4] 品牌確認框，取代原生 confirm()。回傳 Promise<boolean>。
+     * cancelText 傳 null 就只剩一顆按鈕（等同 alert）。
+     */
+    confirmDialog({ title = '請確認', message = '', okText = '確定', cancelText = '取消', danger = false } = {}) {
+        const el = this.elements;
+        if (!el.confirmModal || !this.modalManager) {
+            return Promise.resolve(window.confirm(message));
+        }
+        el.confirmTitle.textContent = title;
+        el.confirmMessage.textContent = message;
+        el.confirmOk.textContent = okText;
+        el.confirmOk.classList.toggle('btn-danger', danger === true);
+        el.confirmCancel.textContent = cancelText || '取消';
+        el.confirmCancel.style.display = cancelText === null ? 'none' : '';
+        if (this._confirmResolve) this._confirmResolve(false); // 前一個尚未回應的先當取消
+        return new Promise(resolve => {
+            this._confirmResolve = resolve;
+            this.modalManager.open(el.confirmModal);
+        });
+    }
+
+    alertDialog(message, title = '提示') {
+        return this.confirmDialog({ title, message, okText: '知道了', cancelText: null });
+    }
+
+    _resolveConfirm(value) {
+        const resolve = this._confirmResolve;
+        this._confirmResolve = null;
+        const overlay = this.elements.confirmModal;
+        if (overlay && overlay.classList.contains('active')) this.modalManager.close(overlay);
+        if (resolve) resolve(value === true);
     }
 
     openHelpModal() {
@@ -595,13 +651,20 @@ class GenogramApp {
         this.elements.helpBtn?.addEventListener('click', () => this.openHelpModal());
         this.elements.closeHelpBtn?.addEventListener('click', () => this.closeHelpModal());
         this.elements.cancelExport?.addEventListener('click', () => this.closeExportModal());
+        // [R4] 格式鈕只切換選擇；真正匯出由「匯出」主按鈕觸發
         document.querySelectorAll('.export-option-btn').forEach(button => {
-            button.addEventListener('click', () => {
-                const format = button.dataset.format;
-                this.closeExportModal();
-                this.handleExportFormat(format);
-            });
+            button.addEventListener('click', () => this.selectExportFormat(button.dataset.format));
         });
+        this.elements.exportConfirmBtn?.addEventListener('click', () => {
+            const format = this.exportFormat || 'png';
+            this.closeExportModal();
+            this.handleExportFormat(format);
+        });
+        // [R4] 品牌確認框
+        this.elements.confirmOk?.addEventListener('click', () => this._resolveConfirm(true));
+        this.elements.confirmCancel?.addEventListener('click', () => this._resolveConfirm(false));
+        // [R4] 空白畫布引導卡
+        this.elements.emptyStateAddBtn?.addEventListener('click', () => this.showGenderModal('parent'));
 
         if (this.elements.autoLayoutBtn) {
             this.elements.autoLayoutBtn.addEventListener('click', () => this.previewAutoLayout());
@@ -1706,6 +1769,7 @@ class GenogramApp {
         );
         this.updateLabelPositionPopover();
         this.updateRoutingWarning();
+        this.updateEmptyState(); // [R4]
 
         // 繪製生活圈預覽（正在繪製中，維持最上層）
         if (this.isDrawingLifeCircle && this.currentLifeCirclePoints.length > 0) {
@@ -2106,6 +2170,12 @@ class GenogramApp {
      * 載入數據到應用程式
      */
     loadData(data) {
+        // [R4] 較新版本檔案的提醒（由 storage.migrate 設定）；延後顯示，才不會被「已載入」蓋掉
+        const loadNotice = this.storage && this.storage.lastLoadNotice;
+        if (loadNotice) {
+            this.storage.lastLoadNotice = null;
+            setTimeout(() => this.updateStatus(loadNotice, 'warning', { autoHideMs: 9000 }), 80);
+        }
         if (this.isPreviewingLayout) this.cancelPreviewedLayout();
         this.commitPropertyEditSession();
         this.cancelPlacement();

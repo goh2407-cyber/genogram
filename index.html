@@ -226,6 +226,19 @@
                 <div id="routingWarning" class="routing-warning" role="status" aria-live="polite" hidden></div>
                 <!-- 狀態提示條 -->
                 <div class="status-bar" id="statusBar">選取工具已啟用</div>
+                <!-- [R4] 空白畫布引導卡（有成員後自動隱藏） -->
+                <div class="empty-state" id="emptyState" hidden>
+                    <div class="empty-state-card" role="note" aria-label="開始畫家系圖">
+                        <h2>開始畫一張家系圖</h2>
+                        <ol>
+                            <li><kbd>N</kbd> 新增第一位成員，通常先放案主</li>
+                            <li>點選成員，用周圍的圓形按鈕加父母、手足、伴侶、子女</li>
+                            <li><kbd>C</kbd> 連接兩位成員建立其他關係；<kbd>H</kbd> 圈出同住圈</li>
+                        </ol>
+                        <button type="button" class="btn-primary" id="emptyStateAddBtn">新增第一位成員</button>
+                        <p class="empty-state-hint">要開舊檔請按上方「載入」；完整說明在右上角「？」。</p>
+                    </div>
+                </div>
                 <!-- 縮放控制 -->
                 <div class="zoom-controls">
                     <button class="zoom-btn" id="zoomIn" title="放大">+</button>
@@ -587,6 +600,7 @@
                         <span>Del: 刪除</span> <span>Ctrl+Z: 復原</span> <span>Ctrl+Y: 重做</span>
                         <span>Ctrl+S: 儲存</span> <span>Esc: 取消</span> <span>Shift+點擊: 多選</span>
                         <span>Alt+放置: 精準落點</span> <span>右鍵拖曳: 平移</span> <span>空白鍵+拖曳: 平移</span>
+                        <span>Ctrl+O: 載入</span> <span>Backspace: 生活圈退回上一點</span>
                     </div>
                 </div>
             </div>
@@ -596,26 +610,94 @@
         </div>
     </div>
 
+    <!-- [R4] 通用確認框（取代原生 confirm / alert） -->
+    <div class="modal-overlay" id="confirmModal" hidden inert aria-hidden="true">
+        <div class="modal modal--confirm" role="alertdialog" aria-modal="true"
+            aria-labelledby="confirmTitle" aria-describedby="confirmMessage" tabindex="-1">
+            <h3 class="modal-title" id="confirmTitle">請確認</h3>
+            <div class="modal-content">
+                <p class="confirm-message" id="confirmMessage"></p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" id="confirmCancel">取消</button>
+                <button type="button" class="btn-primary" id="confirmOk">確定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 匯出格式選擇對話框 -->
     <div class="modal-overlay" id="exportModal" hidden inert aria-hidden="true">
         <div class="modal" role="dialog" aria-modal="true"
             aria-labelledby="exportModalTitle" tabindex="-1">
-            <h3 class="modal-title" id="exportModalTitle">選擇匯出格式</h3>
+            <h3 class="modal-title" id="exportModalTitle">匯出</h3>
             <div class="modal-content">
+                <div class="export-options">
+                    <button type="button" class="export-option-btn" data-format="png" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <path d="M21 15.5l-4.5-4.5L5 22.5" />
+                            </svg></span>
+                        <span class="format-name">PNG</span>
+                        <span class="format-desc">點陣圖，適合分享</span>
+                    </button>
+                    <button type="button" class="export-option-btn" data-format="jpeg" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 8a2 2 0 0 1 2-2h2.2l1.6-2.4A1.5 1.5 0 0 1 10 3h4a1.5 1.5 0 0 1 1.2.6L16.8 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                                <circle cx="12" cy="13" r="3.5" />
+                            </svg></span>
+                        <span class="format-name">JPEG</span>
+                        <span class="format-desc">壓縮圖片，檔案較小</span>
+                    </button>
+                    <button type="button" class="export-option-btn" data-format="svg" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="19" cy="5" r="2.2" />
+                                <circle cx="5" cy="19" r="2.2" />
+                                <path d="M5 16.8A11.8 11.8 0 0 1 16.8 5" />
+                            </svg></span>
+                        <span class="format-name">SVG</span>
+                        <span class="format-desc">向量圖，可無限放大</span>
+                    </button>
+                    <button type="button" class="export-option-btn" data-format="pdf" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 2v6h6" />
+                                <line x1="8" y1="13" x2="16" y2="13" />
+                                <line x1="8" y1="17" x2="16" y2="17" />
+                            </svg></span>
+                        <span class="format-name">PDF</span>
+                        <span class="format-desc">文件格式，適合列印</span>
+                    </button>
+                    <button type="button" class="export-option-btn" data-format="json" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <ellipse cx="12" cy="5" rx="8" ry="3" />
+                                <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+                                <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+                            </svg></span>
+                        <span class="format-name">JSON</span>
+                        <span class="format-desc">資料備份，可重新匯入</span>
+                    </button>
+                </div>
                 <div class="export-settings">
-                    <label class="export-setting-label">
+                    <p class="export-json-hint" data-export-for="json" hidden>JSON 是完整資料備份，之後可用「載入」重新開啟；不含圖片設定。</p>
+                    <label class="export-setting-label" data-export-for="png,jpeg,svg,pdf">
                         <input type="checkbox" id="exportShowNotes" checked class="export-setting-checkbox" >
                         <span>顯示備註 (成員備註 + 關係線時間/說明)</span>
                     </label>
-                    <label class="export-setting-label export-setting-label--spaced">
+                    <label class="export-setting-label export-setting-label--spaced" data-export-for="png,jpeg,svg,pdf">
                         <input type="checkbox" id="exportShowLegend" checked class="export-setting-checkbox" >
                         <span>顯示關係類型圖例</span>
                     </label>
-                    <label class="export-setting-label export-setting-label--nested">
+                    <label class="export-setting-label export-setting-label--nested" data-export-for="png,jpeg,svg,pdf">
                         <input type="checkbox" id="exportLegendAll" class="export-setting-checkbox" >
                         <span>列出全部線型（教學／督導用）</span>
                     </label>
-                    <div class="export-resolution-settings">
+                    <div class="export-resolution-settings" data-export-for="png,jpeg,svg,pdf">
                         <span class="export-resolution-title">解析度 (影響檔案大小):</span>
                         <div class="export-resolution-options">
                             <label class="export-setting-label">
@@ -628,7 +710,7 @@
                             </label>
                         </div>
                     </div>
-                    <div class="export-header-settings">
+                    <div class="export-header-settings" data-export-for="png,jpeg,svg,pdf">
                         <label class="export-setting-label">
                             <input type="checkbox" id="exportIncludeHeader" class="export-setting-checkbox" >
                             <span>加上頁首（標題 / 案號 / 日期 / 繪製者）</span>
@@ -648,7 +730,7 @@
                             <input type="checkbox" id="exportDeidentify" class="export-setting-checkbox" >
                             <span>去識別化（姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性）</span>
                         </label>
-                        <div class="export-pdf-settings">
+                        <div class="export-pdf-settings" data-export-for="pdf">
                             <span class="export-pdf-title">PDF 紙張：</span>
                             <select id="exportPdfFormat" aria-label="PDF 紙張大小">
                                 <option value="a4" selected>A4</option>
@@ -662,61 +744,10 @@
                         </div>
                     </div>
                 </div>
-                <div class="export-options">
-                    <button class="export-option-btn" data-format="png">
-                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2" />
-                                <circle cx="8.5" cy="8.5" r="1.5" />
-                                <path d="M21 15.5l-4.5-4.5L5 22.5" />
-                            </svg></span>
-                        <span class="format-name">PNG</span>
-                        <span class="format-desc">點陣圖，適合分享</span>
-                    </button>
-                    <button class="export-option-btn" data-format="jpeg">
-                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M3 8a2 2 0 0 1 2-2h2.2l1.6-2.4A1.5 1.5 0 0 1 10 3h4a1.5 1.5 0 0 1 1.2.6L16.8 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                                <circle cx="12" cy="13" r="3.5" />
-                            </svg></span>
-                        <span class="format-name">JPEG</span>
-                        <span class="format-desc">壓縮圖片，檔案較小</span>
-                    </button>
-                    <button class="export-option-btn" data-format="svg">
-                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="19" cy="5" r="2.2" />
-                                <circle cx="5" cy="19" r="2.2" />
-                                <path d="M5 16.8A11.8 11.8 0 0 1 16.8 5" />
-                            </svg></span>
-                        <span class="format-name">SVG</span>
-                        <span class="format-desc">向量圖，可無限放大</span>
-                    </button>
-                    <button class="export-option-btn" data-format="pdf">
-                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                <path d="M14 2v6h6" />
-                                <line x1="8" y1="13" x2="16" y2="13" />
-                                <line x1="8" y1="17" x2="16" y2="17" />
-                            </svg></span>
-                        <span class="format-name">PDF</span>
-                        <span class="format-desc">文件格式，適合列印</span>
-                    </button>
-                    <button class="export-option-btn" data-format="json">
-                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <ellipse cx="12" cy="5" rx="8" ry="3" />
-                                <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
-                                <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
-                            </svg></span>
-                        <span class="format-name">JSON</span>
-                        <span class="format-desc">資料備份，可重新匯入</span>
-                    </button>
-                </div>
             </div>
             <div class="modal-actions">
                 <button class="btn-cancel" id="cancelExport">取消</button>
+                <button class="btn-primary" id="exportConfirmBtn">匯出 PNG 圖片</button>
             </div>
         </div>
     </div>

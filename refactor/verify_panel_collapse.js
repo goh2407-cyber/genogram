@@ -147,7 +147,7 @@ const isOpen = (page, id) => page.locator('#' + id).evaluate(el => el.open);
         await download.saveAs(path.join(OUTPUT, 'panel-person.json'));
         const saved = JSON.parse(fs.readFileSync(path.join(OUTPUT, 'panel-person.json'), 'utf8'));
         assert.deepEqual(saved.persons, [expectedPerson]);
-        assert.equal(saved.version, '1.0');
+        assert.equal(saved.version, '1.1'); // [R4] schema 1.1
         assert.deepEqual(Object.keys(saved).sort(), ['version', 'createdAt', 'persons', 'relationships', 'households', 'lifeCircles'].sort());
         assert.equal(JSON.stringify(saved).includes('personPanelSectionState'), false);
         console.log('PASS | 案主＋流產 JSON 全部人物欄位與原 Person 格式一致');
