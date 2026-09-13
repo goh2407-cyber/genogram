@@ -239,7 +239,10 @@ class GenogramLayout {
 
         // ---- 初始 x：每列依「重心」排序後左→右鋪開 ----
         const x = new Map(); // id → x
-        const unitWidth = u => (u.members.length - 1) * CELL;
+        // [L2] 單位內成員間距：預設每段 CELL；「姻親對正」會把夫妻的一段拉寬（見 spreadInLawCouples）
+        const gapAt = (u, k) => (u.gaps && Number.isFinite(u.gaps[k])) ? u.gaps[k] : CELL;
+        const memberOffset = (u, i) => { let acc = 0; for (let k = 0; k < i; k++) acc += gapAt(u, k); return acc; };
+        const unitWidth = u => memberOffset(u, u.members.length - 1);
         const unitCenterFromLeft = u => unitWidth(u) / 2;
         const placeRow = (rowUnits, desiredCenter) => {
             // rowUnits 依 desiredCenter 排序後掃描，保證相鄰人物 ≥ CELL
@@ -249,7 +252,7 @@ class GenogramLayout {
             const memberWant = id => {
                 const u = unitOf.get(id);
                 const base = (u && desiredCenter.has(u.id)) ? desiredCenter.get(u.id) - unitCenterFromLeft(u) : (x.has(id) ? x.get(id) : P(id).x);
-                return u && desiredCenter.has(u.id) ? base + u.members.indexOf(id) * CELL : base;
+                return u && desiredCenter.has(u.id) ? base + memberOffset(u, u.members.indexOf(id)) : base;
             };
             const siblingOrderPairs = [];
             childrenOfUnion.forEach(list => {
@@ -294,7 +297,7 @@ class GenogramLayout {
             rowUnits.forEach(u => {
                 let left = desiredCenter.get(u.id) - unitCenterFromLeft(u);
                 if (left < right + CELL) left = right + CELL;
-                u.members.forEach((m, i) => x.set(m, left + i * CELL));
+                u.members.forEach((m, i) => x.set(m, left + memberOffset(u, i)));
                 right = left + unitWidth(u);
             });
             // 第二趟：由右往左把「想往左」的單位盡量拉回（貼近期望）
@@ -306,7 +309,7 @@ class GenogramLayout {
                 let left = Math.max(wantLeft, curLeft);
                 left = Math.min(left, leftLimit - unitWidth(u) - CELL);
                 if (left < curLeft) left = curLeft; // 不往左推（已被左鄰擋住）
-                u.members.forEach((m, k) => x.set(m, left + k * CELL));
+                u.members.forEach((m, k) => x.set(m, left + memberOffset(u, k)));
                 leftLimit = left;
             }
         };
@@ -340,14 +343,14 @@ class GenogramLayout {
                     let acc = 0;
                     sibs.forEach(sib => {
                         const su = unitOf.get(sib);
-                        kidPos.push(acc + su.members.indexOf(sib) * CELL);
+                        kidPos.push(acc + memberOffset(su, su.members.indexOf(sib)));
                         acc += unitWidth(su) + CELL;
                     });
                     const spanMid = (kidPos[0] + kidPos[kidPos.length - 1]) / 2;
                     const idx = sibs.indexOf(m);
                     const offset = idx >= 0 ? kidPos[idx] - spanMid : 0;
                     // m 在自己單位內的位置 i → 單位中心的期望
-                    const unitCenterWant = unionMid(ps) + offset - (i * CELL - unitCenterFromLeft(u));
+                    const unitCenterWant = unionMid(ps) + offset - (memberOffset(u, i) - unitCenterFromLeft(u));
                     wants.push(unitCenterWant);
                 });
                 const fallback = u.members.reduce((s, m) => s + (x.has(m) ? x.get(m) : P(m).x), 0) / u.members.length;
@@ -378,9 +381,30 @@ class GenogramLayout {
             });
             placeRow(rowUnits[r], desired);
         };
+        // [L2] 姻親對正：兩人夫妻、各自的父母都在上一列時，把夫妻拉開到「各自正對自己父母中點」的距離，
+        // 親子線才會是直的（使用者手排時就是這樣擺）。上限 4 格；父母左右順序與夫妻相反時不拉（避免交叉）。
+        const MAX_SPREAD = CELL * 4;
+        const spreadInLawCouples = () => {
+            units.forEach(u => {
+                if (u.members.length !== 2 || u.rank === 0) return;
+                const [a, b] = u.members;
+                const pa = model.parentsOf.get(a).filter(pr => comp.includes(pr) && x.has(pr));
+                const pb = model.parentsOf.get(b).filter(pr => comp.includes(pr) && x.has(pr));
+                if (!pa.length || !pb.length) { u.gaps = null; return; }
+                if (unionKey(pa) === unionKey(pb)) { u.gaps = null; return; } // 同父母（資料異常）不處理
+                // 只有「兩人都是各自父母唯一（或最左/最右）子女塊」才對正；有手足時手足塊置中規則優先
+                const sa = childrenOfUnion.get(unionKey(pa)) || [a];
+                const sb = childrenOfUnion.get(unionKey(pb)) || [b];
+                if (sa.length !== 1 || sb.length !== 1) { u.gaps = null; return; }
+                const want = unionMid(pb) - unionMid(pa);
+                if (want <= CELL) { u.gaps = null; return; } // 父母順序相反或太近 → 維持一格
+                u.gaps = [Math.min(MAX_SPREAD, Math.round(want / (CELL / 2)) * (CELL / 2))];
+            });
+        };
         for (let r = 1; r <= maxRank; r++) downPass(r);
         for (let round = 0; round < 3; round++) {
             for (let r = maxRank - 1; r >= 0; r--) upPass(r);
+            spreadInLawCouples();
             for (let r = 1; r <= maxRank; r++) downPass(r);
         }
         // 整體平移使最左為 0；貼半格

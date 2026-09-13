@@ -44,7 +44,12 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
                 if (a.y !== b.y) out.spouseBad.push({ pair: a.name + '-' + b.name, why: 'row', dy: b.y - a.y });
                 // 相鄰：對單婚 |dx| == CELL；多婚（hub）至少有一位配偶相鄰、其餘在同列且同側排開
                 const hubA = spousesOf(a.id).length > 1, hubB = spousesOf(b.id).length > 1;
-                if (!hubA && !hubB && Math.abs(Math.abs(b.x - a.x) - CELL) > 1) out.spouseBad.push({ pair: a.name + '-' + b.name, why: 'gap', dx: b.x - a.x });
+                // [L2] 單婚：間距 ≥ CELL 且兩人之間同列沒有別人（姻親對正時夫妻可拉寬到 4 格）
+                if (!hubA && !hubB) {
+                    const lo = Math.min(a.x, b.x), hi = Math.max(a.x, b.x);
+                    const between = app.persons.some(q => q.id !== a.id && q.id !== b.id && q.y === a.y && q.x > lo + 1 && q.x < hi - 1);
+                    if (hi - lo < CELL - 1 || hi - lo > CELL * 4 + 1 || between) out.spouseBad.push({ pair: a.name + '-' + b.name, why: 'gap', dx: b.x - a.x, between });
+                }
             });
             // 多婚：每位 hub 至少一位配偶相鄰
             const hubs = [...new Set(marriages.flatMap(r => [r.fromPersonId, r.toPersonId]))].filter(id => spousesOf(id).length > 1);
