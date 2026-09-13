@@ -262,6 +262,23 @@ class GenogramLayout {
                     if (aa !== null && ab !== null && aa !== ab) return ab - aa;
                     return memberWant(a) - memberWant(b);
                 });
+                // [L3] 多婚鏈側邊規則：手足若位在「多婚鏈」的一端、另一側有 ≥2 個外人（配偶＋再婚對象），
+                // 就把他排到手足塊的外側（左端者排最右、右端者排最左），父母的手足橫線才不會跨過整條鏈。
+                // 只有一位配偶的手足（另一側 1 人）維持長幼左→右，配偶緊鄰是家系圖的正常畫法。
+                const chainSide = id => {
+                    const u = unitOf.get(id);
+                    if (!u || u.members.length < 3) return null;
+                    const i = u.members.indexOf(id);
+                    if (i === 0) return 'left';
+                    if (i === u.members.length - 1) return 'right';
+                    return null;
+                };
+                if (list.length > 1 && list.some(id => chainSide(id))) {
+                    const toLeft = list.filter(id => chainSide(id) === 'right');
+                    const toRight = list.filter(id => chainSide(id) === 'left');
+                    const middle = list.filter(id => !chainSide(id));
+                    list.splice(0, list.length, ...toLeft, ...middle, ...toRight);
+                }
                 for (let k = 1; k < list.length; k++) {
                     const ua = unitOf.get(list[k - 1]), ub = unitOf.get(list[k]);
                     if (ua && ub && ua !== ub && rowUnitSet.has(ua) && rowUnitSet.has(ub)) siblingOrderPairs.push([ua, ub]);

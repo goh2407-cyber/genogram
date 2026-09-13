@@ -583,7 +583,7 @@ Object.assign(GenogramApp.prototype, {
      * 載入舊資料時正規化親子關係，避免錯向/重複資料影響點擊與顯示
      * @returns {{normalized: number, deduped: number, dropped: number}}
      */
-    normalizeLoadedFamilyRelationships() {
+    normalizeLoadedFamilyRelationships({ inferDirectionFromY = false } = {}) {
         const personById = new Map(this.persons.map(p => [p.id, p]));
         const seenParentChild = new Set();
         const stats = { normalized: 0, deduped: 0, dropped: 0 };
@@ -620,11 +620,12 @@ Object.assign(GenogramApp.prototype, {
                 return;
             }
 
-            // [R4] parent-child 一律信任 from→to（GENERATION_POLICY 第 2 條）；
-            // 只有舊版 'family' 型別沒有方向資料，才退而用 Y 軸位置推斷（上者為 parent）
+            // [R4] parent-child 信任 from→to（GENERATION_POLICY 第 2 條）；
+            // 只有舊版 'family' 型別（無方向資料）或 schema < 1.1 的檔案（建立時尚未保證方向），
+            // 才退而用 Y 軸位置推斷（上者為 parent）
             let parentId = rel.fromPersonId;
             let childId = rel.toPersonId;
-            if (legacyFamily) {
+            if (legacyFamily || inferDirectionFromY) {
                 if (p1.y < p2.y) {
                     parentId = p1.id;
                     childId = p2.id;
