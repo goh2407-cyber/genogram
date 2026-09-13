@@ -736,6 +736,8 @@ class GenogramCanvas {
 
     static LABEL_SAFE_MARGIN = 7;
     static LABEL_SIDE_GAP = 12;
+    /** [B2] 線上小裝飾（斜線／X／小屋）的線寬；與匯出圖例 lineWidth 2、側欄 SVG stroke-width 2 一致 */
+    static DECORATION_LINE_WIDTH = 2;
 
     normalizeViewOptions(options = {}) {
         return Object.fromEntries(Object.keys(GenogramCanvas.DEFAULT_VIEW_OPTIONS)
@@ -879,6 +881,7 @@ class GenogramCanvas {
         this.ctx.shadowBlur = 0;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
+        this.ctx.lineJoin = 'round'; // [B2] 白暈在筆畫轉角不出尖刺
         geometry.rows.forEach(row => {
             if (row.kind === 'note' && hideNotes) return; // [3-3] 縮太小時備註只剩雜訊，螢幕上不畫（匯出不受影響）
             const halo = row.kind === 'name' ? S.nameHalo : S.notesHalo;
@@ -1072,7 +1075,7 @@ class GenogramCanvas {
             this.ctx.beginPath();
             this.ctx.arc(x, y, halfSize, 0, Math.PI * 2);
             this.ctx.stroke();
-            const innerSize = size * 0.7071;
+            const innerSize = Math.round(size * 0.7071); // [B2] 取整避免 2px 線落在半像素
             this.ctx.strokeRect(x - innerSize / 2, y - innerSize / 2, innerSize, innerSize);
         } else if (gender === 'female') {
             this.ctx.beginPath();
@@ -1104,13 +1107,18 @@ class GenogramCanvas {
             // 如果是普通死亡（白底），X 要用黑色
             this.ctx.strokeStyle = isIdentifiedPatient ? '#fff' : '#333';
             this.ctx.lineWidth = 3;
-            const offset = halfSize * 0.6;
+            this.ctx.lineCap = 'round';
+            // [B2] 依形狀內縮：三角形（懷孕）上窄下寬，X 要下移並縮小才不會凸出邊線
+            const isTriangle = gender === 'pregnancy';
+            const offset = halfSize * (isTriangle ? 0.38 : 0.6);
+            const cy = isTriangle ? y + halfSize * 0.2 : y;
             this.ctx.beginPath();
-            this.ctx.moveTo(x - offset, y - offset);
-            this.ctx.lineTo(x + offset, y + offset);
-            this.ctx.moveTo(x + offset, y - offset);
-            this.ctx.lineTo(x - offset, y + offset);
+            this.ctx.moveTo(x - offset, cy - offset);
+            this.ctx.lineTo(x + offset, cy + offset);
+            this.ctx.moveTo(x + offset, cy - offset);
+            this.ctx.lineTo(x - offset, cy + offset);
             this.ctx.stroke();
+            this.ctx.lineCap = 'butt';
         }
 
         // 年齡 (如果有醫學標記，可能需要調整位置，這裡先保持)
@@ -1125,6 +1133,7 @@ class GenogramCanvas {
 
             // [New] 增加描邊以提高可讀性（特別是當 X 標記重疊時）
             this.ctx.lineWidth = 3;
+            this.ctx.lineJoin = 'round'; // [B2] 數字轉角不出尖刺
             // 如果是案主(白字)，用深色描邊；如果是普通(黑字)，用白色描邊
             this.ctx.strokeStyle = isIdentifiedPatient ? '#333' : '#fff';
             this.ctx.strokeText(String(age), x, y);
@@ -1147,6 +1156,7 @@ class GenogramCanvas {
     drawSexualOrientationMarker(x, y, halfSize) {
         this.ctx.strokeStyle = '#333';
         this.ctx.lineWidth = 2; // 線條寬度
+        this.ctx.lineJoin = 'round'; // [B2] 尖角不外突
         this.ctx.beginPath();
         // 倒三角大小：約 halfSize 的 0.7 倍 (稍微大一點清楚)
         const s = halfSize * 0.7;
@@ -2125,10 +2135,18 @@ class GenogramCanvas {
     /**
      * 繪製小房子 (法律同居)
      */
+    /** [B2] 線上小裝飾（斜線／X／小屋）統一 2px、平頭：與側欄／匯出圖例一致，不再被 3px 圓帽糊成一團 */
+    _beginDecorationStroke() {
+        this.ctx.save();
+        this.ctx.lineWidth = GenogramCanvas.DECORATION_LINE_WIDTH;
+        this.ctx.lineCap = 'butt';
+        this.ctx.lineJoin = 'miter';
+    }
+
     drawHouse(x, y) {
         const w = 12;
         const h = 10;
-        this.ctx.save();
+        this._beginDecorationStroke();
         this.ctx.fillStyle = '#FFFFFF'; // 填充白色蓋住線條
         this.ctx.beginPath();
         this.ctx.moveTo(x - w / 2, y); // 左下
@@ -2148,33 +2166,21 @@ class GenogramCanvas {
     drawDoubleSlash(x, y) {
         const size = 6;
         const gap = 4;
+        this._beginDecorationStroke();
         this.ctx.beginPath();
         this.ctx.moveTo(x - size - gap, y + size);
         this.ctx.lineTo(x + size - gap, y - size);
-        this.ctx.stroke();
-
-        this.ctx.beginPath();
         this.ctx.moveTo(x - size + gap, y + size);
         this.ctx.lineTo(x + size + gap, y - size);
         this.ctx.stroke();
+        this.ctx.restore();
     }
 
     /**
      * 繪製離婚標記 (兩條斜線 //)
      */
     drawDivorceSlash(x, y) {
-        const size = 6;
-        const gap = 4;
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(x - size - gap, y + size);
-        this.ctx.lineTo(x + size - gap, y - size);
-        this.ctx.stroke();
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(x - size + gap, y + size);
-        this.ctx.lineTo(x + size + gap, y - size);
-        this.ctx.stroke();
+        this.drawDoubleSlash(x, y);
     }
 
     // [REMOVED] 重複的 drawHouse 函數已移除，保留 Line 824 的版本
@@ -2184,10 +2190,12 @@ class GenogramCanvas {
      */
     drawSlash(x, y) {
         const size = 6;
+        this._beginDecorationStroke();
         this.ctx.beginPath();
         this.ctx.moveTo(x - size, y + size);
         this.ctx.lineTo(x + size, y - size);
         this.ctx.stroke();
+        this.ctx.restore();
     }
 
     /**
@@ -2195,12 +2203,14 @@ class GenogramCanvas {
      */
     drawX(x, y) {
         const size = 6;
+        this._beginDecorationStroke();
         this.ctx.beginPath();
         this.ctx.moveTo(x - size, y - size);
         this.ctx.lineTo(x + size, y + size);
         this.ctx.moveTo(x + size, y - size);
         this.ctx.lineTo(x - size, y + size);
         this.ctx.stroke();
+        this.ctx.restore();
     }
 
     /**
@@ -2507,6 +2517,9 @@ class GenogramCanvas {
         }
 
         const totalLen = this.getPathLength(path);
+        // [B2] 有末端箭頭時，波浪與鋸齒都在箭頭前 22px 內收斂成直線，不再穿過箭頭
+        const hasEndArrow = Boolean(style.decoration && /arrow/.test(style.decoration));
+        const endMargin = hasEndArrow ? 22 : 0;
 
         if (style.pattern === 'double') {
             this.drawParallelPath(path, 4);
@@ -2517,16 +2530,13 @@ class GenogramCanvas {
             this.drawParallelPath(path, -5);
         } else if (style.pattern === 'wave') {
             const lines = style.lines || 1;
-            // 有末端箭頭 decoration 時，讓波浪在箭頭前收斂成直線，避免波浪穿過箭頭
-            const hasEndArrow = style.decoration && /arrow/.test(style.decoration);
-            const endMargin = hasEndArrow ? 22 : 0;
             this.drawWaveOnPath(path, totalLen, lines, endMargin);
         } else if (style.pattern === 'zigzag') {
-            this.drawZigzagOnPath(path, totalLen);
+            this.drawZigzagOnPath(path, totalLen, 5, 10, 0, endMargin);
         } else if (style.pattern === 'zigzag-large') {
-            this.drawZigzagOnPath(path, totalLen, 8, 16);
+            this.drawZigzagOnPath(path, totalLen, 8, 16, 0, endMargin);
         } else if (style.pattern === 'sawtooth') {
-            this.drawZigzagOnPath(path, totalLen, 3, 6);
+            this.drawZigzagOnPath(path, totalLen, 3, 6, 0, endMargin);
         } else if (style.pattern === 'close-hostile') {
             // 親密敵對: 灰色雙線 + 紅色鋸齒 (Close Hostile)
             this.ctx.save();
@@ -2535,7 +2545,7 @@ class GenogramCanvas {
             this.drawParallelPath(path, -3);
             this.ctx.restore();
             // 紅色鋸齒 (原本的 strokeStyle)
-            this.drawZigzagOnPath(path, totalLen);
+            this.drawZigzagOnPath(path, totalLen, 5, 10, 0, endMargin);
         } else if (style.pattern === 'fused-hostile') {
             // 融合敵對: 灰色雙線(較寬) + 紅色鋸齒
             this.ctx.save();
@@ -2544,8 +2554,7 @@ class GenogramCanvas {
             this.drawParallelPath(path, -4);
             this.ctx.restore();
 
-            this.drawZigzagOnPath(path, totalLen);
-            this.drawZigzagOnPath(path, totalLen);
+            this.drawZigzagOnPath(path, totalLen, 5, 10, 0, endMargin);
         } else if (style.pattern === 'conflict-close') {
             // 衝突又親密: 兩條綠線夾紅色鋸齒 (Green Lines + Red Zigzag)
             // Green Parallel
@@ -2558,13 +2567,13 @@ class GenogramCanvas {
             // Red Zigzag
             this.ctx.save();
             this.ctx.strokeStyle = '#E53935'; // Red Conflict
-            this.drawZigzagOnPath(path, totalLen);
+            this.drawZigzagOnPath(path, totalLen, 5, 10, 0, endMargin);
             this.ctx.restore();
 
         } else if (style.pattern === 'physical-abuse') {
             // 身體虐待: 藍色波浪 + 中央黑色直線
             // Blue Wave (Inherited color assumed Blue)
-            this.drawWaveOnPath(path, totalLen);
+            this.drawWaveOnPath(path, totalLen, 1, endMargin);
             // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
@@ -2578,7 +2587,7 @@ class GenogramCanvas {
         } else if (style.pattern === 'emotional-abuse') {
             // 情緒虐待: 藍色鋸齒 + 中央黑色直線
             // 使用較小振幅 (4) 和較短波長 (8) 讓鋸齒更密集，與波浪明顯區分
-            this.drawZigzagOnPath(path, totalLen, 4, 8);
+            this.drawZigzagOnPath(path, totalLen, 4, 8, 0, endMargin);
             // Black Line (中央，offset 0)
             this.ctx.save();
             this.ctx.strokeStyle = '#000000';
@@ -2592,8 +2601,8 @@ class GenogramCanvas {
         } else if (style.pattern === 'sexual-abuse') {
             // 性虐待: 藍色雙鋸齒 (Double Zigzag)
             // Amplitude 4, Wavelength 10 (Less dense), Gap 3
-            this.drawZigzagOnPath(path, totalLen, 4, 10, 3);
-            this.drawZigzagOnPath(path, totalLen, 4, 10, -3);
+            this.drawZigzagOnPath(path, totalLen, 4, 10, 3, endMargin);
+            this.drawZigzagOnPath(path, totalLen, 4, 10, -3, endMargin);
 
         } else if (style.pattern === 'cutoff-line') {
             // 畫兩段，中間斷開，並加上豎線
@@ -2637,8 +2646,18 @@ class GenogramCanvas {
         // 為了平滑，我們需要遍歷 path 並計算每個頂點的平均法向量 (miter)
         // 這裡簡化：計算每段的法向量，然後平移線段，再連接缺口 (這會造成斷裂)
 
-        // 採用 "Walker" 方式，每隔 2-3px 採樣並偏移，形成平滑曲線
-        const step = 3;
+        // [B2] 兩點直線直接平移端點（精確、無取樣誤差）；多段路徑才走 walker
+        if (path.length === 2) {
+            const dx = path[1].x - path[0].x, dy = path[1].y - path[0].y;
+            const len2 = Math.hypot(dx, dy) || 1;
+            const nx = -dy / len2 * offset, ny = dx / len2 * offset;
+            this.ctx.moveTo(path[0].x + nx, path[0].y + ny);
+            this.ctx.lineTo(path[1].x + nx, path[1].y + ny);
+            this.ctx.stroke();
+            return;
+        }
+        // 採用 "Walker" 方式取樣並偏移；步距隨輸出解析度縮小（匯出 3 倍時也平滑）
+        const step = this._pathSampleStep(3);
         const len = this.getPathLength(path);
 
         for (let d = 0; d <= len; d += step) {
@@ -2666,7 +2685,7 @@ class GenogramCanvas {
     drawWaveOnPath(path, totalLen, lines = 1, endMargin = 0) {
         const amplitude = 5;
         const frequency = 0.15;
-        const step = 2;
+        const step = this._pathSampleStep(2); // [B2] 步距隨輸出解析度縮小，匯出 3 倍不再多邊形化
         const lineGap = 4; // 多線之間的間距
 
         for (let lineIndex = 0; lineIndex < lines; lineIndex++) {
@@ -2711,39 +2730,53 @@ class GenogramCanvas {
     /**
      * 沿路徑繪製鋸齒
      */
-    drawZigzagOnPath(path, totalLen, amplitude = 5, wavelength = 10, offsetBase = 0) {
-        const step = 2;
-
-        this.ctx.beginPath();
-        let first = true;
-
-        for (let d = 0; d <= totalLen; d += step) {
-            const info = this.getPointInfoAtDistance(path, d);
-
-            // Triangle wave function: 
-            // Normalized phase [0, 1] inside wavelength
+    drawZigzagOnPath(path, totalLen, amplitude = 5, wavelength = 10, offsetBase = 0, endMargin = 0) {
+        // [B2] 直接輸出三角波頂點（d = wl/4, 3wl/4, ...），不再用固定 2px 取樣：
+        // 尖點精確落在振幅上、左右對稱，放大與匯出 3 倍都保持銳利。
+        // endMargin > 0 時，末端振幅線性收斂到 0（避免穿過箭頭），與 drawWaveOnPath 一致。
+        const ampAt = d => (endMargin > 0 && d > totalLen - endMargin)
+            ? amplitude * Math.max(0, (totalLen - d) / endMargin) : amplitude;
+        const triangle = d => {
             const phase = (d % wavelength) / wavelength;
-            let offsetFactor = 0;
-            if (phase < 0.25) offsetFactor = phase * 4; // 0 -> 1
-            else if (phase < 0.75) offsetFactor = 1 - (phase - 0.25) * 4; // 1 -> -1
-            else offsetFactor = -1 + (phase - 0.75) * 4; // -1 -> 0
-
-            const offset = offsetFactor * amplitude + offsetBase;
-
-            const nx = -info.tangent.y;
-            const ny = info.tangent.x;
-
-            const px = info.point.x + nx * offset;
-            const py = info.point.y + ny * offset;
-
-            if (first) {
-                this.ctx.moveTo(px, py);
-                first = false;
-            } else {
-                this.ctx.lineTo(px, py);
-            }
+            if (phase < 0.25) return phase * 4;
+            if (phase < 0.75) return 1 - (phase - 0.25) * 4;
+            return -1 + (phase - 0.75) * 4;
+        };
+        const dists = [0];
+        for (let d = wavelength / 4; d < totalLen; d += wavelength / 2) dists.push(d);
+        if (endMargin > 0) {
+            // 收斂區內多補幾個取樣點，讓振幅漸縮而不是一步跳到 0
+            for (let d = Math.max(0, totalLen - endMargin); d < totalLen; d += wavelength / 4) dists.push(d);
+            dists.sort((a, b) => a - b);
         }
+        dists.push(totalLen);
+
+        this.ctx.save();
+        this.ctx.lineJoin = 'miter';
+        this.ctx.miterLimit = 4;
+        this.ctx.beginPath();
+        dists.forEach((d, i) => {
+            const info = this.getPointInfoAtDistance(path, d);
+            const offset = triangle(d) * ampAt(d) + offsetBase;
+            const px = info.point.x - info.tangent.y * offset;
+            const py = info.point.y + info.tangent.x * offset;
+            if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py);
+        });
         this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * [B2] 沿路徑取樣的步距：以「輸出像素」為準。螢幕 = scale*dpr、匯出 = exportScale（從 ctx 變換矩陣讀）。
+     * base 為 1 倍輸出時的步距；最小 0.5 世界像素。
+     */
+    _pathSampleStep(base) {
+        let k = 1;
+        try {
+            const t = this.ctx.getTransform();
+            k = Math.hypot(t.a, t.b) || 1;
+        } catch (e) { k = 1; }
+        return Math.min(base, Math.max(0.5, base / k));
     }
 
     /**
