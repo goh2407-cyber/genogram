@@ -44,6 +44,8 @@ async function shellMetrics(page) {
             overlay: document.body.classList.contains('inspector-overlay-open'),
             collapsed: document.body.classList.contains('inspector-collapsed'),
             documentNameVisible: Boolean(document.querySelector('.document-name')?.getClientRects().length),
+            documentContextVisible: getComputedStyle(document.querySelector('.document-context')).display !== 'none',
+            dirtyMarkerDisplayable: getComputedStyle(document.querySelector('.document-dirty')).display !== 'none' || document.querySelector('.document-dirty').hidden === true,
             scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
         };
     });
@@ -229,7 +231,10 @@ async function checkIconOnlyAccessibility(page) {
             Math.abs((rail.inspector?.width || 0) - 52) < 0.5
                 && Math.abs((rail.spacer?.width || 0) - 52) < 0.5,
             JSON.stringify({ inspector: rail.inspector, spacer: rail.spacer }));
-        check('compact mode hides the document name', rail.documentNameVisible === false);
+        // [B1-ux] 1024–1180px 檔名隱藏，但未儲存 ● 的容器保留可見（不再整個 display:none）
+        check('compact mode hides the document name but keeps the unsaved marker slot',
+            rail.documentNameVisible === false && rail.documentContextVisible === true && rail.dirtyMarkerDisplayable === true,
+            JSON.stringify({ name: rail.documentNameVisible, context: rail.documentContextVisible, dirty: rail.dirtyMarkerDisplayable }));
         check('closed compact rail leaves routing warning inside the canvas',
             rail.routingWarningPointerEvents === 'none'
                 && rail.routingWarning?.left >= rail.canvas?.left

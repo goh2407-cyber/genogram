@@ -97,6 +97,7 @@ class GenogramApp {
         this.inspectorCompact = false;
         this.inspectorOverlayOpen = false;
         this.pendingFitFrame = null;
+        this._renderRaf = null; // [B1-perf] requestRender 合併用
         this.viewOptions = {
             showNames: true,
             showAges: true,
@@ -1003,9 +1004,11 @@ class GenogramApp {
         bar.textContent = message;
         bar.className = 'status-bar';
         if (type) bar.classList.add(type);
-        const duration = autoHideMs !== undefined
-            ? autoHideMs
-            : (type === 'success' ? GenogramApp.STATUS_TIMEOUTS.passive : null);
+        // [B1-ux] 預設逾時：success/info 3.5 秒、warning/error 6 秒；無 type 的模式指引訊息維持常駐
+        const defaultTimeout = (type === 'success' || type === 'info')
+            ? GenogramApp.STATUS_TIMEOUTS.passive
+            : (type === 'warning' || type === 'error') ? GenogramApp.STATUS_TIMEOUTS.passiveAlert : null;
+        const duration = autoHideMs !== undefined ? autoHideMs : defaultTimeout;
         if (Number.isFinite(duration) && duration >= 0) {
             const expectedMessage = message;
             this.statusHideTimer = setTimeout(() => {
@@ -1458,7 +1461,7 @@ class GenogramApp {
 
         if (this.placementSession) {
             this.updatePlacement(point.x, point.y, e.altKey);
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -1468,7 +1471,7 @@ class GenogramApp {
             if (this.lcPress.moved || dist > 8 / ((this.canvas && this.canvas.scale) || 1)) {
                 this.lcPress.moved = true;
                 this.ellipsePreview = { start: this.lcPress.start, current: point };
-                this.render();
+                this.requestRender();
             }
             return;
         }
@@ -1476,7 +1479,7 @@ class GenogramApp {
         // [Fix] 生活圈繪製中：跟隨滑鼠的橡皮筋預覽線（原 lifeCircleMousePos 從未被更新）
         if (this.currentTool === 'lifeCircle' && this.isDrawingLifeCircle) {
             this.lifeCircleMousePos = point;
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -1485,7 +1488,7 @@ class GenogramApp {
         if (this.currentTool === 'connect' && this.connectingFrom) {
             this.connectingFrom.targetX = point.x;
             this.connectingFrom.targetY = point.y;
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -1506,7 +1509,7 @@ class GenogramApp {
                 }
             }
 
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -1521,7 +1524,7 @@ class GenogramApp {
                 if (next !== (d.rel.routeLift || 0)) {
                     d.rel.routeLift = next;
                     this._dataVersion++;
-                    this.render();
+                    this.requestRender();
                 }
                 return;
             }
@@ -1533,7 +1536,7 @@ class GenogramApp {
                     lc.points[index].x = point.x;
                     lc.points[index].y = point.y;
                 }
-                this.render();
+                this.requestRender();
                 return;
             }
 
@@ -1544,7 +1547,7 @@ class GenogramApp {
                     p.y += dy;
                 });
                 this.canvas.dragStart = point;
-                this.render();
+                this.requestRender();
                 return;
             }
 
@@ -1609,7 +1612,7 @@ class GenogramApp {
             }
 
             this.canvas.dragStart = point;
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -1621,7 +1624,7 @@ class GenogramApp {
             this.canvas.offsetY += dy;
             this.canvas.panStart = { x: e.clientX, y: e.clientY };
 
-            this.render();
+            this.requestRender();
             return;
         }
 
@@ -2106,7 +2109,7 @@ class GenogramApp {
             e.preventDefault(); // 防止瀏覽器頁面滾動
             this.canvas.offsetX -= e.deltaX;
             this.canvas.offsetY -= e.deltaY;
-            this.render();
+            this.requestRender();
         }
     }
 
@@ -5236,7 +5239,22 @@ class GenogramApp {
     /**
      * 繪製
      */
+    /**
+     * [B1-perf] rAF 合併：高頻 pointermove / wheel 一幀只畫一次。
+     */
+    requestRender() {
+        if (this._renderRaf) return;
+        this._renderRaf = requestAnimationFrame(() => {
+            this._renderRaf = null;
+            this.render();
+        });
+    }
+
     render() {
+        if (this._renderRaf) {
+            cancelAnimationFrame(this._renderRaf);
+            this._renderRaf = null;
+        }
         if (this.pendingFitFrame !== null) {
             cancelAnimationFrame(this.pendingFitFrame);
             this.pendingFitFrame = null;
@@ -5646,6 +5664,7 @@ class GenogramApp {
                 return this.waitForCurrentCanvasFonts(repaint);
             }
             this._canvasFontAppliedGeneration = generation;
+            this.canvas?.clearTextWidthCache?.(); // [B1-perf] 字型換了，量測寬度要重算
             this.canvas?.invalidateDerivedGeometry?.();
             const shouldRepaint = this._canvasFontRepaintRequested;
             this._canvasFontRepaintRequested = false;
@@ -7065,10 +7084,11 @@ class GenogramApp {
             clearTimeout(this.autoSaveTimer);
         }
 
-        this.autoSaveTimer = setTimeout(() => {
+        const run = () => {
             const now = Date.now();
-            // 避免頻繁重複寫入
-            if (now - this.lastAutoSaveTime < 1000) return;
+            // [B1-fix] 距上次寫入不足 1 秒 → 延後再寫，而不是直接丟棄這次變更
+            const wait = 1000 - (now - this.lastAutoSaveTime);
+            if (wait > 0) { this.autoSaveTimer = setTimeout(run, wait); return; }
 
             // 視圖狀態以 canvas 為單一真實來源
             const currentScale = this.canvas ? this.canvas.scale : this.scale;
@@ -7082,7 +7102,8 @@ class GenogramApp {
             }, this.getDocumentExtra());
             this.lastAutoSaveTime = now;
             this.autoSaveTimer = null;
-        }, 1000); // 1秒防抖
+        };
+        this.autoSaveTimer = setTimeout(run, 1000); // 1秒防抖
     }
 
     /**
