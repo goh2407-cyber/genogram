@@ -33,7 +33,7 @@ class StorageManager {
         if (this.currentFileHandle) {
             try {
                 const data = {
-                    version: '1.0',
+                    version: '1.1',
                     createdAt: this.getTaiwanTimeString(),
                     persons: persons.map(p => p.toJSON()),
                     relationships: relationships.map(r => r.toJSON()),
@@ -64,7 +64,7 @@ class StorageManager {
      */
     async downloadFile(persons, relationships, households = [], lifeCircles = [], filename = 'genogram.json', extra = {}) {
         const data = {
-            version: '1.0',
+            version: '1.1',
             createdAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),
@@ -145,6 +145,14 @@ class StorageManager {
             });
             result.version = '1.0';
         }
+        // [R4] 1.0 → 1.1：純版號標記（routeMode/routeLift/birthDate/lifeCircles/meta 等新欄位皆為選填，舊檔直接相容）
+        if (result.version === '1.0') result.version = '1.1';
+        // [R4] 比本程式新的版本：先提醒，欄位仍盡量讀；使用者存檔後看不懂的欄位會遺失
+        const known = ['0.1', '1.0', '1.1'];
+        const srcVersion = String(data.version || '0.1');
+        this.lastLoadNotice = known.includes(srcVersion)
+            ? null
+            : `這個檔案是較新版本（${srcVersion}）建立的，本程式可能讀不到其中的新欄位；存檔後那些欄位會遺失。`;
 
         return result;
     }
@@ -387,7 +395,7 @@ class StorageManager {
     autoSave(persons, relationships, households = [], lifeCircles = [], options = {}, extra = {}) {
         try {
             const data = {
-                version: '1.0',
+                version: '1.1',
                 savedAt: this.getTaiwanTimeString(),
                 persons: persons.map(p => p.toJSON()),
                 relationships: relationships.map(r => r.toJSON()),
@@ -443,7 +451,7 @@ class StorageManager {
      */
     exportPNG(dataUrl, filename = 'genogram.png') {
         if (!dataUrl) {
-            alert('沒有內容可匯出');
+            throw new Error('沒有內容可匯出');
             return;
         }
 
@@ -462,7 +470,7 @@ class StorageManager {
      */
     exportJPEG(dataUrl, filename = 'genogram.jpg') {
         if (!dataUrl) {
-            alert('沒有內容可匯出');
+            throw new Error('沒有內容可匯出');
             return;
         }
 
@@ -481,7 +489,7 @@ class StorageManager {
      */
     exportSVG(svgContent, filename = 'genogram.svg') {
         if (!svgContent) {
-            alert('沒有內容可匯出');
+            throw new Error('沒有內容可匯出');
             return;
         }
 
@@ -505,13 +513,13 @@ class StorageManager {
      */
     exportPDF(dataUrl, width, height, filename = 'genogram.pdf', options = {}) {
         if (!dataUrl) {
-            alert('沒有內容可匯出');
+            throw new Error('沒有內容可匯出');
             return;
         }
 
         // 檢查 jsPDF 是否已載入
         if (typeof window.jspdf === 'undefined') {
-            alert('PDF 匯出模組尚未載入，請稍後再試');
+            throw new Error('PDF 匯出模組尚未載入，請稍後再試');
             return;
         }
 
@@ -557,7 +565,7 @@ class StorageManager {
      */
     exportDataJSON(persons, relationships, households = [], lifeCircles = [], filename = 'genogram_backup.json', extra = {}) {
         const data = {
-            version: '1.0',
+            version: '1.1',
             exportedAt: this.getTaiwanTimeString(),
             persons: persons.map(p => p.toJSON()),
             relationships: relationships.map(r => r.toJSON()),

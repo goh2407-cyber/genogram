@@ -150,7 +150,11 @@ Object.assign(GenogramApp.prototype, {
      * 不會刪除磁碟上的 JSON 檔。給共用電腦離開前使用。
      */
     async clearLocalData() {
-        const confirmed = confirm('確定要清除這台電腦上的暫存並關閉目前個案嗎？\n\n會清除：瀏覽器暫存、最近檔案清單、畫布內容與復原紀錄。\n不會刪除你已另存到電腦裡的 JSON 檔案。');
+        const confirmed = await this.confirmDialog({
+            title: '清除本機暫存並關閉個案',
+            message: '會清除：瀏覽器暫存、最近檔案清單、畫布內容與復原紀錄。\n不會刪除你已另存到電腦裡的 JSON 檔案。',
+            okText: '清除並關閉', danger: true
+        });
         if (!confirmed) return;
         this.closeOpenFileModal();
         this.commitPropertyEditSession();
@@ -199,7 +203,7 @@ Object.assign(GenogramApp.prototype, {
             this.loadData(data);
             this.updateStatus(`已載入檔案: ${file.name} (唯讀模式)`, 'success');
         } catch (err) {
-            alert(err.message);
+            this.alertDialog(err.message, '載入失敗');
         }
 
         // 清空檔案輸入
@@ -337,9 +341,31 @@ Object.assign(GenogramApp.prototype, {
         if (pdfOrient && prefs.pdfOrientation) pdfOrient.value = prefs.pdfOrientation;
     },
 
+    /**
+     * [R4] 匯出對話框改「先選格式、設定隨格式顯示、按匯出才動作」。
+     * 設定區塊以 data-export-for="png,jpeg,..." 標記適用格式；JSON 只顯示說明。
+     */
+    selectExportFormat(format) {
+        const valid = ['png', 'jpeg', 'svg', 'pdf', 'json'];
+        const fmt = valid.includes(format) ? format : 'png';
+        this.exportFormat = fmt;
+        document.querySelectorAll('.export-option-btn').forEach(btn => {
+            btn.setAttribute('aria-pressed', String(btn.dataset.format === fmt));
+        });
+        document.querySelectorAll('[data-export-for]').forEach(el => {
+            el.hidden = !String(el.dataset.exportFor).split(',').includes(fmt);
+        });
+        const label = { png: 'PNG 圖片', jpeg: 'JPEG 圖片', svg: 'SVG 向量圖', pdf: 'PDF', json: 'JSON 備份' }[fmt];
+        const btn = document.getElementById('exportConfirmBtn');
+        if (btn) btn.textContent = `匯出 ${label}`;
+        this._writeExportPrefs({ format: fmt });
+    },
+
     showExportModal() {
         this.commitPropertyEditSession();
         this._syncExportHeaderFields(); // [2-2]
+        const prefs = this._readExportPrefs();
+        this.selectExportFormat(prefs.format || 'png'); // [R4] 記住上次格式
         this.modalManager.open(this.elements.exportModal);
     },
 
@@ -541,7 +567,7 @@ Object.assign(GenogramApp.prototype, {
     /**
      * 清空畫布 (清除所有人物、關係、圈選)
      */
-    clearAll() {
+    async clearAll() {
         this.commitPropertyEditSession();
         this.cancelPlacement();
         this.cancelRelationshipWorkflow();
@@ -557,7 +583,11 @@ Object.assign(GenogramApp.prototype, {
             return;
         }
 
-        const confirmed = confirm('確定要清空畫布嗎？\n\n此操作將刪除所有成員、關係線、同住圈和生活圈。\n您可以使用「復原」功能復原。');
+        const confirmed = await this.confirmDialog({
+            title: '清空畫布',
+            message: '將刪除所有成員、關係線、同住圈和生活圈。\n之後仍可用「復原」找回。',
+            okText: '清空', danger: true
+        });
         if (!confirmed) return;
 
         this.saveState();

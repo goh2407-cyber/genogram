@@ -123,6 +123,8 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
     }));
     check('開啟匯出對話框：欄位帶入 meta、日期預設今天、預設不加頁首（欄位收合）', ui.title === '案A' && ui.caseId === '2026-001' && /^\d{4}-\d{2}-\d{2}$/.test(ui.date) && !ui.include && ui.fieldsHidden && ui.fieldsDisplay === 'none', JSON.stringify(ui));
     check('未勾頁首 → header=null、PDF 預設 a4/auto', ui.settings.header === null && ui.settings.pdfOptions.format === 'a4' && ui.settings.pdfOptions.orientation === 'auto', JSON.stringify(ui.settings));
+    await page.click('.export-option-btn[data-format="pdf"]'); // [R4] 紙張設定只在選 PDF 時顯示
+    await page.waitForTimeout(60);
     await page.check('#exportIncludeHeader');
     await page.fill('#exportMetaAuthor', '社工乙');
     await page.locator('#exportMetaAuthor').dispatchEvent('change');

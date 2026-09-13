@@ -1993,3 +1993,50 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
 .person-panel-section > summary { padding: var(--space-3) 0; color: var(--text-color); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
 .person-panel-section > .form-group { margin-bottom: var(--space-3); }
 .person-panel-section > .form-group:last-child { margin-bottom: 0; }
+
+
+/* ===== [R4] 第四輪介面：確認框、空白畫布引導、匯出格式先選、觸控尺寸 ===== */
+.modal--confirm { max-width: 440px; }
+.confirm-message { margin: 0; white-space: pre-line; line-height: 1.65; color: var(--ink-body, #1f2937); }
+.btn-primary.btn-danger { background: var(--danger-color, #dc3545); box-shadow: 0 2px 6px rgba(220, 53, 69, .3); }
+.btn-primary.btn-danger:hover { background: #b02a37; box-shadow: 0 3px 10px rgba(220, 53, 69, .4); }
+
+.empty-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
+.empty-state[hidden] { display: none; }
+.empty-state-card {
+    pointer-events: auto;
+    max-width: 440px;
+    padding: 22px 28px 20px;
+    background: var(--surface-panel, #fff);
+    border: 1px solid var(--line-ui, #e5e7eb);
+    border-radius: 14px;
+    box-shadow: var(--shadow-md);
+    text-align: left;
+}
+.empty-state-card h2 { margin: 0 0 10px; font-size: 17px; color: var(--ink-strong, #111827); }
+.empty-state-card ol { margin: 0 0 14px; padding-left: 22px; line-height: 1.7; font-size: 14px; color: var(--ink-body, #1f2937); }
+.empty-state-card kbd {
+    display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 2px;
+    font: 600 12px/18px inherit; text-align: center;
+    color: var(--brand); background: #fff; border: 1px solid var(--line-ui, #e5e7eb); border-bottom-width: 2px; border-radius: 4px;
+}
+.empty-state-hint { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+
+.export-json-hint { margin: 0 0 6px; font-size: 13px; color: var(--ink-body, #1f2937); }
+.export-settings [hidden], .modal [hidden] { display: none !important; }
+.export-option-btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-light, #fdeff4); color: var(--brand); box-shadow: 0 0 0 2px rgba(237, 18, 97, .15); }
+
+@media (pointer: coarse) {
+    .zoom-btn { width: 44px; height: 44px; }
+    .chip-remove { width: 28px; height: 28px; font-size: 14px; }
+    .canvas-tool-dock .tool-btn, .global-actions .tool-btn { min-width: 44px; height: 44px; }
+    .export-option-btn { min-height: 44px; }
+    .btn-primary, .btn-cancel { min-height: 44px; }
+}
+
+/* [R4] 匯出對話框：格式鈕一列五顆更省高度；所有對話框的動作列固定在捲動區底部，不必捲到底才看得到主按鈕 */
+#exportModal .modal { max-width: 640px; }
+#exportModal .export-options { grid-template-columns: repeat(5, 1fr); gap: var(--space-2); margin-bottom: var(--space-3); }
+#exportModal .export-option-btn { padding: 10px 6px; }
+#exportModal .export-option-btn .format-desc { font-size: 11px; }
+.modal-actions { position: sticky; bottom: 0; z-index: 1; }

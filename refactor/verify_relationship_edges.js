@@ -219,12 +219,12 @@ const path = require('path');
         loadPending.ids.length === 1 && loadPending.ids[0] === 'loaded' && !loadPending.modalActive && !loadPending.from && !loadPending.to,
         JSON.stringify(loadPending));
 
-    const clearPending = await page.evaluate(() => {
+    const clearPending = await page.evaluate(async () => {
         const app = window.__relationshipEdgeReset();
         window.__openNewRelationshipModal();
-        const oldConfirm = window.confirm;
-        window.confirm = () => true;
-        try { app.clearAll(); } finally { window.confirm = oldConfirm; }
+        const oldConfirm = app.confirmDialog;
+        app.confirmDialog = async () => true; // [R4]
+        try { await app.clearAll(); } finally { app.confirmDialog = oldConfirm; }
         return {
             persons: app.persons.length,
             modalActive: app.elements.relationshipModal.classList.contains('active'),

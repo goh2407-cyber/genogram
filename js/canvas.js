@@ -88,6 +88,9 @@ class GenogramCanvas {
         this.ageReferenceDate = null; // [2-1] 年齡基準日（null = 今天），由 App.render 注入；匯出同用
         // [3-3] 螢幕 LOD：目前檢視縮放（App.render 注入；匯出期間固定 1）。低縮放時姓名放大、備註隱藏，只影響螢幕。
         this.lodScale = 1;
+        // [R4] 觸控裝置：畫布上的快速新增鈕／鉛筆等 HUD 放大 1.25 倍（44px 級點擊面積）
+        this.touchHud = (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+            && window.matchMedia('(pointer: coarse)').matches) ? 1.25 : 1;
         this._householdBoundsCache = new Map(); // [HH-5c] householdId → { sig, bounds }
 
         // 家庭走線規劃快取：繪製、命中、高亮與匯出共用相同點序列。
@@ -2859,7 +2862,7 @@ class GenogramCanvas {
      */
     hudUnit() {
         const s = Number.isFinite(this.scale) && this.scale > 0 ? this.scale : 1;
-        return 1 / s;
+        return (this.touchHud || 1) / s;
     }
 
     /**

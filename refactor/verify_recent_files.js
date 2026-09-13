@@ -125,7 +125,7 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
         app.saveState(); // 有歷史
         app.autoSave();
         await new Promise(r => setTimeout(r, 1200));
-        window.confirm = () => true;
+        window.app.confirmDialog = async () => true; // [R4] 品牌確認框取代原生 confirm
     });
     const before = await page.evaluate(async () => ({ ls: !!localStorage.getItem('genogram_autosave'), recent: (await window.app.storage.listRecentFiles()).length, hist: window.app.history.undoStack.length }));
     check('清除前：有 autosave、有最近檔案、有歷史', before.ls && before.recent === 1 && before.hist >= 1, JSON.stringify(before));
@@ -149,7 +149,7 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
         !after.ls && after.recent === 0 && after.hist === 0 && after.persons === 0 && !after.linked && after.title === '未命名家系圖' && !after.dirty && !after.modalActive && after.meta === '', JSON.stringify(after));
     check('清除後提示訊息', /已清除本機暫存/.test(after.status), after.status);
     // 取消 confirm → 不清
-    await page.evaluate(() => { window.confirm = () => false; const app = window.app; app.persons.push(new Person({ x: 1, y: 1 })); app._syncPersonMap(); app.autoSave(); });
+    await page.evaluate(() => { window.app.confirmDialog = async () => false; const app = window.app; app.persons.push(new Person({ x: 1, y: 1 })); app._syncPersonMap(); app.autoSave(); });
     await page.waitForTimeout(1200);
     await page.click('#loadBtn'); await page.waitForTimeout(300);
     await page.click('#clearLocalDataBtn'); await page.waitForTimeout(200);
