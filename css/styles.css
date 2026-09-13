@@ -2032,3 +2032,26 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(237,18,
 .route-lift-value { min-width: 34px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
 .route-lift .segmented-btn { flex: 0 0 auto; padding: 4px 10px; }
 .route-lift .segmented-btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* 人物面板收合區 */
+.person-name-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.person-name-row input { flex: 1 1 0; min-width: 0; }
+.person-ip-chip {
+    flex: 0 0 auto;
+    min-height: var(--control-sm);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--line-ui);
+    border-radius: var(--border-radius-lg);
+    background: var(--surface-panel);
+    color: var(--ink-body);
+    font: inherit;
+    cursor: pointer;
+}
+.person-ip-chip[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: var(--text-light); }
+.person-ip-chip:focus-visible,
+.person-panel-section > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.person-deceased-row { align-items: center; }
+.person-panel-section { min-width: 0; margin-bottom: var(--space-3); border-top: 1px solid var(--border-color); }
+.person-panel-section > summary { padding: var(--space-3) 0; color: var(--text-color); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+.person-panel-section > .form-group { margin-bottom: var(--space-3); }
+.person-panel-section > .form-group:last-child { margin-bottom: 0; }

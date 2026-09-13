@@ -102,6 +102,7 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         app.history.clear();
         app.selectPerson('edit');
     });
+    await page.click('#personMedicalSection > summary');
     await page.selectOption('#medLeftHalf', 'filled');
     const medicalSelectChange = await page.evaluate(() => ({
         value: window.app.personMap.get('edit').medical.leftHalf,
