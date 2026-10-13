@@ -43,10 +43,11 @@ function check(name, cond, detail = '') {
             height: rect.height
         };
     }));
-    const expectedTabs = ['properties', 'legend', 'view'];
+    // 線上版多一個「清單」分頁（排最後）；離線版 geno 只有前三個
+    const expectedTabs = ['properties', 'legend', 'view', 'list', 'events'].slice(0, tabs.length);
     const tops = tabs.map(tab => tab.top);
     const heights = tabs.map(tab => tab.height);
-    check('F1a 三個 Inspector tabs 均可見', tabs.length === 3
+    check('F1a Inspector tabs（屬性／圖例／檢視〔／清單／事件〕）均可見', (tabs.length === 3 || tabs.length === 5)
         && tabs.every(tab => tab.visible) && tabs.every((tab, i) => tab.name === expectedTabs[i]), JSON.stringify(tabs));
     check('F1b Inspector tabs 位於同一水平列', Math.max(...tops) - Math.min(...tops) < 1.5,
         `tops=${tops.map(value => value.toFixed(1)).join(',')}`);

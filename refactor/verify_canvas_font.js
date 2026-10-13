@@ -51,7 +51,7 @@ async function canvasPng(page) {
         });
     });
     await racePage.goto(URL);
-    await racePage.waitForFunction(() => window.app && window.__deferredFontLoads.length >= 2);
+    await racePage.waitForFunction(() => window.app && window.__deferredFontLoads.length >= 3); // 400、600（姓名）、700（年齡）三種字重
     await racePage.evaluate(() => window.__releaseFontLoads(''));
     await racePage.evaluate(() => window.app.canvasFontReady);
     await racePage.evaluate(() => {
@@ -80,8 +80,8 @@ async function canvasPng(page) {
     });
     await racePage.waitForFunction(() => {
         const loads = window.__deferredFontLoads;
-        return loads.filter(load => load.text.includes('font-race-A')).length === 2
-            && loads.filter(load => load.text.includes('font-race-B')).length === 2;
+        return loads.filter(load => load.text.includes('font-race-A')).length === 3
+            && loads.filter(load => load.text.includes('font-race-B')).length === 3;
     });
     await racePage.evaluate(() => window.__releaseFontLoads('font-race-A'));
     await racePage.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
@@ -106,6 +106,8 @@ async function canvasPng(page) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 780 }, deviceScaleFactor: 1 });
     await page.goto(URL);
     await page.waitForFunction(() => window.app && window.app.canvas);
+    // 畫布預設先用微軟正黑體（2026-10-13）；這裡模擬沒有正黑體的電腦（Mac），仍要驗證 Noto 網頁字型載入後會重畫
+    await page.evaluate(() => { window.app.canvas.fontFamily = 'Noto Sans TC, sans-serif'; window.app.canvas._textWidthCache?.clear?.(); });
     await page.evaluate(() => window.app.canvasFontReady);
     let releaseFonts;
     const fontsReleased = new Promise(resolve => { releaseFonts = resolve; });

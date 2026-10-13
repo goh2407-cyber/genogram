@@ -141,9 +141,20 @@ class Relationship {
         }
     ]);
 
-    static getLegendSections({ showEmotional = true } = {}) {
+    static getLegendSections({ showEmotional = true, showAbuse = true } = {}) {
         return Relationship.LEGEND_SECTIONS.filter(section =>
-            showEmotional || section.groupId !== 'emotional');
+            (showEmotional || section.groupId !== 'emotional')
+            && (showAbuse || section.groupId !== 'special'));
+    }
+
+    /**
+     * 檢視開關下這條關係線是否顯示（只影響顯示，不改線型）：
+     * 「情感關係線」關掉 → 隱藏一般情感線；「暴力與虐待線」關掉 → 隱藏 ABUSE_DISPLAY_TYPES。
+     */
+    static isVisibleInView(type, view = {}) {
+        if (view.showEmotionalRelationships === false && Relationship.isEmotionalDisplayType(type)) return false;
+        if (view.showAbuseRelationships === false && Relationship.ABUSE_DISPLAY_TYPES.has(type)) return false;
+        return true;
     }
 
     static ABUSE_DISPLAY_TYPES = new Set([
@@ -256,6 +267,10 @@ class Relationship {
         // 僅對 over / under 走法影響幾何；auto / straight 保留值但不改線。舊資料無此欄位即 0。
         const lift = Number(data.routeLift);
         this.routeLift = Number.isFinite(lift) && lift > 0 ? Math.round(lift) : 0;
+        // 關係線文字（時間／說明）的手動位移（世界座標 px）；null = 自動位置。舊資料無此欄位。
+        const lo = data.labelOffset;
+        this.labelOffset = lo && Number.isFinite(lo.x) && Number.isFinite(lo.y) && (lo.x || lo.y)
+            ? { x: Math.round(lo.x), y: Math.round(lo.y) } : null;
     }
 
     /**
@@ -366,6 +381,7 @@ class Relationship {
             routeMode: this.routeMode
         };
         if (this.routeLift > 0) json.routeLift = this.routeLift; // 只在有值時寫入，舊檔格式不變
+        if (this.labelOffset) json.labelOffset = { ...this.labelOffset }; // 同上
         return json;
     }
 

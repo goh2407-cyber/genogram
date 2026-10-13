@@ -858,6 +858,7 @@ function assert(name, condition, detail = '') {
 
             // All raster-backed export entry points must bypass the editor overlay.
             await app.waitForCurrentCanvasFonts();
+            await new Promise(resolve => setTimeout(resolve, 450)); // [FX] 等提起／落子動畫跑完，動畫逐幀重繪不算匯出呼叫
             let exportOverlayCalls = 0;
             const originalDrawPreview = app.canvas.drawPlacementPreview;
             app.canvas.drawPlacementPreview = () => { exportOverlayCalls++; };

@@ -9,6 +9,8 @@
  *   4. 反覆「下推（子女置中於父母中點）／上拉（父母置中於子女之上）」數輪，同列最小間距 CELL_WIDTH，
  *      同列單位順序以重心排序、起始順序沿用使用者目前左右順序（manual-first：只整理，不重排語意）
  *   5. 不相連的獨立人物完全不動；多個家族（連通分量）左右並排
+ *   6. [L4] 有同住框或情感線時，再做一次同列順序的成本最佳化（_optimizeCohesion）：同住框成員聚攏、
+ *      情感／虐待線變短、親子線不交叉；只換同列順序與配偶站哪一側，語意規則全數保留；無改善則結果不變
  * 對外 API 不變：new GenogramLayout(persons, relationships, {grid, households, lifeCircles}).calculate()
  *   → { positions: Map<personId,{x,y}>, lifeCircleShapes }
  */
@@ -44,7 +46,8 @@ class GenogramLayout {
         // 婚姻關係類型
         this.MARRIAGE_TYPES = [
             'married', 'engaged', 'cohabiting', 'legal-cohabiting',
-            'separated', 'legal-separated', 'divorced', 'widowed', 'affair'
+            'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
+            'engaged-separated', 'engaged-cohabiting' // 與 GenogramApp.MARRIAGE_TYPES 一致（2026-10-12 補上）
         ];
 
         // 原始位置 (用於計算生活圈位移)
@@ -222,20 +225,68 @@ class GenogramLayout {
         // ---- 子女依「父母組合」分塊 ----
         const unionKey = ids => ids.slice().sort().join('|');
         const childrenOfUnion = new Map(); // key → [childIds]
+        const unionParents = new Map();    // key → [parentIds]
         comp.forEach(id => {
             const ps = model.parentsOf.get(id).filter(pr => comp.includes(pr));
             if (!ps.length) return;
             const key = unionKey(ps);
-            if (!childrenOfUnion.has(key)) childrenOfUnion.set(key, []);
+            if (!childrenOfUnion.has(key)) { childrenOfUnion.set(key, []); unionParents.set(key, ps.slice()); }
             childrenOfUnion.get(key).push(id);
         });
         // 手足順序：年齡大→小（左→右）；年齡未知沿用目前 x
-        const age = id => { const p = P(id); const a = p.getDisplayAge ? p.getDisplayAge() : p.age; if (a === null || a === undefined || a === '') return null; const n = Number(a); return Number.isFinite(n) ? n : null; };
-        childrenOfUnion.forEach(list => list.sort((a, b) => {
-            const aa = age(a), ab = age(b);
-            if (aa !== null && ab !== null && aa !== ab) return ab - aa;
-            return P(a).x - P(b).x;
-        }));
+        const age = id => {
+            const p = P(id);
+            const a = p.getDisplayAge ? p.getDisplayAge() : p.age;
+            if (a === null || a === undefined || a === '') return p.gender === 'pregnancy' ? -1 : null; // [L4] 懷孕中 = 最幼
+            const n = Number(a);
+            return Number.isFinite(n) ? n : null;
+        };
+        // [L3] 多婚鏈側邊規則用：人物位在「≥3 人單位」的哪一端
+        const chainSide = id => {
+            const u = unitOf.get(id);
+            if (!u || u.members.length < 3) return null;
+            const i = u.members.indexOf(id);
+            if (i === 0) return 'left';
+            if (i === u.members.length - 1) return 'right';
+            return null;
+        };
+        // [L4] 手足排序（純函式，回傳新陣列）：
+        //   年齡已知者長→幼（同齡依 want），年齡未知者依 want，兩串以 want「合併」——
+        //   舊版用「有一方未知就比位置」的比較子不具遞移性，混合時會把 7 歲排到 12 歲左邊。
+        //   雙胞胎（twinGroup）收攏相鄰；最後套多婚鏈側邊規則（見 placeRow 註解）。
+        const orderSiblings = (list, want) => {
+            const known = list.filter(id => age(id) !== null).sort((a, b) => age(b) - age(a) || want(a) - want(b));
+            const unknown = list.filter(id => age(id) === null).sort((a, b) => want(a) - want(b));
+            let out = [];
+            for (let i = 0, j = 0; i < known.length || j < unknown.length;) {
+                if (j >= unknown.length || (i < known.length && want(known[i]) <= want(unknown[j]))) out.push(known[i++]);
+                else out.push(unknown[j++]);
+            }
+            const twin = id => P(id).twinGroup || null;
+            if (out.some(twin)) {
+                const grouped = [];
+                out.forEach(id => {
+                    if (grouped.includes(id)) return;
+                    grouped.push(id);
+                    if (twin(id)) out.forEach(o => { if (o !== id && twin(o) === twin(id) && !grouped.includes(o)) grouped.push(o); });
+                });
+                out = grouped;
+            }
+            if (out.length > 1 && out.some(id => chainSide(id))) {
+                const toLeft = out.filter(id => chainSide(id) === 'right');
+                const toRight = out.filter(id => chainSide(id) === 'left');
+                const middle = out.filter(id => !chainSide(id));
+                out = [...toLeft, ...middle, ...toRight];
+            }
+            return out;
+        };
+        childrenOfUnion.forEach(list => {
+            const ordered = orderSiblings(list, id => P(id).x);
+            list.splice(0, list.length, ...ordered);
+        });
+        // [L4] 列 rank ≤ lockedUpTo 時 placeRow 不重排（順序由 cohesion 最佳化決定），只做最小間距壓實；
+        // 平常為 -1（全部依重心排序，與舊版相同）
+        let lockedUpTo = -1;
 
         // ---- 初始 x：每列依「重心」排序後左→右鋪開 ----
         const x = new Map(); // id → x
@@ -249,36 +300,21 @@ class GenogramLayout {
             // 手足順序：年齡已知者長→幼；年齡未知者依本輪期望位置（重心法）。每輪重排，
             // 讓「配偶家系在另一側」的手足自然換位、減少跨代交叉；同時更新 childrenOfUnion 供下行偏移使用。
             const rowUnitSet = new Set(rowUnits);
+            const locked = rowUnits.length > 0 && rowUnits[0].rank <= lockedUpTo;
             const memberWant = id => {
                 const u = unitOf.get(id);
                 const base = (u && desiredCenter.has(u.id)) ? desiredCenter.get(u.id) - unitCenterFromLeft(u) : (x.has(id) ? x.get(id) : P(id).x);
                 return u && desiredCenter.has(u.id) ? base + memberOffset(u, u.members.indexOf(id)) : base;
             };
             const siblingOrderPairs = [];
-            childrenOfUnion.forEach(list => {
+            if (!locked) childrenOfUnion.forEach(list => {
                 if (!list.some(id => rowUnitSet.has(unitOf.get(id)))) return;
-                list.sort((a, b) => {
-                    const aa = age(a), ab = age(b);
-                    if (aa !== null && ab !== null && aa !== ab) return ab - aa;
-                    return memberWant(a) - memberWant(b);
-                });
+                // 手足排序見 orderSiblings。
                 // [L3] 多婚鏈側邊規則：手足若位在「多婚鏈」的一端、另一側有 ≥2 個外人（配偶＋再婚對象），
                 // 就把他排到手足塊的外側（左端者排最右、右端者排最左），父母的手足橫線才不會跨過整條鏈。
                 // 只有一位配偶的手足（另一側 1 人）維持長幼左→右，配偶緊鄰是家系圖的正常畫法。
-                const chainSide = id => {
-                    const u = unitOf.get(id);
-                    if (!u || u.members.length < 3) return null;
-                    const i = u.members.indexOf(id);
-                    if (i === 0) return 'left';
-                    if (i === u.members.length - 1) return 'right';
-                    return null;
-                };
-                if (list.length > 1 && list.some(id => chainSide(id))) {
-                    const toLeft = list.filter(id => chainSide(id) === 'right');
-                    const toRight = list.filter(id => chainSide(id) === 'left');
-                    const middle = list.filter(id => !chainSide(id));
-                    list.splice(0, list.length, ...toLeft, ...middle, ...toRight);
-                }
+                const ordered = orderSiblings(list, memberWant);
+                list.splice(0, list.length, ...ordered);
                 for (let k = 1; k < list.length; k++) {
                     const ua = unitOf.get(list[k - 1]), ub = unitOf.get(list[k]);
                     if (ua && ub && ua !== ub && rowUnitSet.has(ua) && rowUnitSet.has(ub)) siblingOrderPairs.push([ua, ub]);
@@ -286,18 +322,20 @@ class GenogramLayout {
             });
             // 手足叢集：同一父母的子女所屬單位視為一個叢集（含其配偶）；叢集整體依平均期望排序、
             // 叢集內再依各自期望排序 → 手足塊不會被別家的單位插隊隔開。
-            const cparent = new Map(rowUnits.map(u => [u, u]));
-            const cfind = u => { while (cparent.get(u) !== u) u = cparent.get(u); return u; };
-            siblingOrderPairs.forEach(([ua, ub]) => {
-                if (!cparent.has(ua) || !cparent.has(ub)) return;
-                const ra = cfind(ua), rb = cfind(ub);
-                if (ra !== rb) cparent.set(ra, rb);
-            });
-            const csum = new Map(), ccount = new Map();
-            rowUnits.forEach(u => { const r = cfind(u); csum.set(r, (csum.get(r) || 0) + desiredCenter.get(u.id)); ccount.set(r, (ccount.get(r) || 0) + 1); });
-            const cdesired = u => csum.get(cfind(u)) / ccount.get(cfind(u));
-            rowUnits.sort((a, b) => cdesired(a) - cdesired(b) || cfind(a).id.localeCompare(cfind(b).id)
-                || desiredCenter.get(a.id) - desiredCenter.get(b.id) || a.id.localeCompare(b.id));
+            if (!locked) {
+                const cparent = new Map(rowUnits.map(u => [u, u]));
+                const cfind = u => { while (cparent.get(u) !== u) u = cparent.get(u); return u; };
+                siblingOrderPairs.forEach(([ua, ub]) => {
+                    if (!cparent.has(ua) || !cparent.has(ub)) return;
+                    const ra = cfind(ua), rb = cfind(ub);
+                    if (ra !== rb) cparent.set(ra, rb);
+                });
+                const csum = new Map(), ccount = new Map();
+                rowUnits.forEach(u => { const r = cfind(u); csum.set(r, (csum.get(r) || 0) + desiredCenter.get(u.id)); ccount.set(r, (ccount.get(r) || 0) + 1); });
+                const cdesired = u => csum.get(cfind(u)) / ccount.get(cfind(u));
+                rowUnits.sort((a, b) => cdesired(a) - cdesired(b) || cfind(a).id.localeCompare(cfind(b).id)
+                    || desiredCenter.get(a.id) - desiredCenter.get(b.id) || a.id.localeCompare(b.id));
+            }
             // 修回被翻轉的手足順序（把右者搬到左者之後）；有循環約束時以上限收斂
             for (let guard = 0; guard <= rowUnits.length * rowUnits.length; guard++) {
                 let moved = false;
@@ -376,10 +414,14 @@ class GenogramLayout {
             placeRow(rowUnits[r], desired);
         };
         // 往上：父母置中於其子女塊之上（沒有子女的單位維持現位）
+        // [L6] 同住偏移：cohesion 最佳化可為上層單位設定 unitBias（{anchors, targets}），把父母往下一列的同住成員拉；
+        // 限制在自己子女塊的範圍內（父母中點不超出最左／最右子女），親子線才不會跨過別家的線
+        const unitBias = new Map();
         const upPass = (r) => {
             const desired = new Map();
             rowUnits[r].forEach(u => {
                 const wants = [];
+                let kidLo = Infinity, kidHi = -Infinity;
                 // 每個 union（此單位內的父母組合）→ 子女中心 - 該 union 中點相對單位中心的偏移
                 const seenKeys = new Set();
                 u.members.forEach(m => {
@@ -391,10 +433,22 @@ class GenogramLayout {
                         const kids = childrenOfUnion.get(key) || [c];
                         const midOffset = unionMid(ps) - (x.get(u.members[0]) + unitCenterFromLeft(u));
                         wants.push(childrenCenter(kids) - midOffset);
+                        kids.forEach(k => { const v = x.get(k) - midOffset; kidLo = Math.min(kidLo, v); kidHi = Math.max(kidHi, v); });
                     });
                 });
                 const cur = x.get(u.members[0]) + unitCenterFromLeft(u);
-                desired.set(u.id, wants.length ? wants.reduce((a, b) => a + b, 0) / wants.length : cur);
+                let want = wants.length ? wants.reduce((a, b) => a + b, 0) / wants.length : cur;
+                // 同住偏移：讓單位內的同住者（anchors）正對下一列的同住者（targets）；每輪依目前 x 重算，自我修正
+                const bias = unitBias.get(u.id);
+                if (wants.length && bias) {
+                    const targets = bias.targets.filter(id => x.has(id));
+                    if (targets.length) {
+                        const targetX = targets.reduce((s, id) => s + x.get(id), 0) / targets.length;
+                        const anchorOff = bias.anchors.reduce((s, id) => s + memberOffset(u, u.members.indexOf(id)), 0) / bias.anchors.length - unitCenterFromLeft(u);
+                        want = Math.max(kidLo, Math.min(kidHi, targetX - anchorOff));
+                    }
+                }
+                desired.set(u.id, want);
             });
             placeRow(rowUnits[r], desired);
         };
@@ -418,12 +472,25 @@ class GenogramLayout {
                 u.gaps = [Math.min(MAX_SPREAD, Math.round(want / (CELL / 2)) * (CELL / 2))];
             });
         };
-        for (let r = 1; r <= maxRank; r++) downPass(r);
-        for (let round = 0; round < 3; round++) {
-            for (let r = maxRank - 1; r >= 0; r--) upPass(r);
-            spreadInLawCouples();
+        const sweeps = () => {
             for (let r = 1; r <= maxRank; r++) downPass(r);
-        }
+            for (let round = 0; round < 3; round++) {
+                for (let r = maxRank - 1; r >= 0; r--) upPass(r);
+                spreadInLawCouples();
+                for (let r = 1; r <= maxRank; r++) downPass(r);
+            }
+        };
+        sweeps();
+        this._optimizeCohesion({
+            model, comp, ranks, maxRank, byRank, units, unitOf, rowUnits, childrenOfUnion, unionParents, x, CELL,
+            orderSiblings, unitBias,
+            setLockedUpTo: r => { lockedUpTo = r; },
+            placeTopRow: () => {
+                const desired = new Map(rowUnits[0].map(u => [u.id, u.members.reduce((s, m) => s + P(m).x, 0) / u.members.length]));
+                placeRow(rowUnits[0], desired);
+            },
+            sweeps
+        });
         // 整體平移使最左為 0；貼半格
         let minX = Infinity;
         x.forEach(v => { minX = Math.min(minX, v); });
@@ -433,27 +500,413 @@ class GenogramLayout {
     }
 
     /**
-     * 單位內排序：hub = 婚姻最多者；配偶依婚期由近到遠貼近 hub，左右側沿用目前擺法；其餘鏈結成員依目前 x
+     * [L4] 同列順序的成本最佳化（同住框聚攏、情感線變短）。只改「同列左右順序」與「配偶站哪一側」，
+     * 不改輩分列、不改間距規則。
+     * 做法：在既有上下掃描完成後，以目前各列順序為起點，逐列嘗試候選變動——
+     *   單位搬移到同列其他位置、單位的配偶側變體（＋搬移）、手足叢集整塊搬移——
+     * 不合法的候選（手足長幼／雙胞胎相鄰／多婚鏈側邊規則被破壞、手足叢集被外人插隊）直接丟棄；
+     * 合法者重跑掃描：此列與其上各列鎖定順序（placeRow 只壓實不重排），其下各列照舊依重心重排，再計算成本：
+     *   候選另含「同住偏移」：上層單位往下一列同住成員拉（unitBias，限於自己子女塊範圍內）
+     *   成本 = 6×親子線交叉 + 1×子女塊偏離父母中點(格，寬塊 > 4 格時塊內有寬容)×子女數 + 0.35×情感線水平長(格)
+     *        + 3×同住框同列插入的外人數 + 1×同住框跨列水平斷開(格) + 0.1×總寬(格)
+     *        + 4×(子女塊偏離超出硬限制的部分)(格)
+     * 每列取最佳且嚴格降低成本者，以全列鎖定重算確認後採用；反覆至收斂或達評估上限。
+     * 最終只採用「符合子女置中硬限制」且成本低於原結果的狀態；否則完整還原（位元不變）。確定性。
+     * 只有家族內有同住框（≥2 人）或情感線時才啟動。
+     */
+    _optimizeCohesion(ctx) {
+        const { model, comp, ranks, maxRank, byRank, units, unitOf, rowUnits, childrenOfUnion, unionParents, x, CELL, orderSiblings, unitBias } = ctx;
+        const compSet = new Set(comp);
+        const isEmotional = (type) => {
+            if (typeof Relationship !== 'undefined' && Relationship.getCategory) return Relationship.getCategory(type) === 'emotional';
+            return type !== 'parent-child' && type !== 'family' && !this.MARRIAGE_TYPES.includes(type);
+        };
+        const emoPairs = this.relationships
+            .filter(r => r.fromPersonId !== r.toPersonId && compSet.has(r.fromPersonId) && compSet.has(r.toPersonId) && isEmotional(r.type))
+            .map(r => [r.fromPersonId, r.toPersonId]);
+        const hhSets = (this.households || [])
+            .map(h => (h && Array.isArray(h.ids)) ? new Set(h.ids.filter(id => compSet.has(id))) : new Set())
+            .filter(s => s.size >= 2);
+        if (!emoPairs.length && !hhSets.length) return;
+
+        const W = { CROSS: 6, CENTER: 1, EMO: 0.35, INTRUDER: 3, HH_GAP: 1, WIDTH: 0.1, PENALTY: 4 };
+        // 成本以「貼半格後」的座標計算（與最終輸出一致）
+        const HALF = CELL / 2;
+        let xr = new Map();
+        const snapX = () => {
+            let minX = Infinity;
+            x.forEach(v => { minX = Math.min(minX, v); });
+            xr = new Map();
+            x.forEach((v, id) => xr.set(id, Math.round((v - minX) / HALF) * HALF));
+        };
+        // 子女塊中心偏離父母中點。硬限制：①各組超過半格的部分加總不得多於原結果；
+        // ②任一組不得超過 max(半格〔單一子女 2 格〕, 原結果中「父母同屬一條婚姻鏈」各組的最大偏離)——
+        //   本來就擠的多婚鏈（如 6 人鏈下 8 個子女）只能在鏈內各組之間重新分配讓位，不能變得更歪，
+        //   也不能把別處的寬鬆借來用
+        // 寬子女塊（> 4 格）給予寬容：父母中點在塊內偏離「中央 ±(寬-4格)/2」的範圍內不算偏離，
+        // 同住偏移（unitBias）才有空間把父母拉到同住的那個子女正上方
+        const WIDE = CELL * 4;
+        const centerOffsets = () => {
+            const out = new Map();
+            childrenOfUnion.forEach((kids, key) => {
+                const ps = unionParents.get(key);
+                const mid = ps.reduce((s, p) => s + xr.get(p), 0) / ps.length;
+                let lo = Infinity, hi = -Infinity;
+                kids.forEach(k => { const v = xr.get(k); lo = Math.min(lo, v); hi = Math.max(hi, v); });
+                const slack = Math.max(0, (hi - lo - WIDE) / 2);
+                out.set(key, Math.max(0, Math.abs((lo + hi) / 2 - mid) - slack));
+            });
+            return out;
+        };
+        let centerLimit = null;
+        let lastValid = true;
+        const cost = () => {
+            snapX();
+            let c = 0;
+            const offs = centerOffsets();
+            lastValid = true;
+            if (centerLimit) {
+                // 搜尋中以重罰處理（允許「先動上一列、再整理下一列」的兩步改善），最終只採用合法狀態
+                let excess = 0;
+                for (const [key, off] of offs) {
+                    const over = off - centerLimit.cap.get(key);
+                    if (over > 1e-6) { lastValid = false; c += W.PENALTY * over / CELL; }
+                    excess += Math.max(0, off - HALF);
+                }
+                if (excess > centerLimit.excess + 1e-6) { lastValid = false; c += W.PENALTY * (excess - centerLimit.excess) / CELL; }
+            }
+            // 子女越多的塊偏離越貴：單一子女讓位比整塊手足偏掉便宜
+            offs.forEach((off, k) => { c += W.CENTER * childrenOfUnion.get(k).length * off / CELL; });
+            // 親子線交叉（父母中點→子女，同列對之間）
+            const segs = [];
+            childrenOfUnion.forEach((kids, key) => {
+                const ps = unionParents.get(key);
+                const mid = ps.reduce((s, p) => s + xr.get(p), 0) / ps.length;
+                kids.forEach(k => segs.push([ranks.get(k), mid, xr.get(k), key]));
+            });
+            for (let i = 0; i < segs.length; i++) {
+                for (let j = i + 1; j < segs.length; j++) {
+                    const a = segs[i], b = segs[j];
+                    if (a[0] !== b[0] || a[3] === b[3]) continue;
+                    if ((a[1] - b[1]) * (a[2] - b[2]) < 0) c += W.CROSS;
+                }
+            }
+            emoPairs.forEach(([a, b]) => { c += W.EMO * Math.abs(xr.get(a) - xr.get(b)) / CELL; });
+            hhSets.forEach(set => {
+                const span = new Map(); // rank → [lo, hi]
+                set.forEach(id => {
+                    const r = ranks.get(id), v = xr.get(id);
+                    const s = span.get(r);
+                    if (!s) span.set(r, [v, v]); else { s[0] = Math.min(s[0], v); s[1] = Math.max(s[1], v); }
+                });
+                span.forEach((s, r) => {
+                    byRank[r].forEach(id => { if (!set.has(id)) { const v = xr.get(id); if (v > s[0] && v < s[1]) c += W.INTRUDER; } });
+                });
+                const rs = [...span.keys()].sort((a, b) => a - b);
+                for (let i = 1; i < rs.length; i++) {
+                    const a = span.get(rs[i - 1]), b = span.get(rs[i]);
+                    c += W.HH_GAP * Math.max(0, b[0] - a[1], a[0] - b[1]) / CELL;
+                }
+            });
+            let hi = -Infinity;
+            xr.forEach(v => { hi = Math.max(hi, v); });
+            c += W.WIDTH * hi / CELL;
+            return c;
+        };
+
+        // 合法性：手足順序須等於 orderSiblings（以候選順序為 want），手足叢集在列中連續
+        const rowViolations = (r) => {
+            const order = rowUnits[r];
+            const uIdx = new Map(order.map((u, i) => [u, i]));
+            const want = id => { const u = unitOf.get(id); return uIdx.get(u) * 1000 + u.members.indexOf(id); };
+            let v = 0;
+            const cparent = new Map(order.map(u => [u, u]));
+            const cfind = u => { while (cparent.get(u) !== u) u = cparent.get(u); return u; };
+            childrenOfUnion.forEach(list => {
+                const inRow = list.filter(id => uIdx.has(unitOf.get(id)));
+                if (inRow.length < 2) return;
+                const req = orderSiblings(inRow, want);
+                const cur = inRow.slice().sort((a, b) => want(a) - want(b));
+                if (req.some((id, i) => id !== cur[i])) v++;
+                for (let k = 1; k < inRow.length; k++) {
+                    const ra = cfind(unitOf.get(inRow[0])), rb = cfind(unitOf.get(inRow[k]));
+                    if (ra !== rb) cparent.set(ra, rb);
+                }
+            });
+            // 叢集連續：同一叢集的單位之間不得夾著其他單位
+            const first = new Map(), last = new Map(), count = new Map();
+            order.forEach((u, i) => {
+                const root = cfind(u);
+                if (!first.has(root)) first.set(root, i);
+                last.set(root, i);
+                count.set(root, (count.get(root) || 0) + 1);
+            });
+            count.forEach((n, root) => { if (last.get(root) - first.get(root) + 1 !== n) v++; });
+            return v;
+        };
+
+        const snapshot = () => ({ rows: rowUnits.map(r => r.slice()), members: units.map(u => u.members.slice()), bias: new Map(unitBias) });
+        const restore = s => {
+            s.rows.forEach((r, i) => { rowUnits[i] = r.slice(); });
+            units.forEach((u, i) => { u.members = s.members[i].slice(); });
+            unitBias.clear();
+            s.bias.forEach((v, k) => unitBias.set(k, v));
+        };
+        // 以目前順序重跑掃描：rank ≤ upTo 的列鎖定順序，其下各列仍依既有重心規則重排（讓下一代跟著調整）
+        const runLocked = (upTo = maxRank) => {
+            x.clear();
+            units.forEach(u => { u.gaps = null; });
+            const ord = new Map();
+            rowUnits.forEach(row => row.forEach((u, i) => u.members.forEach((m, k) => ord.set(m, i * 1000 + k))));
+            childrenOfUnion.forEach(list => list.sort((a, b) => ord.get(a) - ord.get(b)));
+            ctx.setLockedUpTo(upTo);
+            try { ctx.placeTopRow(); ctx.sweeps(); } finally { ctx.setLockedUpTo(-1); }
+        };
+        const violationsOk = () => {
+            for (let r = 0; r <= maxRank; r++) if (rowViolations(r) > baseViol[r]) return false;
+            return true;
+        };
+
+        // 原結果（未鎖定掃描）留底：最佳化沒有實質改善時完整還原
+        const original = {
+            x: new Map(x), gaps: units.map(u => u.gaps), snap: snapshot(),
+            kids: [...childrenOfUnion.entries()].map(([k, l]) => [k, l.slice()])
+        };
+        snapX();
+        {
+            const offs = centerOffsets();
+            let excess = 0;
+            offs.forEach(off => { excess += Math.max(0, off - HALF); });
+            const cap = new Map();
+            const unitsOf = k => new Set(unionParents.get(k).map(p => unitOf.get(p)));
+            offs.forEach((off, k) => {
+                const mine = unitsOf(k);
+                let worst = 0;
+                offs.forEach((off2, k2) => { if ([...unitsOf(k2)].some(u => mine.has(u))) worst = Math.max(worst, off2); });
+                cap.set(k, Math.max(childrenOfUnion.get(k).length < 2 ? CELL * 2 : HALF, worst));
+            });
+            centerLimit = { excess, cap };
+        }
+        const originalCost = cost();
+
+        const baseViol = [];
+        for (let r = 0; r <= maxRank; r++) baseViol.push(rowViolations(r));
+        runLocked();
+        let best = cost();
+        let bestSnap = snapshot();
+        let bestValid = lastValid ? best : Infinity;
+        let bestValidSnap = bestSnap;
+        // 評估次數上限隨人數縮小（每次評估 ≈ 一次完整掃描），百人家族約 0.5 秒內
+        const MAX_EVALS = Math.max(200, Math.min(1500, Math.round(60000 / comp.length)));
+        let evals = 0;
+        // 單位的其他合法排法：兩人 = 左右對調；多婚鏈 = 每位配偶可在左或右（_buildChain 依規則修正）
+        // 加上整條鏈左右鏡像（manual-first 的方向只是起點，成本相同時才保留）
+        const unitVariants = u => {
+            const ms = u.members;
+            if (ms.length === 2) return [[ms[1], ms[0]]];
+            if (ms.length < 3) return [];
+            const out = [];
+            const key0 = ms.join('|');
+            const add = ordered => { const k = ordered.join('|'); if (k !== key0 && !out.some(o => o.join('|') === k)) out.push(ordered); };
+            add(ms.slice().reverse());
+            const hub = this._chainHub(ms, model);
+            const spouses = model.spousesOf.get(hub).filter(s => ms.includes(s));
+            if (spouses.length <= 5) {
+                for (let mask = 0; mask < (1 << spouses.length); mask++) {
+                    const sideOf = s => ((mask >> spouses.indexOf(s)) & 1) ? 'left' : 'right';
+                    add(this._buildChain(ms, model, hub, sideOf));
+                }
+            }
+            return out;
+        };
+        const move = (r, i, j) => { const row = rowUnits[r]; const [u] = row.splice(i, 1); row.splice(j, 0, u); };
+        for (let pass = 0; pass < 8 && evals < MAX_EVALS; pass++) {
+            let improved = false;
+            for (let r = 0; r <= maxRank && evals < MAX_EVALS; r++) {
+                restore(bestSnap);
+                const n = rowUnits[r].length;
+                const maxD = n <= 12 ? n : 4;
+                const cands = [];
+                const variants = rowUnits[r].map(unitVariants);
+                for (let i = 0; i < n; i++) {
+                    for (let j = 0; j < n; j++) {
+                        if (Math.abs(i - j) > maxD) continue;
+                        if (j !== i) cands.push(() => move(r, i, j));
+                        variants[i].forEach(vm => cands.push(() => { rowUnits[r][i].members = vm.slice(); if (j !== i) move(r, i, j); }));
+                    }
+                }
+                // 手足叢集整塊搬移：以目前順序中「連續且同叢集」的區段為塊
+                {
+                    const order = rowUnits[r];
+                    const uIdx = new Map(order.map((u, i) => [u, i]));
+                    const cparent = new Map(order.map(u => [u, u]));
+                    const cfind = u => { while (cparent.get(u) !== u) u = cparent.get(u); return u; };
+                    childrenOfUnion.forEach(list => {
+                        const us = list.map(id => unitOf.get(id)).filter(u => uIdx.has(u));
+                        for (let k = 1; k < us.length; k++) { const a = cfind(us[0]), b = cfind(us[k]); if (a !== b) cparent.set(a, b); }
+                    });
+                    let s = 0;
+                    while (s < n) {
+                        let e = s;
+                        while (e + 1 < n && cfind(order[e + 1]) === cfind(order[s])) e++;
+                        const len = e - s + 1;
+                        if (len >= 2) {
+                            const bs = s;
+                            for (let t = 0; t <= n - len; t++) {
+                                if (t === bs || Math.abs(t - bs) > maxD) continue;
+                                cands.push(() => { const row = rowUnits[r]; const block = row.splice(bs, len); row.splice(t, 0, ...block); });
+                            }
+                        }
+                        s = e + 1;
+                    }
+                }
+                // [L6] 同住偏移候選：此列單位與下一列同住成員 → 把單位中心拉到同住成員平均 x（或清除偏移）
+                if (r < maxRank && hhSets.length) {
+                    const rowBelow = new Set(byRank[r + 1]);
+                    rowUnits[r].forEach((u, i) => {
+                        const mem = new Set(u.members);
+                        hhSets.forEach(set => {
+                            if (!u.members.some(m => set.has(m))) return;
+                            const below = [...set].filter(id => rowBelow.has(id) && !mem.has(id));
+                            if (!below.length) return;
+                            // 以「同住的那位成員」（anchors）正對下一列同住者（targets）
+                            const anchors = u.members.filter(m => set.has(m));
+                            const bias = { anchors, targets: below };
+                            const cur = unitBias.get(u.id);
+                            if (!cur || cur.anchors.join('|') !== anchors.join('|') || cur.targets.join('|') !== below.join('|')) cands.push(() => unitBias.set(u.id, bias));
+                            // 同時換配偶側（同住者站另一邊時，整個單位的落點不同）
+                            variants[i].forEach(vm => cands.push(() => { u.members = vm.slice(); unitBias.set(u.id, bias); }));
+                        });
+                        if (unitBias.has(u.id)) cands.push(() => unitBias.delete(u.id));
+                    });
+                }
+                let rowBest = null;
+                for (const cand of cands) {
+                    if (evals >= MAX_EVALS) break;
+                    // 兩種評估：①下層列照舊重排（讓下一代跟著調整）②全部鎖定（只動這一列）；取較好者
+                    for (const upTo of (r < maxRank ? [r, maxRank] : [maxRank])) {
+                        restore(bestSnap);
+                        cand();
+                        if (rowViolations(r) > baseViol[r]) break;
+                        runLocked(upTo);
+                        evals++;
+                        if (upTo < maxRank && !violationsOk()) continue;
+                        const c = cost();
+                        if (c < best - 1e-6 && (!rowBest || c < rowBest.c - 1e-6)) rowBest = { c, snap: snapshot() };
+                    }
+                }
+                if (rowBest) {
+                    // 下層列是自由重排得到的；以「全部鎖定」重算一次，確認最終版面同樣更好
+                    restore(rowBest.snap);
+                    runLocked();
+                    evals++;
+                    const c = cost();
+                    if (c < best - 1e-6) {
+                        best = c; bestSnap = snapshot(); improved = true;
+                        if (lastValid && c < bestValid - 1e-6) { bestValid = c; bestValidSnap = bestSnap; }
+                    }
+                }
+            }
+            if (!improved) break;
+        }
+        restore(bestValidSnap);
+        runLocked();
+        if (!(bestValid < originalCost - 1e-6)) {
+            restore(original.snap);
+            unitBias.clear();
+            x.clear();
+            original.x.forEach((v, k) => x.set(k, v));
+            units.forEach((u, i) => { u.gaps = original.gaps[i]; });
+            original.kids.forEach(([k, l]) => { const list = childrenOfUnion.get(k); list.splice(0, list.length, ...l); });
+        }
+    }
+
+    /**
+     * 單位內排序：hub = 婚姻最多者；配偶依婚期由近到遠貼近 hub，左右側沿用目前擺法（見 _buildChain）
      */
     _orderUnit(group, model) {
         const P = id => this.personMap[id];
         if (group.length <= 1) return group.slice();
         if (group.length === 2) return group.slice().sort((a, b) => P(a).x - P(b).x);
+        const hub = this._chainHub(group, model);
+        return this._buildChain(group, model, hub, s => (P(s).x < P(hub).x ? 'left' : 'right'));
+    }
+
+    /** 鏈的本人：同列婚姻最多者；同數取目前最左 */
+    _chainHub(group, model) {
+        const P = id => this.personMap[id];
         const inGroup = new Set(group);
         const degree = id => model.spousesOf.get(id).filter(s => inGroup.has(s)).length;
-        const hub = group.slice().sort((a, b) => degree(b) - degree(a) || P(a).x - P(b).x)[0];
+        return group.slice().sort((a, b) => degree(b) - degree(a) || P(a).x - P(b).x)[0];
+    }
+
+    /**
+     * [L5] 多婚鏈排序（_orderUnit 與 _optimizeCohesion 共用）。
+     * 規則：
+     *   1. hub 的配偶依婚期：最近者最貼近 hub、較早者往外，未填婚期者最外
+     *   2. 「鏈配偶」（本身還有別的配偶在同列，如前妻的現任同居人）必須在該側最外端，鏈才能繼續往外延伸：
+     *      該側比鏈配偶更早（或未填婚期）的其他配偶改放另一側最外；每側最多一位鏈配偶，多出者放另一側
+     *   3. 鏈延伸：鏈配偶的其他伴侶再依同樣規則往外接（最近者貼近、再有鏈者最外）
+     * @param {Array} group 同列婚姻連通的人
+     * @param {string} hub 本人
+     * @param {Function} sideOf (spouseId) => 'left'|'right' 期望側（規則 2 可能修正）
+     * @returns {Array} members 左→右
+     */
+    _buildChain(group, model, hub, sideOf) {
+        const inGroup = new Set(group);
         const dateOf = (a, b) => model.marriageDate.get([a, b].sort().join('|')) || '';
-        const spouses = model.spousesOf.get(hub).filter(s => inGroup.has(s));
-        const left = spouses.filter(s => P(s).x < P(hub).x);
-        const right = spouses.filter(s => P(s).x >= P(hub).x);
-        // 兩側都沒有時（同 x）→ 依婚期：最近的放右邊
-        const byDateDesc = (a, b) => (dateOf(hub, b) > dateOf(hub, a) ? 1 : dateOf(hub, b) < dateOf(hub, a) ? -1 : P(a).x - P(b).x);
-        left.sort(byDateDesc);   // 最近婚期者最靠近 hub（左側 = 陣列末端貼 hub）
-        right.sort(byDateDesc);  // 右側 = 陣列開頭貼 hub
+        const recentFirst = (of, list) => list.slice().sort((a, b) => {
+            const da = dateOf(of, a), db = dateOf(of, b);
+            if (da !== db) return da > db ? -1 : 1;
+            return group.indexOf(a) - group.indexOf(b);
+        });
+        const placed = new Set([hub]);
+        const furtherSpouses = id => model.spousesOf.get(id).filter(s => inGroup.has(s) && !placed.has(s));
+        // 鏈延伸（由內往外）：plain 伴侶先、再有鏈者最外並遞迴
+        const extend = (c) => {
+            const out = [];
+            const next = recentFirst(c, furtherSpouses(c));
+            next.forEach(n => placed.add(n));
+            const plain = next.filter(n => !furtherSpouses(n).length);
+            const chain = next.filter(n => furtherSpouses(n).length);
+            plain.forEach(n => out.push(n));
+            chain.forEach(n => { out.push(n); out.push(...extend(n)); });
+            return out;
+        };
+        const spouses = recentFirst(hub, model.spousesOf.get(hub).filter(s => inGroup.has(s)));
+        spouses.forEach(s => placed.add(s));
+        const isChain = s => model.spousesOf.get(s).some(t => inGroup.has(t) && t !== hub);
+        const other = side => (side === 'left' ? 'right' : 'left');
+        const sides = { left: { inner: [], chain: null }, right: { inner: [], chain: null } };
+        const leftovers = [];
+        // 先放鏈配偶（每側一位，較近者優先取得期望側）
+        spouses.filter(isChain).forEach(s => {
+            const want = sideOf(s) === 'left' ? 'left' : 'right';
+            if (!sides[want].chain) sides[want].chain = s;
+            else if (!sides[other(want)].chain) sides[other(want)].chain = s;
+            else leftovers.push(s);
+        });
+        // 再放一般配偶：只能排在該側鏈配偶的內側（婚期較近者）
+        const fits = (side, s) => !sides[side].chain || dateOf(hub, s) > dateOf(hub, sides[side].chain);
+        spouses.filter(s => !isChain(s)).forEach(s => {
+            const want = sideOf(s) === 'left' ? 'left' : 'right';
+            if (fits(want, s)) sides[want].inner.push(s);
+            else if (fits(other(want), s)) sides[other(want)].inner.push(s);
+            else leftovers.push(s);
+        });
+        const build = side => {
+            const list = sides[side].inner.slice(); // 已是 recentFirst 順序（貼 hub → 往外）
+            if (sides[side].chain) { list.push(sides[side].chain); list.push(...extend(sides[side].chain)); }
+            return list;
+        };
+        const left = build('left'), right = build('right');
+        // 放不下的（罕見：≥3 位鏈配偶等）接在較短一側的最外
+        leftovers.forEach(s => { const side = left.length <= right.length ? left : right; side.push(s); side.push(...extend(s)); });
         const ordered = [...left.slice().reverse(), hub, ...right];
-        // 鏈結延伸（配偶的配偶等）：接到最近的一端
-        const rest = group.filter(id => !ordered.includes(id)).sort((a, b) => P(a).x - P(b).x);
-        rest.forEach(id => { if (P(id).x < P(hub).x) ordered.unshift(id); else ordered.push(id); });
+        // 保險：仍未放入者（資料異常）依目前 x 接到最近一端
+        const P = id => this.personMap[id];
+        group.filter(id => !ordered.includes(id)).sort((a, b) => P(a).x - P(b).x)
+            .forEach(id => { if (P(id).x < P(hub).x) ordered.unshift(id); else ordered.push(id); });
         return ordered;
     }
 

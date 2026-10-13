@@ -31,6 +31,14 @@ class GenogramApp {
         ORIGIN_X: 50,         // 格子起點 X (半格偏移，讓人物置中)
         ORIGIN_Y: 60          // 格子起點 Y (半格偏移)
     };
+    /** 格線基準（倍率 1）。排列間距倍率會等比改 CELL_WIDTH／CELL_HEIGHT／MAX_DISTANCE，其餘不變 */
+    static GRID_BASE = Object.freeze({ CELL: 120, MAX_DISTANCE: 120 });
+    static LAYOUT_SPACINGS = [1, 1.25, 1.5];
+
+    static normalizeLayoutSpacing(v) {
+        const n = Number(v);
+        return GenogramApp.LAYOUT_SPACINGS.includes(n) ? n : 1;
+    }
 
     // 生活圈色票（半透明填色；屬性面板色票與 getNextLifeCircleColor 共用）
     static LIFE_CIRCLE_COLORS = [
@@ -83,6 +91,7 @@ class GenogramApp {
         this.labelEditingPersonId = null; // 純 UI 暫態：直接點姓名／備註時隱藏人物快速功能圈
         this.labelJoystickDragging = false; // 純 UI 暫態：文字拉桿拖曳中，期間不隱藏面板
         this.labelPopoverPlacement = null; // 純 UI 暫態：使用者手動拖走的拉桿面板位置
+        this.labelEditingTarget = null; // 純 UI 暫態：正在調整位置的關係線文字／同住圈名稱 {kind:'rel'|'house', id}
         this.selectedRelationshipId = null;
         this.editingRelationshipId = null; // 正在編輯的關係線 ID (用於修改關係類型)
         this.selectedHouseholdId = null; // 選中的圈選框 ID
@@ -105,8 +114,14 @@ class GenogramApp {
             showMedical: true,
             showEmotionalRelationships: true,
             showHouseholds: true,
-            showLifeCircles: true
+            showLifeCircles: true,
+            showAbuseRelationships: true,
+            showEvents: true,
+            deidentifyScreen: false // 畫面去識別化：只換顯示用的複本，不動資料
         };
+        this.events = []; // 家庭記事 [{id, year, text, kind?}]
+        this.eventsLayout = null; // 重大事件卡的拖曳位移 {x, y}（相對預設位置）；null = 預設
+        this.layoutSpacing = 1; // 排列間距倍率（1 標準／1.25 寬鬆／1.5 更寬）；跟著存檔
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -132,6 +147,7 @@ class GenogramApp {
 
         this.pendingGeneration = null; // 等待選擇性別的輩分
         this.hoveredPersonId = null; // 滑鼠 hover 的角色 ID
+        this.hoveredQuickButton = null; // 滑鼠移到的快速新增鈕型別（只顯示該鈕的標籤）
         this.quickAddContext = null; // 快速新增的上下文 {personId, type}
         this.placementSession = null; // 智慧格位純狀態；後續任務才接畫面與互動
         // [1-2] 文件狀態：isDirty = 有變更尚未寫入檔案（另存 / Ctrl+S 寫回檔案後清除）
@@ -189,6 +205,7 @@ class GenogramApp {
         this.setupModalManager();
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
+        this.canvas.fxRedraw = () => this.requestRender(); // [FX] 提起／落子動畫逐幀重繪
         this.setupLabelPositionPopover();
         this.renderRelationshipLegend();
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
@@ -377,9 +394,11 @@ class GenogramApp {
     }
 
     setInspectorTab(tabName) {
-        const allowed = new Set(['properties', 'legend', 'view']);
+        // 分頁清單以 DOM 為準（線上版多一個「清單」分頁；離線版 geno 只有三個）
+        const allowed = new Set([...document.querySelectorAll('[data-inspector-tab]')].map(b => b.dataset.inspectorTab));
         const next = allowed.has(tabName) ? tabName : 'properties';
         this.currentInspectorTab = next;
+        document.body.dataset.activeInspectorTab = next;
         document.querySelectorAll('[data-inspector-tab]').forEach(button => {
             const active = button.dataset.inspectorTab === next;
             button.classList.toggle('active', active);
@@ -473,12 +492,16 @@ class GenogramApp {
         const control = document.querySelector('[data-view-option="' + key + '"]');
         if (control) control.checked = next;
         if (!next) {
-            if (key === 'showEmotionalRelationships' && this.selectedRelationshipId) {
+            if ((key === 'showEmotionalRelationships' || key === 'showAbuseRelationships') && this.selectedRelationshipId) {
                 const selected = this.relationships.find(rel => rel.id === this.selectedRelationshipId);
-                if (selected && Relationship.isEmotionalDisplayType(selected.type)) this.selectedRelationshipId = null;
+                if (selected && !Relationship.isVisibleInView(selected.type, this.viewOptions)) this.selectedRelationshipId = null;
             }
             if (key === 'showHouseholds') this.selectedHouseholdId = null;
             if (key === 'showLifeCircles') this.selectedLifeCircleId = null;
+            this.updatePropertyPanel();
+        }
+        if (key === 'deidentifyScreen') {
+            document.body.classList.toggle('screen-deidentified', next);
             this.updatePropertyPanel();
         }
         if (render) this.render();
@@ -586,6 +609,8 @@ class GenogramApp {
         const ageRefToday = document.getElementById('ageReferenceToday');
         if (ageRefToday) ageRefToday.addEventListener('click', () => this.setAgeReferenceDate(null));
 
+        // 排列間距（檢視分頁）
+        document.getElementById('layoutSpacingSelect')?.addEventListener('change', e => this.setLayoutSpacing(parseFloat(e.target.value)));
         document.querySelectorAll('[data-view-option]').forEach(control => {
             control.addEventListener('change', event => {
                 this.setViewOption(event.currentTarget.dataset.viewOption, event.currentTarget.checked);
@@ -870,6 +895,7 @@ class GenogramApp {
     clearAllSelections() {
         this.selectedPersonId = null;
         this.labelEditingPersonId = null;
+        this.labelEditingTarget = null;
         this.selectedPersonIds = [];
         this.selectedRelationshipId = null;
         this.selectedHouseholdId = null;
@@ -1118,6 +1144,7 @@ class GenogramApp {
         });
         this.persons.push(person);
         this.personMap.set(person.id, person);
+        this.canvas.playDrop?.(person.id); // [FX] 落子
         this.selectPerson(person.id);
         this.autoSave();
         // 新增後切換到選取工具，方便使用者編輯
@@ -1182,6 +1209,7 @@ class GenogramApp {
         // [UX Fix] 選取互斥規則：清除其他選取
         this.selectedPersonId = null;
         this.labelEditingPersonId = null;
+        this.labelEditingTarget = null;
         this.selectedPersonIds = [];
         this.selectedHouseholdId = null;
         this.selectedLifeCircleId = null;
@@ -1729,14 +1757,20 @@ class GenogramApp {
         }
         this.waitForCurrentCanvasFonts(true);
         // [Sprint 2 Phase A] 注入 personMap 供 canvas 以 O(1) 查表取代 persons.find
+        // 畫面去識別化：線條與排版照真實資料算，只在畫人物文字時換成代號／年齡帶、不畫備註與關係說明
+        const deid = this.viewOptions.deidentifyScreen === true;
         this.canvas.personMap = this.personMap;
         this.canvas.viewOptions = this.viewOptions;
+        this.canvas.displayOverride = deid ? this.getDeidentifiedDisplay() : null;
+        this.canvas.eventsToDraw = deid ? [] : (this.events || []);
+        this.canvas.eventsLayout = this.eventsLayout;
         this.canvas.ageReferenceDate = this.ageReferenceDate; // [2-1]
         this.canvas.lodScale = this.canvas.scale; // [3-3] 螢幕 LOD（匯出期間 canvas 自行固定為 1）
         if (this.labelEditingPersonId !== this.selectedPersonId
             || !this.personMap.has(this.labelEditingPersonId)) {
             this.labelEditingPersonId = null;
         }
+        this.canvas.hoveredQuickButton = this.hoveredQuickButton;
         this.canvas.suppressQuickAddButtons = this.currentTool !== 'select'
             || Boolean(this.labelEditingPersonId);
         // [Phase 0a] 一次性注入「快取的」KinshipEngine 與關係分類；canvas.render 讀取後即清，
@@ -2046,6 +2080,9 @@ class GenogramApp {
             this.relationships = prevState.relationships.map(r => Relationship.fromJSON(r));
             this.households = prevState.households || [];
             this.lifeCircles = prevState.lifeCircles || [];
+            this.events = prevState.events || [];
+            this.eventsLayout = prevState.eventsLayout || null;
+            this.applyGridSpacing(prevState.layoutSpacing || 1);
             this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
             this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
                 ? selectedRelationshipId : null;
@@ -2087,6 +2124,9 @@ class GenogramApp {
             this.relationships = nextState.relationships.map(r => Relationship.fromJSON(r));
             this.households = nextState.households || [];
             this.lifeCircles = nextState.lifeCircles || [];
+            this.events = nextState.events || [];
+            this.eventsLayout = nextState.eventsLayout || null;
+            this.applyGridSpacing(nextState.layoutSpacing || 1);
             this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
             this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
                 ? selectedRelationshipId : null;
@@ -2116,8 +2156,54 @@ class GenogramApp {
             lifeCircles: (this.lifeCircles || []).map(lc => ({
                 ...lc,
                 points: (lc.points || []).map(p => ({ x: p.x, y: p.y }))
-            }))
+            })),
+            events: (this.events || []).map(ev => ({ ...ev })),
+            eventsLayout: this.eventsLayout ? { ...this.eventsLayout } : null,
+            layoutSpacing: this.layoutSpacing || 1
         };
+    }
+
+    /**
+     * 只套用格線倍率（不動座標）：載入檔案、undo/redo 時用，因為那些座標本來就是該倍率下的座標。
+     */
+    applyGridSpacing(factor) {
+        const f = GenogramApp.normalizeLayoutSpacing(factor);
+        const G = GenogramApp.GRID, B = GenogramApp.GRID_BASE;
+        G.CELL_WIDTH = B.CELL * f;
+        G.CELL_HEIGHT = B.CELL * f;
+        G.MAX_DISTANCE = B.MAX_DISTANCE * f;
+        this.layoutSpacing = f;
+        const sel = document.getElementById('layoutSpacingSelect');
+        if (sel) sel.value = String(f);
+        this._dataVersion++;
+        return f;
+    }
+
+    /**
+     * 切換排列間距：整張圖以格線原點為中心等比縮放（成員、生活圈頂點、記事卡位移），格線倍率一起改，
+     * 輩分列索引與吸附格位完全不變。一步 undo。
+     */
+    setLayoutSpacing(factor) {
+        const f = GenogramApp.normalizeLayoutSpacing(factor);
+        const cur = this.layoutSpacing || 1;
+        if (f === cur) return false;
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+        this.commitPropertyEditSession();
+        this.saveState();
+        const k = f / cur;
+        const ox = GenogramApp.GRID.ORIGIN_X, oy = GenogramApp.GRID.ORIGIN_Y;
+        const sx = x => ox + (x - ox) * k, sy = y => oy + (y - oy) * k;
+        this.persons.forEach(p => { p.x = sx(p.x); p.y = sy(p.y); });
+        (this.lifeCircles || []).forEach(lc => { lc.points = (lc.points || []).map(pt => ({ x: sx(pt.x), y: sy(pt.y) })); });
+        if (this.eventsLayout) this.eventsLayout = GenogramApp.normalizeEventsLayout({ x: this.eventsLayout.x * k, y: this.eventsLayout.y * k });
+        this.applyGridSpacing(f);
+        this.markDirty();
+        this.autoSave();
+        this.render();
+        this.fitToView({ onlyIfNeeded: true });
+        const label = { 1: '標準', 1.25: '寬鬆', 1.5: '更寬' }[f] || String(f);
+        this.updateStatus(`排列間距：${label}（整張圖等比調整；Ctrl+Z 可復原）`, 'success');
+        return true;
     }
 
     /**
@@ -2196,6 +2282,9 @@ class GenogramApp {
                 !isNaN(p.x) && !isNaN(p.y))
         );
         this.documentMeta = GenogramApp.normalizeDocumentMeta(data.meta); // [2-2]
+        this.events = GenogramApp.normalizeEvents(data.events);
+        this.eventsLayout = GenogramApp.normalizeEventsLayout(data.eventsLayout);
+        this.applyGridSpacing(data.layoutSpacing); // 檔案內的座標已是該倍率；缺欄位 = 標準
         // [R4b] 1.1 起建立關係時就保證 parent→child 方向；更早的檔案（含未標版號）才允許以 Y 座標推斷
         const norm = this.normalizeLoadedFamilyRelationships({
             inferDirectionFromY: GenogramApp.isLegacySchema(data.sourceVersion || data.version)
@@ -2223,6 +2312,24 @@ class GenogramApp {
                 'info', { autoHideMs: GenogramApp.STATUS_TIMEOUTS.passiveAlert }
             );
         }
+    }
+
+    /** 重大事件清洗：只留 {id, year, text} 字串欄位 */
+    static normalizeEvents(list) {
+        if (!Array.isArray(list)) return [];
+        return list.filter(ev => ev && (ev.year || ev.text)).map((ev, i) => ({
+            id: typeof ev.id === 'string' && ev.id ? ev.id : `ev_${Date.now().toString(36)}_${i}`,
+            year: String(ev.year ?? '').slice(0, 12),
+            text: String(ev.text ?? '').slice(0, 200),
+            ...(['family', 'health', 'school', 'legal', 'service'].includes(ev.kind) ? { kind: ev.kind } : {})
+        }));
+    }
+
+    /** 事件卡位移清洗：{x,y} 有限數字且非零才保留 */
+    static normalizeEventsLayout(v) {
+        if (!v || !Number.isFinite(v.x) || !Number.isFinite(v.y)) return null;
+        const x = Math.round(v.x), y = Math.round(v.y);
+        return x || y ? { x, y } : null;
     }
 
     static formatRecentTime(ts) {

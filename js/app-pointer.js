@@ -186,6 +186,41 @@ Object.assign(GenogramApp.prototype, {
                 return;
             }
 
+            // 關係線文字（時間／說明）、同住圈名稱：點一下選取該關係／同住圈，並開啟同一個文字位置拉桿
+            const clickedText = this.getTextLabelAt(point.x, point.y);
+            if (clickedText && clickedText.kind === 'events') {
+                // 重大事件卡：按住直接拖曳移動；點一下也會出現文字位置拉桿
+                this.clearAllSelections();
+                this.updatePropertyPanel();
+                this.labelEditingTarget = { kind: 'events', id: 'events' };
+                const base = this.eventsLayout ? { ...this.eventsLayout } : { x: 0, y: 0 };
+                this.eventsDrag = { startX: point.x, startY: point.y, base, moved: false };
+                this.canvas.isDragging = true;
+                this.canvas.dragStart = point;
+                this.updateStatus('拖曳可移動重大事件卡；放開後 Ctrl+Z 可復原', 'info');
+                this.render();
+                return;
+            }
+            if (clickedText) {
+                if (clickedText.kind === 'rel') {
+                    this.selectRelationship(clickedText.id);
+                } else if (clickedText.kind === 'lc') {
+                    this.clearAllSelections();
+                    this.selectedLifeCircleId = clickedText.id;
+                    this.updatePropertyPanel();
+                } else {
+                    this.clearAllSelections();
+                    this.selectedHouseholdId = clickedText.id;
+                    this.updatePropertyPanel();
+                }
+                this.labelEditingTarget = { kind: clickedText.kind, id: clickedText.id };
+                this.updateStatus({ rel: '已選取關係文字，可在文字旁調整位置', lc: '已選取生活圈名稱，可在文字旁調整位置' }[clickedText.kind]
+                    || '已選取同住圈名稱，可在文字旁調整位置', 'info');
+                this.render();
+                return;
+            }
+            this.labelEditingTarget = null;
+
             // 優先檢查滑鼠下的「家庭」（這現在包含了家庭成員）
             // 如果點擊了某人，我們需要判斷意圖：
             // A. 如果該人在家庭內 -> 拖曳家庭 (User Request: "就算拉到人員或關係線也應該整體一起移動")
@@ -422,6 +457,16 @@ Object.assign(GenogramApp.prototype, {
             return;
         }
 
+        if (this.eventsDrag) {
+            const d = this.eventsDrag;
+            const dx = point.x - d.startX, dy = point.y - d.startY;
+            if (!d.moved && Math.hypot(dx, dy) < 3) return;
+            d.moved = true;
+            this.eventsLayout = GenogramApp.normalizeEventsLayout({ x: d.base.x + dx, y: d.base.y + dy });
+            this.requestRender();
+            return;
+        }
+
         // [LC-2] 生活圈工具按住拖曳 → 橢圓預覽（超過 8 螢幕像素才算拖）
         if (this.currentTool === 'lifeCircle' && this.lcPress) {
             const dist = Math.hypot(point.x - this.lcPress.start.x, point.y - this.lcPress.start.y);
@@ -623,12 +668,17 @@ Object.assign(GenogramApp.prototype, {
             if (this.hoveredPersonId !== null) {
                 this.hoveredPersonId = null; // 不再以 hover 觸發快速鈕
             }
+            let hoveredQuick = null;
             if (this.currentTool === 'select' && this.selectedPersonId
                 && this.labelEditingPersonId !== this.selectedPersonId) {
                 const selPerson = this.personMap.get(this.selectedPersonId);
-                if (selPerson && this.canvas.getQuickButtonAt(point.x, point.y, selPerson)) {
-                    this.canvas.canvas.style.cursor = 'pointer';
-                }
+                hoveredQuick = selPerson ? this.canvas.getQuickButtonAt(point.x, point.y, selPerson) : null;
+                if (hoveredQuick) this.canvas.canvas.style.cursor = 'pointer';
+            }
+            // 快速鈕標籤只在滑鼠移上去時顯示（觸控裝置一律顯示）；變化才重畫
+            if (hoveredQuick !== (this.hoveredQuickButton || null)) {
+                this.hoveredQuickButton = hoveredQuick;
+                this.requestRender();
             }
 
             // [Fix] 選取關係線時，滑鼠移到 鉛筆 / ⇄ / 走法鈕(自ㄇ一ㄩ) 上 → 游標變 pointer（手）
@@ -694,6 +744,21 @@ Object.assign(GenogramApp.prototype, {
                 this.updateStatus('已新增第 1 個頂點，繼續點擊增加頂點，雙擊或按 Enter 完成；Backspace 退回上一點');
                 this.render();
             }
+            return;
+        }
+        // 重大事件卡拖曳結束：有移動才寫一筆 history（以拖曳前的位移存快照）
+        if (this.eventsDrag) {
+            const d = this.eventsDrag;
+            this.eventsDrag = null;
+            this.canvas.isDragging = false;
+            if (d.moved) {
+                const final = this.eventsLayout;
+                this.eventsLayout = GenogramApp.normalizeEventsLayout(d.base);
+                this.saveState();
+                this.eventsLayout = final;
+                this.autoSave();
+            }
+            this.render();
             return;
         }
         // [R-1] 橫桿拖曳結束：有變動才寫一筆 history（以拖曳前的值存 snapshot，語意同 saveState-before-mutation）
@@ -1015,6 +1080,7 @@ Object.assign(GenogramApp.prototype, {
         this.canvas.draggedLifeCircle = null;
         this.lcVertexDrag = null;
         this.lcPress = null;
+        this.eventsDrag = null;
         this.ellipsePreview = null;
         this.isBoxSelecting = false;
         this.dragVirtual = null;

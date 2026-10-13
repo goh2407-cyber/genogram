@@ -137,7 +137,11 @@ Object.assign(GenogramCanvas.prototype, {
             effectiveView, relationships);
         if (!bounds) return null;
 
-        const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
+        const { minX, minY, maxX, maxY } = bounds;
+        // 家庭記事：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
+        const eventsBlock = this.getExportEventsBlock(effectiveView); // 邊界已含事件卡（_calculateContentBounds）
+        const contentWidth = bounds.width;
+        const contentHeight = bounds.height;
         const margin = 50; // Re-define margin for legend calculation
 
         // ===== 圖例設定 =====
@@ -173,7 +177,7 @@ Object.assign(GenogramCanvas.prototype, {
 
         // 1. 先繪製生活圈 (最最底層)
         if (visible.lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(visible.lifeCircles);
+            this.drawLifeCirclesExport(visible.lifeCircles, persons);
         }
 
         // 1.5 繪製同住家庭
@@ -211,6 +215,8 @@ Object.assign(GenogramCanvas.prototype, {
         persons.forEach(person => {
             this.drawPersonForExport(person, effectiveView);
         });
+
+        if (eventsBlock) { const er = this.getEventsBlockRect(persons, eventsBlock); this.drawEventsBlock(this.ctx, er.x, er.y, eventsBlock); }
 
         this.ctx.restore();
 
@@ -258,7 +264,11 @@ Object.assign(GenogramCanvas.prototype, {
             effectiveView, relationships);
         if (!bounds) return null;
 
-        const { minX, minY, maxX, maxY, width: contentWidth, height: contentHeight } = bounds;
+        const { minX, minY, maxX, maxY } = bounds;
+        // 家庭記事：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
+        const eventsBlock = this.getExportEventsBlock(effectiveView); // 邊界已含事件卡（_calculateContentBounds）
+        const contentWidth = bounds.width;
+        const contentHeight = bounds.height;
         const margin = 50; // Re-define margin for legend calculation
 
         const usedTypes = legendAll ? null : this.getUsedExportLegendTypes(visible);
@@ -289,7 +299,7 @@ Object.assign(GenogramCanvas.prototype, {
 
         // 繪製生活圈
         if (visible.lifeCircles.length > 0) {
-            this.drawLifeCirclesExport(visible.lifeCircles);
+            this.drawLifeCirclesExport(visible.lifeCircles, persons);
         }
 
         if (visible.households.length > 0) {
@@ -325,6 +335,8 @@ Object.assign(GenogramCanvas.prototype, {
             this.drawPersonForExport(person, effectiveView);
         });
 
+        if (eventsBlock) { const er = this.getEventsBlockRect(persons, eventsBlock); this.drawEventsBlock(this.ctx, er.x, er.y, eventsBlock); }
+
         this.ctx.restore();
 
         if (legendWidth) {
@@ -341,6 +353,127 @@ Object.assign(GenogramCanvas.prototype, {
         } finally {
             this._restoreExportDerivedState(exportState);
         }
+    },
+
+    /**
+     * 家庭記事卡（直式時間軸）：左邊年份膠囊、中間軌道與圓點、右邊事件文字；白底圓角卡片。
+     * 依年份排序（無年份排最後）；無事件回 null。螢幕與匯出共用。
+     */
+    measureEventsBlock(events = []) {
+        const kindColor = { family: '#ed1261', health: '#16a34a', school: '#2563eb', legal: '#7c3aed', service: '#ea580c' };
+        const rows = (events || []).filter(ev => ev && (ev.year || ev.text))
+            .map(ev => ({ year: String(ev.year || '').trim(), text: String(ev.text || '').trim(), color: kindColor[ev.kind] || kindColor.family }))
+            .sort((a, b) => (parseInt(a.year, 10) || 99999) - (parseInt(b.year, 10) || 99999));
+        if (!rows.length) return null;
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.font = `600 12px ${this.fontFamily}`;
+        const yearW = Math.max(30, ...rows.map(r => ctx.measureText(r.year || '—').width)) + 14;
+        ctx.font = `13px ${this.fontFamily}`;
+        const textW = Math.max(40, ...rows.map(r => ctx.measureText(r.text).width));
+        ctx.restore();
+        const padX = 14, padTop = 12, headerH = 28, rowH = 24, padBottom = 10;
+        const railX = padX + yearW + 16;          // 軌道（相對卡片左緣）
+        const textX = railX + 14;                 // 文字起點
+        return {
+            rows, yearW, padX, padTop, headerH, rowH, padBottom, railX, textX,
+            width: Math.max(200, textX + textW + padX),
+            height: padTop + headerH + rows.length * rowH + padBottom
+        };
+    },
+
+    /** 記事卡位置：預設在全圖左下（成員最左 x、成員最下 y 再往下），加上使用者拖曳的位移 eventsLayout */
+    getEventsBlockRect(persons, block) {
+        if (!block) return null;
+        const half = this.personSize / 2;
+        const list = (persons || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+        const baseX = list.length ? Math.min(...list.map(p => p.x)) - half : 0;
+        const baseY = list.length ? Math.max(...list.map(p => p.y)) + half + 56 : 0;
+        const lo = this.eventsLayout;
+        const x = baseX + (lo ? lo.x : 0), y = baseY + (lo ? lo.y : 0);
+        return { x, y, width: block.width, height: block.height, baseX, baseY };
+    },
+
+    drawEventsBlock(ctx, x, y, block) {
+        if (!block) return;
+        const { rows, padX, padTop, headerH, rowH, railX, textX, yearW, width, height } = block;
+        ctx.save();
+        ctx.setLineDash([]);
+        // 卡片
+        const r = 10;
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + width, y, x + width, y + height, r);
+        ctx.arcTo(x + width, y + height, x, y + height, r);
+        ctx.arcTo(x, y + height, x, y, r);
+        ctx.arcTo(x, y, x + width, y, r);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#d1d5db';
+        ctx.stroke();
+        // 標題：品牌色小方塊 + 文字 + 筆數
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        const hy = y + padTop + headerH / 2 - 2;
+        ctx.fillStyle = '#ed1261';
+        ctx.fillRect(x + padX, hy - 6, 4, 12);
+        ctx.fillStyle = '#1f2937';
+        ctx.font = `700 13px ${this.fontFamily}`;
+        ctx.fillText('家庭記事', x + padX + 10, hy);
+        const titleW = ctx.measureText('家庭記事').width;
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = `12px ${this.fontFamily}`;
+        ctx.fillText(`${rows.length} 筆`, x + padX + 10 + titleW + 8, hy);
+        // 軌道
+        const firstCy = y + padTop + headerH + rowH / 2;
+        const lastCy = firstCy + (rows.length - 1) * rowH;
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + railX, firstCy);
+        ctx.lineTo(x + railX, lastCy);
+        ctx.stroke();
+        rows.forEach((row, i) => {
+            const cy = firstCy + i * rowH;
+            // 年份膠囊
+            const label = row.year || '—';
+            ctx.font = `600 12px ${this.fontFamily}`;
+            const lw = ctx.measureText(label).width + 14;
+            const px = x + padX + (yearW - lw) / 2, py = cy - 9, ph = 18, pr = 9;
+            ctx.beginPath();
+            ctx.moveTo(px + pr, py);
+            ctx.arcTo(px + lw, py, px + lw, py + ph, pr);
+            ctx.arcTo(px + lw, py + ph, px, py + ph, pr);
+            ctx.arcTo(px, py + ph, px, py, pr);
+            ctx.arcTo(px, py, px + lw, py, pr);
+            ctx.closePath();
+            ctx.fillStyle = '#f3f4f6';
+            ctx.fill();
+            ctx.fillStyle = '#374151';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, px + lw / 2, cy);
+            // 圓點
+            ctx.beginPath();
+            ctx.arc(x + railX, cy, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = row.color; // 依記事類別變色
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            // 事件文字
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#1f2937';
+            ctx.font = `13px ${this.fontFamily}`;
+            ctx.fillText(row.text, x + textX, cy);
+        });
+        ctx.restore();
+    },
+
+    getExportEventsBlock(view = {}) {
+        if (!view.showEvents || !view.showNotes || this.displayOverride) return null;
+        return this.measureEventsBlock(this.eventsToDraw || []);
     },
 
     _exportHeaderMetaLine(header) {
@@ -705,11 +838,8 @@ Object.assign(GenogramCanvas.prototype, {
      * 繪製生活圈（匯出用，不含選取高亮）
      * [Fix] 與螢幕版共用 _drawSingleLifeCircle：平滑形狀、邊框色、標籤完全一致
      */
-    drawLifeCirclesExport(lifeCircles) {
+    drawLifeCirclesExport(lifeCircles, persons = null) {
         if (!lifeCircles || lifeCircles.length === 0) return;
-
-        lifeCircles.forEach(lc => {
-            this._drawSingleLifeCircle(lc, false);
-        });
+        this.drawLifeCircleSet(lifeCircles, null, persons || this.lastPersons);
     },
 });

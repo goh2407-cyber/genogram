@@ -178,6 +178,8 @@ Object.assign(GenogramApp.prototype, {
                     }, { eventName: 'click', commitOnChange: true });
                 });
                 root.querySelector('#deleteLifeCircleBtn').addEventListener('click', () => this.deleteSelected());
+                root.querySelector('#smoothLifeCircleBtn').addEventListener('click', () => this.smoothSelectedLifeCircle());
+                root.querySelector('#fitLifeCircleBtn').addEventListener('click', () => this.fitSelectedLifeCircleToMembers());
                 return;
             }
         }
@@ -250,11 +252,61 @@ Object.assign(GenogramApp.prototype, {
         this.refreshPersonAgeFields(root, person); // [2-1]
     },
 
+    /**
+     * 目前文字位置拉桿操作的對象：成員姓名／備註、關係線文字、同住圈名稱，三者共用同一組操作。
+     * key：拉桿面板手動位置的歸屬（成員沿用 person id，相容既有測試）。
+     */
+    getLabelEditTarget({ requireEditing = false } = {}) {
+        // 關係線文字／同住圈名稱（點文字進入）優先
+        const t = this.labelEditingTarget;
+        if (t && t.kind === 'events') {
+            const boxKey = 'events:events';
+            return {
+                key: boxKey,
+                get: () => ({ offsetX: this.eventsLayout?.x || 0, offsetY: this.eventsLayout?.y || 0 }),
+                set: (x, y) => { this.eventsLayout = GenogramApp.normalizeEventsLayout({ x, y }); },
+                hasManual: () => Boolean(this.eventsLayout),
+                bounds: () => this.canvas.textLabelBoxes?.get(boxKey)?.bounds || null,
+                anchorBounds: () => this.eventsLayout ? (this.canvas.textLabelBoxes?.get(boxKey)?.baseBounds || null) : null
+            };
+        }
+        const owner = !t ? null : t.kind === 'rel'
+            ? (this.selectedRelationshipId === t.id ? this.relationships.find(r => r.id === t.id) : null)
+            : t.kind === 'lc'
+                ? (this.selectedLifeCircleId === t.id ? (this.lifeCircles || []).find(l => l.id === t.id) : null)
+                : (this.selectedHouseholdId === t.id ? (this.households || []).find(h => h.id === t.id) : null);
+        if (owner) {
+            const boxKey = t.kind + ':' + t.id;
+            return {
+                key: boxKey,
+                get: () => ({ offsetX: owner.labelOffset?.x || 0, offsetY: owner.labelOffset?.y || 0 }),
+                // 永遠換新物件（同住圈在 history 快照是淺拷貝，不能原地改）
+                set: (x, y) => { owner.labelOffset = x || y ? { x, y } : null; },
+                hasManual: () => Boolean(owner.labelOffset),
+                bounds: () => this.canvas.textLabelBoxes?.get(boxKey)?.bounds || null,
+                anchorBounds: () => owner.labelOffset ? (this.canvas.textLabelBoxes?.get(boxKey)?.baseBounds || null) : null
+            };
+        }
+        // 成員姓名／備註：拉桿面板只在「點文字進入」時出現；微調 API 沿用原本「選取成員即可」的行為
+        const editing = this.labelEditingPersonId && this.labelEditingPersonId === this.selectedPersonId;
+        if (requireEditing ? !editing : !this.selectedPersonId) return null;
+        const person = this.personMap.get(this.selectedPersonId);
+        if (!person) return null;
+        return {
+            key: person.id,
+            get: () => person.labelPlacement || { offsetX: 0, offsetY: 0 },
+            set: (x, y) => { person.labelPlacement = x || y ? { offsetX: x, offsetY: y } : null; },
+            hasManual: () => Boolean(person.labelPlacement),
+            bounds: () => this.canvas.getPersonLabelGeometry(person, this.viewOptions).bounds,
+            anchorBounds: () => this.getLabelPopoverAnchorBounds(person)
+        };
+    },
+
     adjustSelectedPersonLabel(direction, options = {}) {
         const delta = GenogramApp.LABEL_NUDGE_DIRECTIONS[direction];
-        const person = this.personMap.get(this.selectedPersonId);
-        if (!person || !delta) return;
-        const current = person.labelPlacement || { offsetX: 0, offsetY: 0 };
+        const target = this.getLabelEditTarget();
+        if (!target || !delta) return;
+        const current = target.get();
         // 按住連續移動時只在第一步記 history，整段按住合併成一次 undo
         if (options.recordHistory !== false) this.saveState();
         this.setSelectedPersonLabelOffset(
@@ -265,20 +317,20 @@ Object.assign(GenogramApp.prototype, {
 
     /**
      * 直接寫入文字位移並重畫（不碰 history，由呼叫端決定何時記錄）。
+     * 名稱沿用「Person」，實際作用於目前的文字目標（成員／關係文字／同住圈名稱）。
      */
     setSelectedPersonLabelOffset(offsetX, offsetY) {
-        const person = this.personMap.get(this.selectedPersonId);
-        if (!person) return;
-        const next = { offsetX: Math.round(offsetX), offsetY: Math.round(offsetY) };
-        person.labelPlacement = next.offsetX || next.offsetY ? next : null;
+        const target = this.getLabelEditTarget();
+        if (!target) return;
+        target.set(Math.round(offsetX), Math.round(offsetY));
         this.render();
     },
 
     resetSelectedPersonLabel() {
-        const person = this.personMap.get(this.selectedPersonId);
-        if (!person || !person.labelPlacement) return;
+        const target = this.getLabelEditTarget();
+        if (!target || !target.hasManual()) return;
         this.saveState();
-        person.labelPlacement = null;
+        target.set(0, 0);
         this.autoSave();
         this.render();
     },
@@ -312,7 +364,7 @@ Object.assign(GenogramApp.prototype, {
             if (!drag || event.pointerId !== drag.pointerId) return;
             const container = this.elements.canvasContainer.getBoundingClientRect();
             this.labelPopoverPlacement = {
-                personId: this.labelEditingPersonId,
+                personId: this.getLabelEditTarget()?.key ?? this.labelEditingPersonId,
                 left: event.clientX - container.left - drag.grabX,
                 top: event.clientY - container.top - drag.grabY
             };
@@ -343,9 +395,9 @@ Object.assign(GenogramApp.prototype, {
         };
         knob.addEventListener('pointerdown', event => {
             if (event.button !== 0) return;
-            const person = this.personMap.get(this.selectedPersonId);
-            if (!person) return;
-            const current = person.labelPlacement || { offsetX: 0, offsetY: 0 };
+            const target = this.getLabelEditTarget();
+            if (!target) return;
+            const current = target.get();
             drag = {
                 pointerId: event.pointerId,
                 startX: event.clientX,
@@ -419,17 +471,14 @@ Object.assign(GenogramApp.prototype, {
     updateLabelPositionPopover() {
         const popover = this.elements.labelPositionPopover;
         const outline = this.elements.labelSelectionOutline;
-        const person = this.personMap.get(this.labelEditingPersonId);
-        const isActive = this.currentTool === 'select'
-            && person
-            && this.labelEditingPersonId === this.selectedPersonId;
-        if (!popover || !outline || !isActive) {
+        const labelTarget = this.currentTool === 'select' ? this.getLabelEditTarget({ requireEditing: true }) : null;
+        if (!popover || !outline || !labelTarget) {
             if (popover) popover.hidden = true;
             if (outline) outline.hidden = true;
             return;
         }
 
-        const geometry = this.canvas.getPersonLabelGeometry(person, this.viewOptions);
+        const geometry = { bounds: labelTarget.bounds() };
         if (!geometry.bounds) {
             popover.hidden = true;
             outline.hidden = true;
@@ -445,7 +494,7 @@ Object.assign(GenogramApp.prototype, {
         });
         const target = toScreen(geometry.bounds);
         // 面板錨在「未微調」的文字位置：按方向鍵時文字會動，面板留在原地不追著跑
-        const anchorBounds = this.getLabelPopoverAnchorBounds(person) || geometry.bounds;
+        const anchorBounds = labelTarget.anchorBounds() || geometry.bounds;
         const anchor = toScreen(anchorBounds);
         const containerWidth = this.elements.canvasContainer.clientWidth;
         const containerHeight = this.elements.canvasContainer.clientHeight;
@@ -470,7 +519,7 @@ Object.assign(GenogramApp.prototype, {
         const gap = GenogramApp.LABEL_POPOVER_GAP;
         const edge = 12;
         // 使用者拖過面板就尊重手動位置，只做邊界夾制；換人編輯才回到自動定位
-        const manual = this.labelPopoverPlacement?.personId === this.labelEditingPersonId
+        const manual = this.labelPopoverPlacement?.personId === labelTarget.key
             ? this.labelPopoverPlacement : null;
         let left = manual ? manual.left : anchor.right + gap;
         if (!manual && left + popover.offsetWidth > containerWidth - edge) {
@@ -628,6 +677,34 @@ Object.assign(GenogramApp.prototype, {
         this.selectedLifeCircleId = newLifeCircle.id;
 
         this.updateStatus(`已建立「${newLifeCircle.label}」，點選邊框可編輯名稱與顏色`, 'success');
+        this.autoSave();
+        this.render();
+    },
+
+    /** [LC-4] 整圓形狀：資料點換成沿平滑曲線等距重取的點（一步 undo） */
+    smoothSelectedLifeCircle() {
+        const lc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+        if (!lc || !Array.isArray(lc.points) || lc.points.length < 3) return;
+        this.saveState();
+        const n = Math.max(12, Math.min(24, lc.points.length));
+        lc.points = this.canvas.smoothLifeCirclePoints(lc.points, n).map(q => ({ x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 }));
+        this.updateStatus('已整圓生活圈形狀（Ctrl+Z 可復原）', 'success');
+        this.autoSave();
+        this.render();
+    },
+
+    /** [LC-4] 貼合圈內成員：依目前在圈內的人重畫乾淨的圈（一步 undo） */
+    fitSelectedLifeCircleToMembers() {
+        const lc = this.lifeCircles.find(l => l.id === this.selectedLifeCircleId);
+        if (!lc) return;
+        const pts = this.canvas.fitLifeCircleToMembers(lc, this.persons);
+        if (!pts) {
+            this.updateStatus('這個生活圈裡目前沒有成員，無法貼合；先把成員拖進圈內', 'warning');
+            return;
+        }
+        this.saveState();
+        lc.points = pts;
+        this.updateStatus('已依圈內成員重畫生活圈（Ctrl+Z 可復原）', 'success');
         this.autoSave();
         this.render();
     },

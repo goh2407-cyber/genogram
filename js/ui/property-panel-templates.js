@@ -93,7 +93,11 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <label for="lifeCircleNotes">說明（僅面板顯示，不畫在圖上）</label>
                 <textarea id="lifeCircleNotes" rows="2" placeholder="例如：每週三下午課後照顧；聯絡人 ○○老師"></textarea>
             </div>
-            <p class="property-help">選取後可拖曳頂點改形狀；雙擊邊線新增頂點；Alt＋點頂點刪除。</p>
+            <p class="property-help">選取後可拖曳頂點改形狀；雙擊邊線新增頂點；Alt＋點頂點刪除；點名稱可調整位置。</p>
+            <div class="form-group-row" style="margin-top: 8px;">
+                <button type="button" class="btn-cancel btn-compact" id="smoothLifeCircleBtn" style="flex: 1;" title="把手點的多邊形整成圓順的形狀">整圓形狀</button>
+                <button type="button" class="btn-cancel btn-compact" id="fitLifeCircleBtn" style="flex: 1;" title="依目前圈內的成員重畫一個乾淨的圈（成員移動或自動排列後用）">貼合圈內成員</button>
+            </div>
             <div style="margin-top: 12px;">
                 <button class="btn-cancel" id="deleteLifeCircleBtn" style="width: 100%;">刪除此生活圈</button>
             </div>

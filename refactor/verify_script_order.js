@@ -12,7 +12,12 @@ const expected = ['jspdf.umd.min.js', ...['person', 'layout', 'relationship', 'd
     'domain/family-route-planner', 'history', 'canvas', ...canvasMixins, 'canvas-export', 'storage',
     'ui/modal-manager', 'ui/property-panel-templates', 'app', ...appMixins].map(name => `js/${name}.js`)];
 
-function checkOrder(html) {
+// 線上版（根目錄 index.html 與其驗證副本 refactor/app）在最後多載入 extras；離線包 geno/ 不載入（Word 匯出需線上程式庫）。
+// 內部專用程式（js/ai/，由 internal/build.js 注入內部版）不得出現在公開版任何一份 index.html。
+const ONLINE_ONLY_SCRIPTS = ['js/extras/genogram-extras.js'];
+
+function checkOrder(html, { allowAi = false } = {}) {
+    assert(!/js\/ai\/|ai-assistant|ai-config/i.test(html), 'public build must not reference internal-only scripts');
     const scripts = [...html.matchAll(/<script\b([^>]*)>/gi)].filter(match => /\bsrc\s*=/i.test(match[1]));
     const sources = scripts.map(([, attributes]) => {
         assert(!/\b(?:async|defer)\b|\btype\s*=\s*["']module["']/i.test(attributes), 'scripts must load synchronously');
@@ -20,6 +25,12 @@ function checkOrder(html) {
         assert(src, 'script src must be quoted');
         return /(?:^|\/)jspdf\.umd\.min\.js$/.test(src[2]) ? 'jspdf.umd.min.js' : src[2];
     });
+    const tail = sources.slice(expected.length);
+    if (tail.length) {
+        assert(allowAi, 'online-only scripts must not be loaded in this build: ' + tail.join(', '));
+        assert.deepEqual(tail, ONLINE_ONLY_SCRIPTS, 'online-only scripts must come last, in order');
+        sources.length = expected.length;
+    }
     assert.deepEqual(sources, expected, 'script order must match the complete dependency order');
 }
 
@@ -59,8 +70,11 @@ function checkMixin(source, name, className) {
     visit(ast.program);
 }
 
+assert(!fs.existsSync(path.join(root, 'js', 'ai')) && !fs.existsSync(path.join(root, 'css', 'ai-assistant.css')),
+    'internal-only files must live under internal/');
+console.log('PASS | public tree has no internal-only files');
 for (const file of ['index.html', 'geno/index.html', 'refactor/app/index.html']) {
-    checkOrder(fs.readFileSync(path.join(root, file), 'utf8'));
+    checkOrder(fs.readFileSync(path.join(root, file), 'utf8'), { allowAi: file !== 'geno/index.html' });
     console.log(`PASS | ${file} dependency order and synchronous loading`);
 }
 for (const [names, className] of [[canvasMixins, 'GenogramCanvas'], [appMixins, 'GenogramApp']]) {

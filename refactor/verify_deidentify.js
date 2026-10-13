@@ -1,5 +1,5 @@
 /**
- * [3-1] 去識別化匯出：姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性；只動輸出、磁碟與畫面不變
+ * [3-1] 去識別化匯出：姓名→代號、年齡保留實際歲數（2026-10-12 起）、隱藏備註與關係說明、頁首標題改為中性；只動輸出、磁碟與畫面不變
  * 用法：node refactor/run_all.js deidentify
  */
 const { chromium } = require('playwright');
@@ -64,19 +64,20 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
             headerLine: c._exportHeaderMetaLine(app.deidentifyHeader({ title: 'x', caseId: 'C-2026-01', author: '社工甲', date: '2026-09-03' })),
             headerTitle: app.deidentifyHeader({ title: '王小美 家系圖', caseId: 'C', author: '', date: '' }).title,
             headerNoTitle: app.deidentifyHeader({ title: '', caseId: 'C', author: '', date: '' }).title,
+            mAge: m.getDisplayAge(),
             bands: [GenogramApp.ageBand(0), GenogramApp.ageBand(7), GenogramApp.ageBand(12), GenogramApp.ageBand(45), GenogramApp.ageBand(70), GenogramApp.ageBand(null), GenogramApp.ageBand('x')],
         };
     });
     const byId = Object.fromEntries(r.codes.map(c => [c.id, c]));
     check('案主 → 「案主」；其餘依性別編號（男1、女1…），無真名', byId.k.name === '案主' && byId.d.name === '男1' && byId.b.name === '男2' && byId.m.name === '女1' && byId.g.name === '女2', JSON.stringify(r.codes));
-    check('年齡 → 年齡帶（含由出生年月算出者、享年）', byId.d.age === '40-49' && byId.k.age === '10-19' && byId.m.age === '40-49' && byId.g.age === '70-79' && byId.b.age === '0-9', JSON.stringify(r.codes.map(c => c.age)));
+    check('年齡保留實際歲數（含由出生年月算出者、享年）', byId.d.age === 45 && byId.k.age === 12 && byId.m.age === r.mAge && Number.isInteger(r.mAge) && byId.g.age === 70 && byId.b.age === 0, JSON.stringify(r.codes.map(c => c.age)));
     check('備註清空、出生年月移除', r.codes.every(c => c.notes === '' && c.birth === null), JSON.stringify(r.codes));
     check('年齡帶函式：0→0-9、7→0-9、12→10-19、null/非數字→null', JSON.stringify(r.bands) === JSON.stringify(['0-9', '0-9', '10-19', '40-49', '70-79', null, null]), JSON.stringify(r.bands));
     check('不去識別化時回傳原物件、原名', r.plainSame && r.plainNames.includes('王大明'), JSON.stringify(r.plainNames));
     check('去識別化匯出後：原資料逐 byte 不變、canvas.personMap 還原、有產出 PNG', r.unchanged && r.mapRestored && r.captured);
     const realNames = ['王大明', '李小華', '王小美', '外婆', '嬰', '酗酒', '憂鬱症', '國中一年級', '結婚 2005'];
     check('去識別化輸出不含任何真名／備註／關係說明', realNames.every(n => !r.texts.includes(n)), JSON.stringify(r.texts.filter(t => realNames.includes(t))));
-    check('去識別化輸出含代號與年齡帶', r.texts.includes('案主') && r.texts.includes('男1') && r.texts.includes('40-49'), JSON.stringify(r.texts.slice(0, 20)));
+    check('去識別化輸出含代號與實際年齡', r.texts.includes('案主') && r.texts.includes('男1') && r.texts.includes('45'), JSON.stringify(r.texts.slice(0, 20)));
     check('去識別化頁首：標題改為「家系圖（去識別化）」、meta 行標示去識別化版本、案號保留', r.headerTitle === '家系圖（去識別化）' && r.headerNoTitle === '' && /去識別化版本/.test(r.headerLine) && /C-2026-01/.test(r.headerLine), JSON.stringify({ t: r.headerTitle, l: r.headerLine }));
     check('對照：一般匯出仍含真名', r.texts2.includes('王大明') && r.texts2.includes('王小美'), JSON.stringify(r.texts2.slice(0, 10)));
 

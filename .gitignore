@@ -51,3 +51,8 @@ refactor/app/
 
 # graphify 生成物（知識圖，重建即可）
 graphify-out/
+
+# 內部專用（AI 助手、後端、內部打包）：放在另一個私人 repo，不進公開 GitHub
+internal/
+# DEMO 截圖（含 AI 畫面）
+docs/ai-demo/

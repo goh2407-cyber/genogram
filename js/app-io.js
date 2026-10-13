@@ -172,6 +172,9 @@ Object.assign(GenogramApp.prototype, {
         this.relationships = [];
         this.households = [];
         this.lifeCircles = [];
+        this.events = [];
+        this.eventsLayout = null;
+        this.applyGridSpacing(1);
         this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
         this.selectedPersonId = null;
         this.selectedPersonIds = [];
@@ -215,14 +218,14 @@ Object.assign(GenogramApp.prototype, {
      */
     async exportPNG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false, legendAll = false) {
         await this.waitForCurrentCanvasFonts();
-        const ds = this.getExportDataset(deidentify);
-        this.canvas.personMap = ds.personMap; // [3-1] 關係/家庭線查表用複本；結束後還原
+        this.canvas.personMap = this.personMap; // 匯出前確保查表為最新
+        this.canvas.displayOverride = deidentify ? this.getDeidentifiedDisplay() : null; // 去識別化只換顯示文字，線條照真實資料
         let dataUrl = null;
         try {
-            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+            dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
                 this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
-        } finally { this.canvas.personMap = this.personMap; }
+        } finally { this.canvas.displayOverride = null; }
         if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -235,7 +238,11 @@ Object.assign(GenogramApp.prototype, {
      */
     getDocumentExtra() {
         const meta = GenogramApp.normalizeDocumentMeta(this.documentMeta);
-        return (meta.title || meta.caseId || meta.author) ? { meta } : {};
+        const extra = (meta.title || meta.caseId || meta.author) ? { meta } : {};
+        if ((this.events || []).length) extra.events = this.events.map(ev => ({ ...ev })); // 重大事件（選填欄位）
+        if (this.eventsLayout) extra.eventsLayout = { ...this.eventsLayout }; // 事件卡位移（選填）
+        if ((this.layoutSpacing || 1) !== 1) extra.layoutSpacing = this.layoutSpacing; // 排列間距倍率（選填；標準不寫）
+        return extra;
     },
 
     /**
@@ -261,7 +268,7 @@ Object.assign(GenogramApp.prototype, {
 
     /**
      * [3-1] 匯出用資料集。deidentify=true 時回傳「複本」：姓名→代號（案主／男1／女1…，依 y、x 排序確定）、
-     * 年齡→年齡帶、備註清空、出生/死亡年月移除；id 與座標不變，關係／同住框／生活圈照舊引用。
+     * 年齡保留實際歲數（2026-10-12 起，原為年齡帶）、備註清空、出生/死亡年月移除；id 與座標不變，關係／同住框／生活圈照舊引用。
      * 磁碟資料與畫面完全不動。
      */
     getExportDataset(deidentify = false) {
@@ -280,14 +287,21 @@ Object.assign(GenogramApp.prototype, {
             counters[g] += 1;
             names.set(p.id, `${prefix[g]}${counters[g]}`);
         });
+        // 年齡保留實際歲數（使用者 2026-10-12 決定；先依出生年月算好，再移除出生／死亡年月）
         const persons = this.persons.map(p => {
             const json = p.toJSON();
-            const band = GenogramApp.ageBand(typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age);
+            const age = typeof p.getDisplayAge === 'function' ? p.getDisplayAge(this.ageReferenceDate) : p.age;
             delete json.birthDate;
             delete json.deathDate;
-            return Person.fromJSON({ ...json, name: names.get(p.id), age: band, notes: '' });
+            return Person.fromJSON({ ...json, name: names.get(p.id), age: age ?? null, notes: '' });
         });
         return { persons, personMap: new Map(persons.map(p => [p.id, p])) };
+    },
+
+    /** 去識別化顯示對照表 id → {name, age}（給 canvas.displayOverride；畫面與匯出共用） */
+    getDeidentifiedDisplay() {
+        const ds = this.getExportDataset(true);
+        return new Map(ds.persons.map(p => [p.id, { name: p.name, age: p.age }]));
     },
 
     /**
@@ -346,7 +360,8 @@ Object.assign(GenogramApp.prototype, {
      * 設定區塊以 data-export-for="png,jpeg,..." 標記適用格式；JSON 只顯示說明。
      */
     selectExportFormat(format) {
-        const valid = ['png', 'jpeg', 'svg', 'pdf', 'json'];
+        // docx 只在線上版有按鈕（js/extras 提供 exportDOCX）；沒有時退回 png
+        const valid = ['png', 'jpeg', 'svg', 'pdf', 'json'].concat(typeof this.exportDOCX === 'function' ? ['docx'] : []);
         const fmt = valid.includes(format) ? format : 'png';
         this.exportFormat = fmt;
         document.querySelectorAll('.export-option-btn').forEach(btn => {
@@ -355,7 +370,7 @@ Object.assign(GenogramApp.prototype, {
         document.querySelectorAll('[data-export-for]').forEach(el => {
             el.hidden = !String(el.dataset.exportFor).split(',').includes(fmt);
         });
-        const label = { png: 'PNG 圖片', jpeg: 'JPEG 圖片', svg: 'SVG 向量圖', pdf: 'PDF', json: 'JSON 備份' }[fmt];
+        const label = { png: 'PNG 圖片', jpeg: 'JPEG 圖片', svg: 'SVG 向量圖', pdf: 'PDF', json: 'JSON 備份', docx: 'Word 文件' }[fmt];
         const btn = document.getElementById('exportConfirmBtn');
         if (btn) btn.textContent = `匯出 ${label}`;
         this._writeExportPrefs({ format: fmt });
@@ -436,6 +451,11 @@ Object.assign(GenogramApp.prototype, {
                 this.updateStatus('已匯出 PDF 文件' + deidNote, 'success');
                 break;
 
+            case 'docx':
+                await this.exportDOCX(showNotes, showLegend, header, deidentify, legendAll);
+                this.updateStatus('已匯出 Word 文件' + deidNote, 'success');
+                break;
+
             case 'json':
                 this.exportJSON();
                 this.updateStatus('已匯出 JSON 資料備份', 'success');
@@ -461,14 +481,14 @@ Object.assign(GenogramApp.prototype, {
      */
     async exportJPEG(showNotes = true, showLegend = true, scale = 3, header = null, deidentify = false, legendAll = false) {
         await this.waitForCurrentCanvasFonts();
-        const ds = this.getExportDataset(deidentify);
-        this.canvas.personMap = ds.personMap;
+        this.canvas.personMap = this.personMap; // 匯出前確保查表為最新
+        this.canvas.displayOverride = deidentify ? this.getDeidentifiedDisplay() : null; // 去識別化只換顯示文字，線條照真實資料
         let dataUrl = null;
         try {
-            dataUrl = this.canvas.exportToJPEG(ds.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], 0.92, deidentify ? false : showNotes, showLegend, scale,
+            dataUrl = this.canvas.exportToJPEG(this.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], 0.92, showNotes, showLegend, scale,
                 this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
-        } finally { this.canvas.personMap = this.personMap; }
+        } finally { this.canvas.displayOverride = null; }
         if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             const timestamp = new Date().toISOString().slice(0, 10);
@@ -485,14 +505,14 @@ Object.assign(GenogramApp.prototype, {
         await this.waitForCurrentCanvasFonts();
         // 使用 PNG dataUrl 嵌入到 SVG 中
         // 這是一個簡化的實作，保持視覺一致性
-        const ds = this.getExportDataset(deidentify);
-        this.canvas.personMap = ds.personMap;
+        this.canvas.personMap = this.personMap; // 匯出前確保查表為最新
+        this.canvas.displayOverride = deidentify ? this.getDeidentifiedDisplay() : null; // 去識別化只換顯示文字，線條照真實資料
         let dataUrl = null;
         try {
-            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+            dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
                 this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
-        } finally { this.canvas.personMap = this.personMap; }
+        } finally { this.canvas.displayOverride = null; }
         if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             // 從 canvas 取得尺寸
@@ -525,14 +545,14 @@ Object.assign(GenogramApp.prototype, {
     async exportPDF(showNotes = true, showLegend = true, scale = 3, header = null, pdfOptions = {}, deidentify = false, legendAll = false) {
         if (typeof window.jspdf === 'undefined') throw new Error('PDF 匯出模組尚未載入，請稍後再試');
         await this.waitForCurrentCanvasFonts();
-        const ds = this.getExportDataset(deidentify);
-        this.canvas.personMap = ds.personMap;
+        this.canvas.personMap = this.personMap; // 匯出前確保查表為最新
+        this.canvas.displayOverride = deidentify ? this.getDeidentifiedDisplay() : null; // 去識別化只換顯示文字，線條照真實資料
         let dataUrl = null;
         try {
-            dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
-                this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+            dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+                this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
                 this.viewOptions, deidentify ? this.deidentifyHeader(header) : header, legendAll);
-        } finally { this.canvas.personMap = this.personMap; }
+        } finally { this.canvas.displayOverride = null; }
         if (!dataUrl) throw new Error('沒有內容可匯出');
         if (dataUrl) {
             // 從 dataUrl 取得圖片尺寸
@@ -596,6 +616,9 @@ Object.assign(GenogramApp.prototype, {
         this.relationships = [];
         this.households = [];
         this.lifeCircles = [];
+        this.events = [];
+        this.eventsLayout = null;
+        this.applyGridSpacing(1);
         this.documentMeta = GenogramApp.normalizeDocumentMeta(null); // [2-2] 清空 = 新個案
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
@@ -642,14 +665,14 @@ Object.assign(GenogramApp.prototype, {
 
             // [3-1] 沿用匯出對話框的「去識別化」勾選（複製到 LINE/Word 也常需要去識別）
             const deidentify = document.getElementById('exportDeidentify')?.checked === true;
-            const ds = this.getExportDataset(deidentify);
-            this.canvas.personMap = ds.personMap;
+                this.canvas.personMap = this.personMap; // 匯出前確保查表為最新
+            this.canvas.displayOverride = deidentify ? this.getDeidentifiedDisplay() : null; // 去識別化只換顯示文字，線條照真實資料
             let dataUrl = null;
             try {
-                dataUrl = this.canvas.exportToPNG(ds.persons, this.relationships,
-                    this.households || [], this.lifeCircles || [], deidentify ? false : showNotes, showLegend, scale,
+                dataUrl = this.canvas.exportToPNG(this.persons, this.relationships,
+                    this.households || [], this.lifeCircles || [], showNotes, showLegend, scale,
                     this.viewOptions);
-            } finally { this.canvas.personMap = this.personMap; }
+            } finally { this.canvas.displayOverride = null; }
             if (!dataUrl) {
                 this.updateStatus('產生圖片失敗', 'error');
                 return;

@@ -8,6 +8,7 @@
     <meta name="description" content="專為社工家庭評估設計的專業家系圖繪製工具">
     <link rel="icon" href="icon-512.png" type="image/png">
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/extras.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if ('serviceWorker' in navigator) {
@@ -141,6 +142,18 @@
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                             </svg></span>
                         <span class="tool-label">複製圖片</span>
+                    </button>
+                    <button class="tool-btn" id="eventsToolBtn" title="家庭記事（開啟右側記事面板）" aria-label="家庭記事">
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="5" width="18" height="16" rx="2" />
+                                <line x1="3" y1="10" x2="21" y2="10" />
+                                <line x1="8" y1="3" x2="8" y2="7" />
+                                <line x1="16" y1="3" x2="16" y2="7" />
+                                <line x1="7" y1="14.5" x2="12" y2="14.5" />
+                                <line x1="7" y1="17.5" x2="15" y2="17.5" />
+                            </svg></span>
+                        <span class="tool-label">記事</span>
                     </button>
                 </div>
             </nav>
@@ -276,6 +289,8 @@
                     <button type="button" role="tab" class="inspector-tab active" id="propertiesTab" data-inspector-tab="properties" aria-controls="propertyPanel" aria-selected="true" tabindex="0">屬性</button>
                     <button type="button" role="tab" class="inspector-tab" id="legendTab" data-inspector-tab="legend" aria-controls="legendPanel" aria-selected="false" tabindex="-1">圖例</button>
                     <button type="button" role="tab" class="inspector-tab" id="viewTab" data-inspector-tab="view" aria-controls="viewContent" aria-selected="false" tabindex="-1">檢視</button>
+                    <button type="button" role="tab" class="inspector-tab" id="listTab" data-inspector-tab="list" aria-controls="listPanel" aria-selected="false" tabindex="-1">清單</button>
+                    <button type="button" role="tab" class="inspector-tab" id="eventsTab" data-inspector-tab="events" aria-controls="eventsPanel" aria-selected="false" tabindex="-1">記事</button>
                 </div>
                 <!-- 屬性編輯面板 -->
                 <section class="panel-section inspector-tab-panel" id="propertyPanel" data-inspector-panel="properties" role="tabpanel" aria-labelledby="propertiesTab">
@@ -305,6 +320,18 @@
                         <label class="view-option"><input type="checkbox" data-view-option="showEmotionalRelationships" checked><span>情感關係線</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住圈</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showAbuseRelationships" checked><span>暴力與虐待線</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showEvents" checked><span>記事時間軸</span></label>
+                        <label class="view-option view-option--deid"><input type="checkbox" data-view-option="deidentifyScreen"><span>畫面去識別化（姓名改代號、不顯示備註；年齡保留）</span></label>
+                    </div>
+                    <div class="panel-content view-spacing" id="viewSpacing">
+                        <label for="layoutSpacingSelect">排列間距</label>
+                        <select id="layoutSpacingSelect" aria-describedby="layoutSpacingHint">
+                            <option value="1">標準（120）</option>
+                            <option value="1.25">寬鬆（150）</option>
+                            <option value="1.5">更寬（180）</option>
+                        </select>
+                        <p class="view-options-hint" id="layoutSpacingHint">整張圖的列高與欄寬等比調整，成員、生活圈一起放大；會跟著存檔，Ctrl+Z 可復原。</p>
                     </div>
                     <div class="panel-content view-age-ref" id="viewAgeRef">
                         <label for="ageReferenceDate">年齡基準日</label>
@@ -315,6 +342,12 @@
                         <p class="view-options-hint" id="ageReferenceHint">有填出生年月的成員，年齡依此日期自動計算；預設為今天，不會寫入檔案。</p>
                     </div>
                 </section>
+                <!-- 清單：人物／關係（內容由 js/extras/genogram-extras.js 建立） -->
+                <section class="panel-section inspector-tab-panel list-panel" id="listPanel" data-inspector-panel="list"
+                    role="tabpanel" aria-labelledby="listTab" hidden></section>
+                <!-- 家庭記事（內容由 js/extras/genogram-extras.js 建立） -->
+                <section class="panel-section inspector-tab-panel list-panel" id="eventsPanel" data-inspector-panel="events"
+                    role="tabpanel" aria-labelledby="eventsTab" hidden></section>
             </aside>
         </main>
 
@@ -589,7 +622,7 @@
                         <li><strong>另存：</strong>選擇位置與檔名，匯出 JSON 備份；之後 Ctrl+S 會直接更新這個檔案。</li>
                         <li><strong>載入：</strong>按「載入」會先列出最近載入的檔案，點一下即可重新載入並連結；也可「從電腦載入…」。載入大型檔案會自動符合全圖。</li>
                         <li><strong>共用電腦：</strong>「載入」視窗內的「清除本機暫存並關閉個案」會清掉瀏覽器暫存與最近檔案清單，回到空白畫布；不會刪除你另存的 JSON 檔。</li>
-                        <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。勾「去識別化」可把姓名換成代號（案主／男1／女1…）、年齡換成年齡帶、隱藏備註與關係說明，適合交給督導、法院或教學使用，磁碟檔案不變。「複製圖片」可直接貼到 Word / LINE。</li>
+                        <li><strong>匯出圖片：</strong>PNG / JPEG / SVG / PDF，可選是否含備註、圖例與解析度；勾「加上頁首」可印出標題、案號、日期、繪製者（標題／案號／繪製者會存進個案檔）；PDF 可選 A4 / A3 與直橫向。勾「去識別化」可把姓名換成代號（案主／男1／女1…）、隱藏備註與關係說明（年齡保留），適合交給督導、法院或教學使用，磁碟檔案不變。「複製圖片」可直接貼到 Word / LINE。</li>
                     </ul>
                 </div>
                 <div class="help-section">
@@ -672,6 +705,16 @@
                         <span class="format-name">PDF</span>
                         <span class="format-desc">文件格式，適合列印</span>
                     </button>
+                    <button type="button" class="export-option-btn" data-format="docx" aria-pressed="false">
+                        <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 2v6h6" />
+                                <path d="M8 12l1.5 6L12 13l2.5 5L16 12" />
+                            </svg></span>
+                        <span class="format-name">Word</span>
+                        <span class="format-desc">圖＋成員表＋記事，貼進個案紀錄</span>
+                    </button>
                     <button type="button" class="export-option-btn" data-format="json" aria-pressed="false">
                         <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -685,19 +728,19 @@
                 </div>
                 <div class="export-settings">
                     <p class="export-json-hint" data-export-for="json" hidden>JSON 是完整資料備份，之後可用「載入」重新開啟；不含圖片設定。</p>
-                    <label class="export-setting-label" data-export-for="png,jpeg,svg,pdf">
+                    <label class="export-setting-label" data-export-for="png,jpeg,svg,pdf,docx">
                         <input type="checkbox" id="exportShowNotes" checked class="export-setting-checkbox" >
                         <span>顯示備註 (成員備註 + 關係線時間/說明)</span>
                     </label>
-                    <label class="export-setting-label export-setting-label--spaced" data-export-for="png,jpeg,svg,pdf">
+                    <label class="export-setting-label export-setting-label--spaced" data-export-for="png,jpeg,svg,pdf,docx">
                         <input type="checkbox" id="exportShowLegend" checked class="export-setting-checkbox" >
                         <span>顯示關係類型圖例</span>
                     </label>
-                    <label class="export-setting-label export-setting-label--nested" data-export-for="png,jpeg,svg,pdf">
+                    <label class="export-setting-label export-setting-label--nested" data-export-for="png,jpeg,svg,pdf,docx">
                         <input type="checkbox" id="exportLegendAll" class="export-setting-checkbox" >
                         <span>列出全部線型（教學／督導用）</span>
                     </label>
-                    <div class="export-resolution-settings" data-export-for="png,jpeg,svg,pdf">
+                    <div class="export-resolution-settings" data-export-for="png,jpeg,svg,pdf,docx">
                         <span class="export-resolution-title">解析度 (影響檔案大小):</span>
                         <div class="export-resolution-options">
                             <label class="export-setting-label">
@@ -710,7 +753,7 @@
                             </label>
                         </div>
                     </div>
-                    <div class="export-header-settings" data-export-for="png,jpeg,svg,pdf">
+                    <div class="export-header-settings" data-export-for="png,jpeg,svg,pdf,docx">
                         <label class="export-setting-label">
                             <input type="checkbox" id="exportIncludeHeader" class="export-setting-checkbox" >
                             <span>加上頁首（標題 / 案號 / 日期 / 繪製者）</span>
@@ -728,7 +771,7 @@
                         </div>
                         <label class="export-setting-label export-setting-label--separated">
                             <input type="checkbox" id="exportDeidentify" class="export-setting-checkbox" >
-                            <span>去識別化（姓名→代號、年齡→年齡帶、隱藏備註與關係說明、頁首標題改為中性）</span>
+                            <span>去識別化（姓名→代號、隱藏備註與關係說明、頁首標題改為中性；年齡保留）</span>
                         </label>
                         <div class="export-pdf-settings" data-export-for="pdf">
                             <span class="export-pdf-title">PDF 紙張：</span>
@@ -783,6 +826,7 @@
     <script src="js/app-relationship-workflow.js"></script>
     <script src="js/app-snap-placement.js"></script>
     <script src="js/app-io.js"></script>
+    <script src="js/extras/genogram-extras.js"></script>
 </body>
 
 </html>

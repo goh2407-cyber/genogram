@@ -208,6 +208,7 @@ Object.assign(GenogramApp.prototype, {
         const generation = ++this._canvasFontGeneration;
         this.canvasFontReady = Promise.all([
             document.fonts.load('14px "Noto Sans TC"', text),
+            document.fonts.load('600 14px "Noto Sans TC"', text), // [CR-4] 姓名半粗
             document.fonts.load('bold 14px "Noto Sans TC"', text)
         ]).then(() => {
             if (generation !== this._canvasFontGeneration) {
@@ -464,6 +465,7 @@ Object.assign(GenogramApp.prototype, {
                 const dy = session.candidate.y - session.request.people[0].y;
                 const person = new Person({ ...spec, x: spec.x + dx, y: spec.y + dy });
                 this.persons.push(person); this.personMap.set(person.id, person);
+                this.canvas.playDrop?.(person.id); // [FX] 落子
                 idMap.set(spec.personId, person.id);
             });
             previews.forEach(preview => this.relationships.push(new Relationship({
@@ -489,6 +491,7 @@ Object.assign(GenogramApp.prototype, {
             });
             this.persons.push(person);
             this.personMap.set(person.id, person);
+            this.canvas.playDrop?.(person.id); // [FX] 落子
             const previewId = session.request.personId || '__placement__';
             previews.forEach(preview => {
                 this.relationships.push(new Relationship({

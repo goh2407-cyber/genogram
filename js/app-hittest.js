@@ -18,6 +18,13 @@ Object.assign(GenogramApp.prototype, {
      * 取得指定座標下可見的姓名／備註擁有者。
      * 年齡位於人物符號內，維持人物本身的命中與快速功能圈語意。
      */
+    /** 關係線文字／同住圈名稱（依最近一次繪製記錄的命中框；後畫的在上層） */
+    getTextLabelAt(x, y) {
+        const boxes = [...(this.canvas.textLabelBoxes || new Map()).values()].reverse();
+        return boxes.find(b => x >= b.bounds.left - 3 && x <= b.bounds.right + 3
+            && y >= b.bounds.top - 3 && y <= b.bounds.bottom + 3) || null;
+    },
+
     getPersonLabelAt(x, y) {
         const view = this.canvas.normalizeViewOptions(this.viewOptions);
         if (!view.showNames && !view.showNotes) return null;
@@ -78,8 +85,7 @@ Object.assign(GenogramApp.prototype, {
         // 從後往前檢查（後建立的在上層）
         for (let i = this.relationships.length - 1; i >= 0; i--) {
             const rel = this.relationships[i];
-            if (!this.viewOptions.showEmotionalRelationships
-                && Relationship.isEmotionalDisplayType(rel.type)) continue;
+            if (!Relationship.isVisibleInView(rel.type, this.viewOptions)) continue;
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {

@@ -54,6 +54,8 @@ function isCleanOrthogonalPath(path) {
     if (plannerLoaded) {
         const data = await page.evaluate(() => {
             const app = window.app;
+            // 本組案例的走廊寬度是照 14px 姓名設計的（測的是規劃邏輯，不是字級）；2026-10-13 預設改 15px 後固定回 14
+            app.canvas.fontSize = 14;
             const dad = new Person({ id: 'route-dad', x: 440, y: 240, gender: 'male', name: '父親長姓名' });
             const mom = new Person({ id: 'route-mom', x: 560, y: 240, gender: 'female', name: '母親' });
             const kid = new Person({ id: 'route-kid', x: 500, y: 520, gender: 'male', name: '子女' });
