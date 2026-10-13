@@ -463,7 +463,7 @@ Object.assign(GenogramApp.prototype, {
             session.request.people.forEach(spec => {
                 const dx = session.candidate.x - session.request.people[0].x;
                 const dy = session.candidate.y - session.request.people[0].y;
-                const person = new Person({ ...spec, x: spec.x + dx, y: spec.y + dy });
+                const person = this.applyPendingPetType(new Person({ ...spec, x: spec.x + dx, y: spec.y + dy })); // [PET]
                 this.persons.push(person); this.personMap.set(person.id, person);
                 this.canvas.playDrop?.(person.id); // [FX] 落子
                 idMap.set(spec.personId, person.id);
@@ -489,6 +489,7 @@ Object.assign(GenogramApp.prototype, {
                 y: session.candidate.y,
                 id: undefined
             });
+            this.applyPendingPetType(person); // [PET]
             this.persons.push(person);
             this.personMap.set(person.id, person);
             this.canvas.playDrop?.(person.id); // [FX] 落子

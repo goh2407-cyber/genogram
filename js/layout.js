@@ -47,7 +47,7 @@ class GenogramLayout {
         this.MARRIAGE_TYPES = [
             'married', 'engaged', 'cohabiting', 'legal-cohabiting',
             'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
-            'engaged-separated', 'engaged-cohabiting' // 與 GenogramApp.MARRIAGE_TYPES 一致（2026-10-12 補上）
+            'engaged-separated', 'engaged-cohabiting', 'ex-partner' // 與 GenogramApp.MARRIAGE_TYPES 一致
         ];
 
         // 原始位置 (用於計算生活圈位移)

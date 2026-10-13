@@ -392,20 +392,43 @@ class GenogramCanvas {
         const visibleOtherRels = otherRels.filter(rel => Relationship.isVisibleInView(rel.type, view));
         this.drawFamilies(familyRels, persons, visibleOtherRels, selectedRelationshipId, kinship);
 
-        // 3. 繪製非親子關係
+        // 3. 繪製非親子關係（[FX-REL] 提起／放下中的線延後到淡化層之上再畫）
+        if (!this.relFx) this.relFx = new Map();
+        const relNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        let relFxActive = false;
+        visibleOtherRels.forEach(rel => {
+            const key = String(rel.id);
+            const entry = this.relFx.get(key);
+            if (selectedRelationshipId === rel.id) {
+                if (!entry || entry.kind === 'settle') this.relFx.set(key, { kind: 'lift', start: relNow });
+            } else if (entry && entry.kind === 'lift') {
+                this.relFx.set(key, { kind: 'settle', start: relNow, from: this._relFxState(entry, relNow).boost });
+            }
+        });
+        const deferredRels = [];
         visibleOtherRels.forEach(rel => {
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
                 const isSelected = selectedRelationshipId === rel.id;
+                const entry = this.relFx.get(String(rel.id));
+                const st = entry ? this._relFxState(entry, relNow) : null;
+                if (st && st.done) this.relFx.delete(String(rel.id));
+                if (st && !st.done) {
+                    if (st.active) relFxActive = true;
+                    deferredRels.push({ rel, fromPerson, toPerson, isSelected, st });
+                    return;
+                }
                 // 傳入所有關係以便計算並行位移
                 this.drawRelationship(fromPerson, toPerson, rel, isSelected, persons, relationships);
             }
         });
+        const deferredRelIds = new Set(deferredRels.map(d => d.rel.id));
 
         // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
         if (view.showNotes) {
             visibleOtherRels.forEach(rel => {
+                if (deferredRelIds.has(rel.id)) return; // [FX-REL] 跟著線一起延後畫
                 const fromPerson = this.personMap.get(rel.fromPersonId);
                 const toPerson = this.personMap.get(rel.toPersonId);
                 if (fromPerson && toPerson && rel.date) { // 只有當有日期/說明時才畫
@@ -482,6 +505,7 @@ class GenogramCanvas {
                 dimAlpha = Math.max(dimAlpha, GenogramCanvas.FOCUS_DIM * Math.max(0, Math.min(1, (st.scale - 1) / (FXc.liftScale - 1))));
             }
         });
+        deferredRels.forEach(({ st }) => { dimAlpha = Math.max(dimAlpha, GenogramCanvas.FOCUS_DIM * st.lift); }); // [FX-REL]
         if (dimAlpha > 0.005) {
             this.ctx.save();
             this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -490,6 +514,27 @@ class GenogramCanvas {
             this.ctx.restore();
         }
         deferred.forEach(([person, st]) => drawOne(person, st));
+        // [FX-REL] 提起／放下中的關係線：加粗＋影子畫在淡化層之上，兩端的人再補畫一次（不被線壓到、不被淡化）
+        if (deferredRels.length) {
+            const liftedPeople = new Set(deferred.map(([p]) => p.id));
+            deferredRels.forEach(({ rel, fromPerson, toPerson, isSelected, st }) => {
+                this.ctx.save();
+                this.ctx.shadowColor = `rgba(15, 23, 42, ${st.shadow.toFixed(3)})`;
+                this.ctx.shadowBlur = 10 * Math.min(1, st.shadow / 0.3);
+                this.ctx.shadowOffsetY = 4 * Math.min(1, st.shadow / 0.3);
+                this._relWidthBoost = st.boost;
+                try { this.drawRelationship(fromPerson, toPerson, rel, isSelected, persons, relationships); }
+                finally { this._relWidthBoost = 1; }
+                this.ctx.restore();
+                if (view.showNotes && rel.date) this.drawRelationshipDate(fromPerson, toPerson, rel, persons, relationships);
+                [fromPerson, toPerson].forEach(p => { if (!liftedPeople.has(p.id)) drawOne(p, null); });
+            });
+        }
+        if (this.relFx.size) {
+            const aliveRels = new Set(relationships.map(r => String(r.id)));
+            [...this.relFx.keys()].forEach(k => { if (!aliveRels.has(k)) this.relFx.delete(k); });
+        }
+        if (relFxActive) fxActive = true;
         // 清掉已不在畫面上的人的動畫狀態
         if (this.personFx.size) {
             const alive = new Set(persons.map(p => String(p.id)));
@@ -855,7 +900,72 @@ class GenogramCanvas {
         female:    '#fdeff4',  // 淡粉
         pregnancy: '#fdf6e7',  // 淡杏（懷孕/性別未定三角形）
         same:      '#f4effb',  // 淡紫（同性別圓頂方底）
+        pet:       '#eef7ee',  // 淡綠（寵物）
     };
+
+    /**
+     * [PET] 寵物外形：SVG 路徑，座標在 -50..50 的方框內（與人物符號同大小）。
+     * 螢幕、匯出、選取外框、醫療標記裁切共用；彈窗按鈕的小圖示也用同一份。
+     */
+    static PET_SHAPES = Object.freeze({
+        diamond: 'M0,-48 L48,0 L0,48 L-48,0 Z',
+        cat: 'M-34,-6 C-38,-20 -38,-34 -34,-47 L-16,-32 C-6,-35 6,-35 16,-32 L34,-47 C38,-34 38,-20 34,-6 C44,8 42,30 26,40 C14,47 -14,47 -26,40 C-42,30 -44,8 -34,-6 Z',
+        dog: 'M-24,-40 C-10,-46 10,-46 24,-40 C32,-36 34,-28 33,-20 C34,0 30,26 18,38 C10,46 -10,46 -18,38 C-30,26 -34,0 -33,-20 C-34,-28 -32,-36 -24,-40 Z M22,-41 C34,-46 46,-38 47,-22 C48,-8 46,4 40,8 C34,12 31,2 31,-12 C31,-24 28,-34 22,-41 Z M-22,-41 C-28,-34 -31,-24 -31,-12 C-31,2 -34,12 -40,8 C-46,4 -48,-8 -47,-22 C-46,-38 -34,-46 -22,-41 Z',
+        bird: 'M26,-34 C36,-34 41,-27 41,-21 L50,-17 L40,-13 C40,6 29,27 3,28 C-15,29 -27,22 -33,12 L-49,4 L-37,-5 C-31,-19 -13,-25 5,-22 C8,-30 16,-34 26,-34 Z',
+        fish: 'M46,0 C40,-16 24,-26 4,-26 L-6,-37 L-11,-25 C-22,-21 -30,-12 -34,-6 L-48,-22 L-44,0 L-48,22 L-34,6 C-26,18 -10,26 6,26 C24,26 40,16 46,0 Z'
+    });
+    // 臉部細節：細線（stroke）、實心（fill：眼、鼻）、眼睛反光（shine）。寵物不顯示年齡，細節可畫在正中間
+    static PET_DETAILS = Object.freeze({
+        cat: Object.freeze({ stroke: 'M-31,-14 L-31,-38 L-20,-29 M31,-14 L31,-38 L20,-29 M0,14 L0,18 M0,18 Q-5,25 -11,21 M0,18 Q5,25 11,21 M-14,12 L-40,6 M-14,17 L-41,19 M14,12 L40,6 M14,17 L41,19', fill: 'M-21,-5 A6,7 0 1 0 -9,-5 A6,7 0 1 0 -21,-5 Z M9,-5 A6,7 0 1 0 21,-5 A6,7 0 1 0 9,-5 Z M-6,8 L6,8 L0,14 Z', shine: 'M-19,-8 A2,2 0 1 0 -15,-8 A2,2 0 1 0 -19,-8 Z M11,-8 A2,2 0 1 0 15,-8 A2,2 0 1 0 11,-8 Z' }),
+        dog: Object.freeze({ stroke: 'M0,19 L0,25 M0,25 Q-7,32 -14,27 M0,25 Q7,32 14,27', fill: 'M-17,-10 A5,5.5 0 1 0 -7,-10 A5,5.5 0 1 0 -17,-10 Z M7,-10 A5,5.5 0 1 0 17,-10 A5,5.5 0 1 0 7,-10 Z M-9,10 Q0,4 9,10 Q9,17 0,19 Q-9,17 -9,10 Z', shine: 'M-15.3,-12 A1.8,1.8 0 1 0 -11.7,-12 A1.8,1.8 0 1 0 -15.3,-12 Z M8.7,-12 A1.8,1.8 0 1 0 12.3,-12 A1.8,1.8 0 1 0 8.7,-12 Z' }),
+        bird: Object.freeze({ stroke: 'M-18,0 C-8,-12 12,-10 20,2 C10,12 -6,12 -18,0 Z M-2,28 L-4,40 L-9,43 M-4,40 L0,43 M9,28 L9,40 L4,43 M9,40 L13,43', fill: 'M25.5,-23 A3.5,3.5 0 1 0 32.5,-23 A3.5,3.5 0 1 0 25.5,-23 Z', shine: 'M26.8,-24.5 A1.2,1.2 0 1 0 29.2,-24.5 A1.2,1.2 0 1 0 26.8,-24.5 Z' }),
+        fish: Object.freeze({ stroke: 'M20,-17 Q11,0 20,17 M46,0 L38,4 M-4,-10 Q3,-3 -4,4 M-16,-8 Q-10,-2 -16,4', fill: 'M27,-6 A4,4 0 1 0 35,-6 A4,4 0 1 0 27,-6 Z', shine: 'M28.6,-7.5 A1.4,1.4 0 1 0 31.4,-7.5 A1.4,1.4 0 1 0 28.6,-7.5 Z' })
+    });
+
+    /** [PET] 依中心 (x,y)、半徑 half 取得寵物外形 Path2D（筆寬不受縮放影響） */
+    petPath(petType, x, y, half) {
+        if (!this._petPathCache) this._petPathCache = new Map();
+        const key = Person.PET_TYPES.includes(petType) ? petType : 'diamond';
+        let base = this._petPathCache.get(key);
+        if (!base) { base = new Path2D(GenogramCanvas.PET_SHAPES[key]); this._petPathCache.set(key, base); }
+        const k = half / 50;
+        const p = new Path2D();
+        p.addPath(base, new DOMMatrix([k, 0, 0, k, x, y]));
+        return p;
+    }
+
+    /** [PET] 臉部細節：貓（內耳、杏仁眼、鼻子、嘴、鬍鬚）、狗（耳內線、眼、鼻頭、嘴）、鳥眼、魚眼與鰓；案主黑底時用白色 */
+    drawPetDetails(petType, x, y, half, inverted = false) {
+        const d = GenogramCanvas.PET_DETAILS[petType];
+        if (!d) return;
+        if (!this._petDetailCache) this._petDetailCache = new Map();
+        const k = half / 50;
+        const m = new DOMMatrix([k, 0, 0, k, x, y]);
+        const make = key => {
+            if (!d[key]) return null;
+            const cacheKey = petType + ':' + key;
+            let base = this._petDetailCache.get(cacheKey);
+            if (!base) { base = new Path2D(d[key]); this._petDetailCache.set(cacheKey, base); }
+            const p = new Path2D();
+            p.addPath(base, m);
+            return p;
+        };
+        const color = inverted ? '#fff' : '#333';
+        this.ctx.save();
+        const stroke = make('stroke');
+        if (stroke) {
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = Math.max(1, 3 * k);
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+            this.ctx.stroke(stroke);
+        }
+        const fill = make('fill');
+        if (fill) { this.ctx.fillStyle = color; this.ctx.fill(fill); }
+        const shine = make('shine'); // 眼睛反光小白點（案主黑底時反過來）
+        if (shine) { this.ctx.fillStyle = inverted ? '#333' : '#fff'; this.ctx.fill(shine); }
+        this.ctx.restore();
+    }
 
     static LABEL_SAFE_MARGIN = 7;
     static LABEL_SIDE_GAP = 12;
@@ -1126,6 +1236,9 @@ class GenogramCanvas {
                 this.ctx.lineTo(x + halfSize + gap, y + halfSize + gap);
                 this.ctx.lineTo(x - halfSize - gap, y + halfSize + gap);
                 this.ctx.closePath();
+            } else if (gender === 'pet') {
+                this.ctx.stroke(this.petPath(person.petType, x, y, halfSize + gap)); // [PET]
+                this.ctx.beginPath();
             } else {
                 // male (default square) and ftm fallback
                 this.ctx.rect(x - halfSize - gap, y - halfSize - gap, size + gap * 2, size + gap * 2);
@@ -1191,6 +1304,8 @@ class GenogramCanvas {
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
             this.ctx.fill();
+        } else if (gender === 'pet') {
+            this.ctx.fill(this.petPath(person.petType, x, y, halfSize)); // [PET]
         } else {
             // Default: male (square)
             this.ctx.fillRect(x - halfSize, y - halfSize, size, size);
@@ -1198,7 +1313,7 @@ class GenogramCanvas {
 
         // 繪製醫學符號 (若未過世)
         if (!isDeceased && medical && view.showMedical) {
-            this.drawMedicalSymbols(x, y, size, gender, medical, transgender);
+            this.drawMedicalSymbols(x, y, size, gender, medical, transgender, person.petType);
         }
 
         // 重新繪製邊框 (確保清晰)
@@ -1235,6 +1350,11 @@ class GenogramCanvas {
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
             this.ctx.stroke();
+        } else if (gender === 'pet') {
+            this.ctx.lineJoin = 'round';
+            this.ctx.stroke(this.petPath(person.petType, x, y, halfSize)); // [PET]
+            this.ctx.lineJoin = 'miter';
+            this.drawPetDetails(person.petType, x, y, halfSize, !!isIdentifiedPatient);
         } else {
             this.ctx.strokeRect(x - halfSize, y - halfSize, size, size);
         }
@@ -1260,8 +1380,13 @@ class GenogramCanvas {
             this.ctx.lineCap = 'butt';
         }
 
-        // 年齡 (如果有醫學標記，可能需要調整位置，這裡先保持)
-        if (view.showAges && age !== null && age !== '') {
+        // 性傾向倒三角要畫在年齡「之前」，否則三角形的線會壓在數字上（2026-10-13 使用者回報）
+        if (person.sexualOrientation) {
+            this.drawSexualOrientationMarker(x, y, halfSize);
+        }
+
+        // 年齡 (如果有醫學標記，可能需要調整位置，這裡先保持)；寵物不顯示年齡（2026-10-13 使用者決定）
+        if (view.showAges && age !== null && age !== '' && gender !== 'pet') {
             this.ctx.shadowBlur = 0;
             this.ctx.font = `${this.textStyle.ageWeight} ${this.fontSize + this.textStyle.ageSizeDelta}px ${this.fontFamily}`;
             this.ctx.textAlign = 'center';
@@ -1270,18 +1395,14 @@ class GenogramCanvas {
             // 案主是黑底，所以文字要白；其他（含死亡）是白底，文字要黑
             this.ctx.fillStyle = isIdentifiedPatient ? '#fff' : this.textStyle.ageColor;
 
-            // [New] 增加描邊以提高可讀性（特別是當 X 標記重疊時）
-            this.ctx.lineWidth = 3;
+            // [New] 增加描邊以提高可讀性（X 標記、性傾向倒三角重疊時）；4px 讓數字與底下的線分得開
+            this.ctx.lineWidth = 4;
             this.ctx.lineJoin = 'round'; // [B2] 數字轉角不出尖刺
             // 如果是案主(白字)，用深色描邊；如果是普通(黑字)，用白色描邊
             this.ctx.strokeStyle = isIdentifiedPatient ? '#333' : '#fff';
             this.ctx.strokeText(String(age), x, y);
 
             this.ctx.fillText(String(age), x, y);
-        }
-
-        if (person.sexualOrientation) {
-            this.drawSexualOrientationMarker(x, y, halfSize);
         }
 
         this.drawPersonText(person, view);
@@ -1555,7 +1676,7 @@ class GenogramCanvas {
     /**
      * 繪製醫學符號
      */
-    drawMedicalSymbols(x, y, size, gender, medical, transgender = null) {
+    drawMedicalSymbols(x, y, size, gender, medical, transgender = null, petType = null) {
         const halfSize = size / 2;
 
         this.ctx.save();
@@ -1581,6 +1702,10 @@ class GenogramCanvas {
             this.ctx.lineTo(x + halfSize, y + halfSize);
             this.ctx.lineTo(x - halfSize, y + halfSize);
             this.ctx.closePath();
+        } else if (gender === 'pet') {
+            this.ctx.clip(this.petPath(petType, x, y, halfSize)); // [PET]
+            this.ctx.beginPath();
+            this.ctx.rect(x - halfSize, y - halfSize, size, size);
         } else {
             // 預設男性方形
             this.ctx.rect(x - halfSize, y - halfSize, size, size);
@@ -1671,7 +1796,8 @@ class GenogramCanvas {
      * 繪製關係線
      */
     drawRelationship(fromPerson, toPerson, relationship, isSelected = false, persons = [], allRelationships = []) {
-        const style = relationship.getLineStyle();
+        let style = relationship.getLineStyle();
+        if (this._relWidthBoost && this._relWidthBoost !== 1) style = { ...style, width: style.width * this._relWidthBoost }; // [FX-REL]
         const category = relationship.getCategory();
         const marriageRoute = category === 'marriage'
             ? this.getMarriageRoute(fromPerson, toPerson, relationship, allRelationships)
@@ -3121,6 +3247,43 @@ class GenogramCanvas {
         return this._fxReduced ? 0 : 1;
     }
 
+    /**
+     * [FX-REL] 關係線動畫（伴侶類與情感類；親子線不套用）：
+     *  lift   點選 → 線加粗＋影子（像把線提起來），其他內容跟著漸淡
+     *  settle 取消選取 → 回到原粗細
+     *  drop   新畫好 → 從較粗、帶影子縮回原樣（放下）
+     * 只改「選取期間」的粗細與影子，顏色與線型不變；匯出不套用。
+     */
+    static REL_FX = Object.freeze({ liftBoost: 1.7, liftMs: 160, settleMs: 140, dropFrom: 2.4, dropMs: 320 });
+
+    playRelDrop(relId) {
+        if (!this.relFx) this.relFx = new Map();
+        this.relFx.set(String(relId), { kind: 'drop', start: performance.now() });
+        this.scheduleFxFrame();
+    }
+
+    /** 回傳 {boost, shadow, lift(0..1 提起程度，供淡化), active, done} */
+    _relFxState(entry, now) {
+        const F = GenogramCanvas.REL_FX, ds = this.fxDurationScale();
+        const ease = t => 1 - Math.pow(1 - t, 3);
+        const prog = ms => ms * ds <= 0 ? 1 : Math.min(1, (now - entry.start) / (ms * ds));
+        if (entry.kind === 'lift') {
+            const t = ease(prog(F.liftMs));
+            return { boost: 1 + (F.liftBoost - 1) * t, shadow: 0.3 * t, lift: t, active: t < 1, done: false };
+        }
+        if (entry.kind === 'settle') {
+            const t = ease(prog(F.settleMs));
+            const from = entry.from || F.liftBoost;
+            const boost = from + (1 - from) * t;
+            return { boost, shadow: 0.3 * (1 - t), lift: Math.max(0, (boost - 1) / (F.liftBoost - 1)), active: t < 1, done: t >= 1 };
+        }
+        if (entry.kind === 'drop') {
+            const t = ease(prog(F.dropMs));
+            return { boost: F.dropFrom + (1 - F.dropFrom) * t, shadow: 0.32 * (1 - t), lift: 0, active: t < 1, done: t >= 1 };
+        }
+        return { boost: 1, shadow: 0, lift: 0, active: false, done: true };
+    }
+
     /** 新成員落子動畫（App 在建立成員後呼叫） */
     playDrop(personId) {
         if (!this.personFx) this.personFx = new Map();
@@ -3323,6 +3486,7 @@ class GenogramCanvas {
      */
     getQuickButtonLayout(person) {
         if (!person) return [];
+        if (person.gender === 'pet') return []; // [PET] 寵物沒有父母／子女／伴侶的快速新增
         const hud = this.hudUnit();
         const half = (typeof person.getSize === 'function' ? person.getSize() : 50) / 2;
         const place = off => {

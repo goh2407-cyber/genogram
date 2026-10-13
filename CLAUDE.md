@@ -59,6 +59,14 @@ app-snap-placement → app-io
 - `internal/` 為內部專用資料夾（gitignored，另有私人 repo），公開 repo 不放其內容。
 - **畫面／匯出去識別化**一律用 `canvas.displayOverride`（只換畫字內容），**不可**換人物複本或改 showNotes，否則繞線會跑掉。
 
+## 2026-10-13 新增
+
+- **重大事件**（extras 的「事件」分頁，原「記事」）：參考網站用法——「年份」「事件內容」兩欄＋「加入事件」，清單每筆「改／刪」（改＝帶回上方表單）；不再分類。事件卡標題「重大事件」、依年份排序、可拖曳。
+- **前任關係** `ex-partner`：伴侶類，長虛線＋單斜線（與 engaged-separated 同外觀，但只有前任出現在圖例與按鈕）。新增線型時 `verify_legend_consistency.js` 的凍結雜湊與數量要一起更新（先確認既有線型沒變）。
+- **寵物** `gender: 'pet'` ＋ `petType`（diamond／cat／dog／bird／fish）：外形在 `GenogramCanvas.PET_SHAPES`（SVG path，-50..50），螢幕／匯出／選取外框／醫療裁切與彈窗圖示共用；`petType` 只在寵物時寫入存檔；寵物沒有快速新增鈕、不能有伴侶類關係。
+- **家人不能結婚**：`validateMarriageRelationship` → `coupleKinshipProblem(idA, idB, kinship)`（直系、手足、六親等內旁系，`collateralKinshipDegree`）；擋下時 `rejectMarriage` 跳提示。AI 助手用「套用整批後」的 KinshipEngine 呼叫同一函式。
+- **關係線提起／放下**（`GenogramCanvas.REL_FX`、`relFx`、`_relWidthBoost`）：只套用伴侶類與情感類；選取時延後到淡化層之上加粗＋影子重畫，兩端成員補畫；匯出不套用。回歸 `verify_pets_relations.js`。
+
 ## 文字清晰度（2026-10-13，使用者主管要求）
 
 - 螢幕畫布不透明（`getContext('2d', {alpha:false})`，底色由 `clear()` 填 `--bg-canvas`）、文字基準點對齊整數裝置像素（`_installTextSnap`，只裝在螢幕 ctx）、畫布像素尺寸取整數且 CSS 尺寸 = 像素 ÷ dpr。

@@ -183,8 +183,8 @@ Object.assign(GenogramApp.prototype, {
         if (category === 'marriage') {
             const validationResult = this.validateMarriageRelationship(fromPerson, toPerson);
             if (!validationResult.valid) {
-                this.updateStatus(validationResult.message, 'error');
                 this.closeRelationshipModal();
+                this.rejectMarriage(validationResult.message);
                 return;
             }
         }
@@ -288,8 +288,8 @@ Object.assign(GenogramApp.prototype, {
         if (category === 'marriage') {
             const validationResult = this.validateMarriageRelationship(fromPerson, toPerson);
             if (!validationResult.valid) {
-                this.updateStatus(validationResult.message, 'error');
                 this.closeRelationshipModal();
+                this.rejectMarriage(validationResult.message);
                 return;
             }
         }
@@ -353,6 +353,7 @@ Object.assign(GenogramApp.prototype, {
         }
 
         this._dataVersion++; // [Phase 0a] 新增/取代關係 → 結構變動，使快取失效
+        if (category !== 'family') this.canvas.playRelDrop?.(affectedRel.id); // [FX-REL] 放下
         this.closeRelationshipModal();
         this.autoSave();
         if (Relationship.isEmotionalDisplayType(type)) {
@@ -369,9 +370,99 @@ Object.assign(GenogramApp.prototype, {
      * @param {Person} person2 - 第二個人物
      * @returns {{valid: boolean, message: string}} - 驗證結果
      */
+    /**
+     * 旁系血親親等：找共同祖先，親等 = 兩人各自往上到共同祖先的代數相加；取最小值。
+     * 沒有共同祖先回 null。（直系血親另由規則 4–6 處理）
+     */
+    collateralKinshipDegree(idA, idB, kinship = this.getKinshipEngine()) {
+        const depths = id => {
+            const map = new Map([[id, 0]]);
+            const queue = [id];
+            while (queue.length) {
+                const cur = queue.shift();
+                const d = map.get(cur);
+                if (d >= 6) continue; // 超過六親等不用再往上找
+                kinship.getParentIds(cur).forEach(pid => {
+                    if (!map.has(pid)) { map.set(pid, d + 1); queue.push(pid); }
+                });
+            }
+            return map;
+        };
+        const a = depths(idA), b = depths(idB);
+        let best = null;
+        a.forEach((da, ancestor) => {
+            if (!b.has(ancestor)) return;
+            const sum = da + b.get(ancestor);
+            if (best === null || sum < best) best = sum;
+        });
+        return best;
+    },
+
+    /**
+     * 兩人能否成為伴侶（只看血緣）：回傳擋下的原因，可以則回 null。
+     * kinship 可傳入「套用某批修改後」的 KinshipEngine（AI 助手整批改圖時用）。
+     */
+    coupleKinshipProblem(idA, idB, kinship = this.getKinshipEngine()) {
+        // 規則 2: 檢查是否已有直接親子關係
+        const hasDirectParentChild =
+            kinship.hasParentChildLink(idA, idB) ||
+            kinship.hasParentChildLink(idB, idA);
+        if (hasDirectParentChild) {
+            return '⚠️ 無法建立伴侶關係：兩人之間已有親子關係';
+        }
+
+        // 規則 3: 檢查是否為手足（共同父母）
+        if (kinship.shareAnyParent(idA, idB)) {
+            return '⚠️ 無法建立伴侶關係：兩人是手足（有共同父母）';
+        }
+
+        // 規則 4: 檢查 B 是否在 A 的祖先中（不能和父母、祖父母結婚）
+        const ancestors1 = kinship.getAncestorIds(idA);
+        if (ancestors1.has(idB)) {
+            return '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚';
+        }
+
+        // 規則 5: 檢查 B 是否在 A 的子孫中（不能和子女、孫子女結婚）
+        const descendants1 = kinship.getDescendantIds(idA);
+        if (descendants1.has(idB)) {
+            return '⚠️ 無法建立伴侶關係：不能與子女或後代結婚';
+        }
+
+        // 規則 6: 反向檢查（A 是否在 B 的祖先/子孫中）
+        const ancestors2 = kinship.getAncestorIds(idB);
+        if (ancestors2.has(idA)) {
+            return '⚠️ 無法建立伴侶關係：不能與子女或後代結婚';
+        }
+
+        const descendants2 = kinship.getDescendantIds(idB);
+        if (descendants2.has(idA)) {
+            return '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚';
+        }
+
+        // 規則 7（2026-10-13）：六親等內旁系血親不能結婚（民法 983 條；叔伯姑舅姨與姪甥、堂表兄弟姊妹…）
+        const degree = this.collateralKinshipDegree(idA, idB, kinship);
+        if (degree !== null && degree <= 6) {
+            const example = { 3: '例如叔伯姑舅姨與姪甥', 4: '例如堂表兄弟姊妹' }[degree];
+            return `⚠️ 無法建立伴侶關係：兩人是 ${degree} 親等旁系血親${example ? '（' + example + '）' : ''}，家人之間不能結婚`;
+        }
+
+        return null;
+    },
+
+    /** 不能建立伴侶關係時：狀態列＋跳出提示（只有狀態列容易沒注意到） */
+    rejectMarriage(message) {
+        this.updateStatus(message, 'error');
+        this.alertDialog?.(String(message).replace(/^⚠️\s*/, ''), '不能建立伴侶關係');
+    },
+
     validateMarriageRelationship(person1, person2) {
         if (!person1 || !person2) {
             return { valid: false, message: '無法找到選取的成員' };
+        }
+
+        // 規則 0（2026-10-13）：寵物不能建立伴侶類關係
+        if (person1.gender === 'pet' || person2.gender === 'pet') {
+            return { valid: false, message: '⚠️ 無法建立伴侶關係：寵物不能有伴侶類關係（可改用情感關係線）' };
         }
 
         const grid = GenogramApp.GRID;
@@ -383,41 +474,9 @@ Object.assign(GenogramApp.prototype, {
             return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人不在同一輩分' };
         }
 
-        // 規則 2: 檢查是否已有直接親子關係
-        const hasDirectParentChild =
-            kinship.hasParentChildLink(person1.id, person2.id) ||
-            kinship.hasParentChildLink(person2.id, person1.id);
-        if (hasDirectParentChild) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人之間已有親子關係' };
-        }
-
-        // 規則 3: 檢查是否為手足（共同父母）
-        if (kinship.shareAnyParent(person1.id, person2.id)) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：兩人是手足（有共同父母）' };
-        }
-
-        // 規則 4: 檢查 person2 是否在 person1 的祖先中（不能和父母、祖父母結婚）
-        const ancestors1 = kinship.getAncestorIds(person1.id);
-        if (ancestors1.has(person2.id)) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚' };
-        }
-
-        // 規則 5: 檢查 person2 是否在 person1 的子孫中（不能和子女、孫子女結婚）
-        const descendants1 = kinship.getDescendantIds(person1.id);
-        if (descendants1.has(person2.id)) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與子女或後代結婚' };
-        }
-
-        // 規則 6: 反向檢查（person1 是否在 person2 的祖先/子孫中）
-        const ancestors2 = kinship.getAncestorIds(person2.id);
-        if (ancestors2.has(person1.id)) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與子女或後代結婚' };
-        }
-
-        const descendants2 = kinship.getDescendantIds(person2.id);
-        if (descendants2.has(person1.id)) {
-            return { valid: false, message: '⚠️ 無法建立伴侶關係：不能與父母或祖先結婚' };
-        }
+        // 規則 2–7：血緣（直系、手足、六親等內旁系）——與 AI 助手共用 coupleKinshipProblem
+        const problem = this.coupleKinshipProblem(person1.id, person2.id, kinship);
+        if (problem) return { valid: false, message: problem };
 
         return { valid: true, message: '' };
     },

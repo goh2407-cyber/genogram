@@ -1,6 +1,6 @@
 /* 線上版延伸功能（DEMO）：清單分頁、事件、去識別化、檢視模式。只用既有 token，不動畫布線條樣式 */
 
-/* 五個分頁並排（屬性／圖例／檢視／清單／記事） */
+/* 五個分頁並排（屬性／圖例／檢視／清單／事件） */
 .inspector-tabs { grid-template-columns: repeat(5, 1fr); }
 .inspector-tab { padding-left: 2px; padding-right: 2px; font-size: 13px; white-space: nowrap; }
 
@@ -59,6 +59,8 @@
 .list-btn { border: 1px solid var(--border-color); background: #fff; border-radius: var(--border-radius-sm); padding: 5px 14px; font: inherit; font-size: 13px; cursor: pointer; }
 .list-btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 .list-btn[hidden] { display: none; }
+.list-btn.danger { color: var(--danger-color); }
+.list-btn.danger:hover { background: var(--danger-light); border-color: var(--danger-color); }
 
 /* ── 檢視分頁：去識別化選項醒目一點 ── */
 .view-option--deid { margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--border-color); }
@@ -101,26 +103,22 @@ body.presentation-mode #genogramCanvas { cursor: grab; }
 .present-exit strong { color: var(--brand); }
 .present-exit[hidden] { display: none; }
 
-/* ── 記事（一行式輸入、類別圓點、原地修改）── */
-.note-composer { display: grid; gap: 8px; padding: 10px; border-radius: 10px; background: var(--brand-light); }
-.note-input { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid transparent; border-radius: 8px; font: inherit; font-size: 13px; background: #fff; }
-.note-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
-.note-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.note-kinds { display: flex; gap: 4px; flex-wrap: wrap; }
-.note-kind { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid transparent; border-radius: 999px; background: rgba(255,255,255,.7); font: inherit; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
-.note-kind.active { background: #fff; border-color: var(--brand); color: var(--text-primary); font-weight: 600; }
-.note-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.note-dot--btn { width: 14px; height: 14px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border-color); padding: 0; cursor: pointer; }
-.note-list { position: relative; display: grid; gap: 0; padding-left: 6px; }
-.note-list::before { content: ''; position: absolute; left: 12px; top: 10px; bottom: 10px; width: 2px; background: var(--border-light); }
-.note-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 4px 7px 0; }
-.note-text { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); text-align: left; cursor: text; overflow-wrap: anywhere; }
-.note-text:hover { background: var(--bg-light); }
-.note-text .list-year { width: auto; min-width: 40px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); font-size: 11px; }
-.note-edit { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--brand); border-radius: 6px; font: inherit; font-size: 13px; }
-.note-del { width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; opacity: 0; }
-.note-row:hover .note-del, .note-row.editing .note-del, .note-del:focus-visible { opacity: 1; }
-.note-del:hover { background: var(--danger-light); color: var(--danger-color); }
+/* ── 重大事件（年份＋內容＋加入；清單改／刪）── */
+.ev-form { display: grid; gap: 8px; padding: 10px; border-radius: 10px; background: var(--bg-light); }
+.ev-form.editing { background: var(--brand-light); }
+.ev-fields { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: start; }
+.ev-field { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.ev-year-input, .ev-text-input { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 8px; font: inherit; font-size: 13px; font-weight: 400; color: var(--text-primary); background: #fff; }
+.ev-text-input { resize: vertical; min-height: 38px; }
+.ev-year-input:focus, .ev-text-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+.ev-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.ev-list { display: grid; gap: 4px; }
+.ev-row { display: flex; align-items: center; gap: 6px; padding: 6px 4px 6px 2px; border-bottom: 1px solid var(--border-light); }
+.ev-row.editing { background: var(--brand-light); border-radius: 6px; }
+.ev-row-text { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ev-row-text .list-year { flex-shrink: 0; min-width: 40px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); font-size: 11px; font-weight: 600; text-align: center; }
+.ev-row .list-btn { flex-shrink: 0; padding: 2px 9px; }
+@media (max-width: 420px) { .ev-fields { grid-template-columns: 1fr; } }
 
 /* ── 排列間距（檢視分頁） ── */
 .view-spacing { display: grid; gap: 6px; }

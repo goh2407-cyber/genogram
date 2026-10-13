@@ -47,32 +47,36 @@ const { openApp, createChecks, finish } = require('./contract_harness');
         document.getElementById('eventsTab').click();
         out.formShown = !document.getElementById('eventsPanel').hidden && !ex.eventForm.hidden;
         const undoBefore = app.history.undoStack.length;
-        ex.setNoteKind('school');
-        ex.evInput.value = '2021 搬到台中';
-        ex.submitEvent();
+        // 年份＋內容兩欄 → 加入事件
+        ex.evYear.value = '2021';
+        ex.evText.value = '搬到台中';
+        ex.evSubmit.click();
         const added = app.events[app.events.length - 1];
         out.eventAdded = app.events.length === 2 && app.history.undoStack.length === undoBefore + 1
-            && added.year === '2021' && added.text === '搬到台中' && added.kind === 'school';
-        // 沒有年份開頭 → 年份空白
-        out.parseNoYear = JSON.stringify(GenogramExtras.parseNote('開始接受輔導')) === JSON.stringify({ year: '', text: '開始接受輔導' })
-            && JSON.stringify(GenogramExtras.parseNote('約2015、祖父過世')) === JSON.stringify({ year: '約2015', text: '祖父過世' });
-        out.eventSorted = [...document.querySelectorAll('#eventsPanel .list-year')].map(n => n.textContent).join(',') === '2019,2021';
+            && added.year === '2021' && added.text === '搬到台中' && ex.evYear.value === '' && ex.evText.value === '';
+        // 沒有內容不加入；年份可空白
+        ex.evYear.value = '2030'; ex.evText.value = '  '; ex.submitEvent();
+        out.emptyRejected = app.events.length === 2;
+        ex.evYear.value = '';
+        out.eventSorted = [...document.querySelectorAll('#eventsPanel .ev-row .list-year')].map(n => n.textContent).join(',') === '2019,2021';
         app.undo();
         out.eventUndo = app.events.length === 1;
         app.redo();
         out.eventRedo = app.events.length === 2;
         out.extraSaved = JSON.stringify(app.getDocumentExtra().events?.map(e => e.text)) === JSON.stringify(['父母分居', '搬到台中']);
-        // 原地修改：點文字 → 輸入框 → Enter；類別圓點點一下切換
-        ex.startEditEvent(app.events[1].id);
-        const editInput = document.querySelector('#eventsPanel .note-edit');
-        out.inlineEdit = !!editInput && editInput.value === '2021 搬到台中';
-        ex.submitEvent('2022 搬到高雄');
-        out.inlineSaved = app.events[1].year === '2022' && app.events[1].text === '搬到高雄' && !document.querySelector('#eventsPanel .note-edit');
-        const kindBefore = app.events[1].kind;
-        document.querySelectorAll('#eventsPanel .note-dot--btn')[1].click();
-        out.kindCycled = app.events[1].kind !== kindBefore;
+        // 「改」：帶回上方表單 → 按鈕變「儲存修改」→ 儲存
+        document.querySelectorAll('#eventsPanel .ev-edit')[1].click();
+        out.editLoaded = ex.evYear.value === '2021' && ex.evText.value === '搬到台中'
+            && ex.evSubmit.textContent === '儲存修改' && !ex.evCancel.hidden;
+        ex.evYear.value = '2022'; ex.evText.value = '搬到高雄';
+        ex.evSubmit.click();
+        out.editSaved = app.events[1].year === '2022' && app.events[1].text === '搬到高雄' && app.events.length === 2
+            && ex.evSubmit.textContent === '加入事件' && ex.evCancel.hidden;
+        // 「刪」：可 undo
+        document.querySelectorAll('#eventsPanel .ev-del')[1].click();
+        out.deleted = app.events.length === 1;
         app.undo(); app.undo();
-        out.kindUndo = app.events[1].kind === kindBefore && app.events[1].text === '搬到台中';
+        out.deleteUndo = app.events.length === 2 && app.events[1].text === '搬到台中';
 
         // 事件卡：命中框、拉桿移動、存檔、重設、符合視窗邊界含卡片
         app.render();
@@ -167,9 +171,9 @@ const { openApp, createChecks, finish } = require('./contract_harness');
     check('事件依年份排序', r.eventSorted);
     check('事件 Undo／Redo', r.eventUndo && r.eventRedo);
     check('事件跟著存檔欄位', r.extraSaved);
-    check('記事：一行式輸入解析年份／類別', r.parseNoYear);
-    check('記事：原地修改（Enter 儲存）', r.inlineEdit && r.inlineSaved);
-    check('記事：類別圓點切換、可 undo', r.kindCycled && r.kindUndo);
+    check('事件：沒有內容不加入', r.emptyRejected);
+    check('事件：「改」帶回表單、儲存修改', r.editLoaded && r.editSaved);
+    check('事件：「刪」、可 undo', r.deleted && r.deleteUndo);
     check('事件卡：繪製時記錄命中框、位於成員下方', r.evBox);
     check('事件卡：拉桿移動、一步 undo', r.evMoved);
     check('事件卡：位移跟著存檔', r.evSaved);

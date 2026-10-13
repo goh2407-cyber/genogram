@@ -36,6 +36,7 @@ const expectedSections = [
             ['separated', '', '事實分居', 'separated'],
             ['legal-separated', '', '法律分居', 'legal-separated'],
             ['divorced', '', '離婚', 'divorced'],
+            ['ex-partner', '', '前任關係', 'ex-partner'],
             ['widowed', '', '喪偶', 'widowed'],
             ['affair', '', '外遇', 'affair']
         ]
@@ -92,10 +93,10 @@ const expectedSections = [
     const canvasSource = fs.readFileSync(path.join(ROOT, 'js', 'canvas.js'), 'utf8');
     check('40x14 legend SVG source is unchanged',
         hash(legendRules)
-            === '10401936d761d5fc515ceaea8c76ecce921d28c2a523af997e2d5d426b492c80');
+            === '4207cbc2bf10ee66dd335aa42306eab77f037f0e7ecbf0076588a5240f6e17e2'); // 2026-10-13 只新增 .legend-line.ex-partner
     check('Relationship.getLineStyle is unchanged',
         hash(extractBracedSource(relationshipSource, '    getLineStyle() '))
-            === '39965b588e39143742f8da07d6587cdcea00b0c97b24dc0b718a068d08eb65eb');
+            === '64284f8d6ebbdf1532e66d2b335c16465c389196c9957b95d4c1361eb8ee3244'); // 2026-10-13 只新增 ex-partner
     check('DASH_PATTERNS is unchanged',
         hash(extractBracedSource(canvasSource, 'const DASH_PATTERNS = '))
             === '0d4daad95281fa3eb9693cffffc38209574248f52a746b2f411c73349267f0ff');
@@ -190,7 +191,7 @@ const expectedSections = [
             hasAdapters,
             fullSections: serializeSections(fullSections),
             hiddenSections: serializeSections(hiddenSections),
-            stylesMatch: styleChecks.length === 36 && styleChecks.every(Boolean),
+            stylesMatch: styleChecks.length === 37 && styleChecks.every(Boolean), // 2026-10-13 +前任關係
             fullDrawn,
             hiddenDrawn
         };

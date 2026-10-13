@@ -54,7 +54,7 @@ class GenogramApp {
     static MARRIAGE_TYPES = [
         'married', 'engaged', 'cohabiting', 'legal-cohabiting',
         'separated', 'legal-separated', 'divorced', 'widowed', 'affair',
-        'engaged-separated', 'engaged-cohabiting'
+        'engaged-separated', 'engaged-cohabiting', 'ex-partner'
     ];
     // 縮放級距：瀏覽器式固定階梯，涵蓋 canvas.minScale(0.25) ~ maxScale(3)，必含 1
     static ZOOM_STEPS = Object.freeze([0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]);
@@ -733,6 +733,7 @@ class GenogramApp {
                 const gender = button.dataset.gender;
                 const orientation = button.dataset.orientation; // 'true' or undefined
                 const transgender = button.dataset.transgender || null; // 'ftm', 'mtf', or null
+                this.pendingPetType = gender === 'pet' ? (button.dataset.pet || 'diamond') : null; // [PET]
 
                 if (this.quickAddContext) {
                     this.createQuickPersonWithGender(gender, orientation === 'true', transgender);
@@ -745,6 +746,7 @@ class GenogramApp {
         // 多元性別切換與返回事件
         if (this.elements.toggleDiversityBtn) {
             this.elements.toggleDiversityBtn.addEventListener('click', () => {
+                const pets = document.getElementById('petSelectionGroup'); if (pets) pets.style.display = 'none'; // [PET]
                 this.elements.basicGenderSection.style.display = 'none';
                 this.elements.toggleDiversityBtn.style.display = 'none';
                 this.elements.diversitySection.style.display = 'block';
@@ -754,6 +756,7 @@ class GenogramApp {
         if (this.elements.backToBasicBtn) {
             this.elements.backToBasicBtn.addEventListener('click', () => {
                 this.elements.diversitySection.style.display = 'none';
+                const pets = document.getElementById('petSelectionGroup'); if (pets) pets.style.display = ''; // [PET]
                 this.elements.basicGenderSection.style.display = 'flex';
                 this.elements.toggleDiversityBtn.style.display = 'flex';
             });
@@ -981,7 +984,11 @@ class GenogramApp {
         const ageInput = root.querySelector('#personAge');
         const hint = root.querySelector('#personAgeHint');
         const deathGroup = root.querySelector('#personDeathDateGroup');
-        if (deathGroup) deathGroup.hidden = !person.isDeceased;
+        if (deathGroup) deathGroup.hidden = !person.isDeceased || person.gender === 'pet';
+        // 寵物不記年齡（2026-10-13）：隱藏年齡與出生年月那一列
+        const ageRow = ageInput ? ageInput.closest('.form-group-row') : null;
+        if (ageRow) ageRow.style.display = person.gender === 'pet' ? 'none' : '';
+        if (person.gender === 'pet') { if (hint) { hint.hidden = true; hint.textContent = ''; } return; }
         const computed = typeof person.isAgeComputed === 'function' && person.isAgeComputed(this.ageReferenceDate);
         if (ageInput) {
             if (computed) {
@@ -1136,12 +1143,19 @@ class GenogramApp {
     /**
      * 新增人物 (舊方法,保留兼容性)
      */
+    /** [PET] 由彈窗選了寵物種類時，新建立的寵物套用該種類 */
+    applyPendingPetType(person) {
+        if (person && person.gender === 'pet') person.petType = Person.normalizePetType(this.pendingPetType || person.petType, 'pet');
+        return person;
+    }
+
     addPerson(x, y, gender) {
         const person = new Person({
             x: x,
             y: y,
             gender: gender
         });
+        this.applyPendingPetType(person); // [PET]
         this.persons.push(person);
         this.personMap.set(person.id, person);
         this.canvas.playDrop?.(person.id); // [FX] 落子

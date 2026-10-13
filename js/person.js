@@ -9,7 +9,9 @@ class Person {
     constructor(data = {}) {
         this.id = data.id || this.generateId();
         this.name = data.name || '';
-        this.gender = data.gender || 'male'; // 'male', 'female', 'other'
+        this.gender = data.gender || 'male'; // 'male', 'female', 'pregnancy', 'same', 'pet'
+        // [PET] 寵物種類（gender === 'pet' 才有）：diamond（其他）／cat／dog／bird／fish
+        this.petType = Person.normalizePetType(data.petType, this.gender);
         this.age = data.age ?? null;
         this.isDeceased = data.isDeceased || false;
         this.isIdentifiedPatient = data.isIdentifiedPatient || false;
@@ -220,6 +222,15 @@ class Person {
      * 匯出為純資料物件（用於儲存）
      * @returns {Object}
      */
+    /** [PET] 寵物種類與顯示名稱 */
+    static PET_TYPES = Object.freeze(['diamond', 'cat', 'dog', 'bird', 'fish']);
+    static PET_LABELS = Object.freeze({ diamond: '其他寵物', cat: '貓', dog: '狗', bird: '鳥', fish: '魚' });
+
+    static normalizePetType(value, gender) {
+        if (gender !== 'pet') return null;
+        return Person.PET_TYPES.includes(value) ? value : 'diamond';
+    }
+
     toJSON() {
         const json = {
             id: this.id,
@@ -243,6 +254,7 @@ class Person {
             json.labelPlacement = { ...this.labelPlacement };
         }
         // [2-1] 只在有值時寫入，舊檔 load→save 逐 byte 不變
+        if (this.gender === 'pet') json.petType = this.petType || 'diamond';
         if (this.birthDate) json.birthDate = this.birthDate;
         if (this.deathDate) json.deathDate = this.deathDate;
         return json;

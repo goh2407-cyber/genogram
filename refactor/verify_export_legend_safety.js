@@ -31,7 +31,7 @@ check('child link kinds are selected independently with biological default', () 
     }
 });
 check('all mode retains 36 relationship samples and household symbol', () => {
-    assert.equal(labels(null).length, 37);
+    assert.equal(labels(null).length, 38); // 2026-10-13 新增「前任關係」
     assert.equal(labels(null).at(-1), '同住圈');
 });
 check('hidden layers do not contribute legend samples', () => {

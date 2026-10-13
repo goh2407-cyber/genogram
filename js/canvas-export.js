@@ -138,7 +138,7 @@ Object.assign(GenogramCanvas.prototype, {
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY } = bounds;
-        // 家庭記事：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
+        // 重大事件：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
         const eventsBlock = this.getExportEventsBlock(effectiveView); // 邊界已含事件卡（_calculateContentBounds）
         const contentWidth = bounds.width;
         const contentHeight = bounds.height;
@@ -265,7 +265,7 @@ Object.assign(GenogramCanvas.prototype, {
         if (!bounds) return null;
 
         const { minX, minY, maxX, maxY } = bounds;
-        // 家庭記事：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
+        // 重大事件：屬說明文字，「備註」關閉或去識別化匯出時不輸出（事件內文可能含姓名）
         const eventsBlock = this.getExportEventsBlock(effectiveView); // 邊界已含事件卡（_calculateContentBounds）
         const contentWidth = bounds.width;
         const contentHeight = bounds.height;
@@ -356,13 +356,12 @@ Object.assign(GenogramCanvas.prototype, {
     },
 
     /**
-     * 家庭記事卡（直式時間軸）：左邊年份膠囊、中間軌道與圓點、右邊事件文字；白底圓角卡片。
+     * 重大事件卡（直式時間軸）：左邊年份膠囊、中間軌道與圓點、右邊事件文字；白底圓角卡片。
      * 依年份排序（無年份排最後）；無事件回 null。螢幕與匯出共用。
      */
     measureEventsBlock(events = []) {
-        const kindColor = { family: '#ed1261', health: '#16a34a', school: '#2563eb', legal: '#7c3aed', service: '#ea580c' };
         const rows = (events || []).filter(ev => ev && (ev.year || ev.text))
-            .map(ev => ({ year: String(ev.year || '').trim(), text: String(ev.text || '').trim(), color: kindColor[ev.kind] || kindColor.family }))
+            .map(ev => ({ year: String(ev.year || '').trim(), text: String(ev.text || '').trim(), color: '#6b7280' }))
             .sort((a, b) => (parseInt(a.year, 10) || 99999) - (parseInt(b.year, 10) || 99999));
         if (!rows.length) return null;
         const ctx = this.ctx;
@@ -382,7 +381,7 @@ Object.assign(GenogramCanvas.prototype, {
         };
     },
 
-    /** 記事卡位置：預設在全圖左下（成員最左 x、成員最下 y 再往下），加上使用者拖曳的位移 eventsLayout */
+    /** 事件卡位置：預設在全圖下方（成員最左 x、成員最下 y 再往下），加上使用者拖曳的位移 eventsLayout */
     getEventsBlockRect(persons, block) {
         if (!block) return null;
         const half = this.personSize / 2;
@@ -421,8 +420,8 @@ Object.assign(GenogramCanvas.prototype, {
         ctx.fillRect(x + padX, hy - 6, 4, 12);
         ctx.fillStyle = '#1f2937';
         ctx.font = `700 13px ${this.fontFamily}`;
-        ctx.fillText('家庭記事', x + padX + 10, hy);
-        const titleW = ctx.measureText('家庭記事').width;
+        ctx.fillText('重大事件', x + padX + 10, hy);
+        const titleW = ctx.measureText('重大事件').width;
         ctx.fillStyle = '#9ca3af';
         ctx.font = `12px ${this.fontFamily}`;
         ctx.fillText(`${rows.length} 筆`, x + padX + 10 + titleW + 8, hy);
@@ -457,7 +456,7 @@ Object.assign(GenogramCanvas.prototype, {
             // 圓點
             ctx.beginPath();
             ctx.arc(x + railX, cy, 4.5, 0, Math.PI * 2);
-            ctx.fillStyle = row.color; // 依記事類別變色
+            ctx.fillStyle = row.color;
             ctx.fill();
             ctx.lineWidth = 2;
             ctx.strokeStyle = '#ffffff';

@@ -116,6 +116,17 @@ const PROPERTY_PANEL_TEMPLATES = Object.freeze({
                 <select id="personGender">
                     <option value="male">男性</option>
                     <option value="female">女性</option>
+                    <option value="pet">寵物</option>
+                </select>
+            </div>
+            <div class="form-group" id="petTypeGroup" hidden>
+                <label for="personPetType">寵物種類</label>
+                <select id="personPetType">
+                    <option value="cat">貓</option>
+                    <option value="dog">狗</option>
+                    <option value="bird">鳥</option>
+                    <option value="fish">魚</option>
+                    <option value="diamond">其他（菱形）</option>
                 </select>
             </div>
             <div class="form-group-row">

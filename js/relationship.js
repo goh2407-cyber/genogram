@@ -19,6 +19,7 @@ class Relationship {
         AFFAIR: 'affair',                        // 外遇
         ENGAGED_SEPARATED: 'engaged-separated',  // 訂婚並分居
         ENGAGED_COHABITING: 'engaged-cohabiting',// 訂婚並同居
+        EX_PARTNER: 'ex-partner',                // 前任關係（2026-10-13 新增：虛線＋單斜線）
 
         // 情感關係 - 正向
         HARMONY: 'harmony',                      // 和諧
@@ -81,6 +82,7 @@ class Relationship {
                 { type: 'separated', label: '事實分居', legendClass: 'separated' },
                 { type: 'legal-separated', label: '法律分居', legendClass: 'legal-separated' },
                 { type: 'divorced', label: '離婚', legendClass: 'divorced' },
+                { type: 'ex-partner', label: '前任關係', legendClass: 'ex-partner' },
                 { type: 'widowed', label: '喪偶', legendClass: 'widowed' },
                 { type: 'affair', label: '外遇', legendClass: 'affair' }
             ]
@@ -187,6 +189,7 @@ class Relationship {
             'affair': '外遇',
             'engaged-separated': '訂婚並分居',
             'engaged-cohabiting': '訂婚並同居',
+            'ex-partner': '前任關係',
 
             // 情感關係 - 正向
             'harmony': '和諧',
@@ -238,7 +241,7 @@ class Relationship {
         const marriageTypes = [
             'married', 'engaged', 'cohabiting', 'legal-cohabiting',
             'separated', 'legal-separated', 'divorced', 'widowed',
-            'affair', 'engaged-separated', 'engaged-cohabiting'
+            'affair', 'engaged-separated', 'engaged-cohabiting', 'ex-partner'
         ];
         if (marriageTypes.includes(type)) return 'marriage';
 
@@ -297,6 +300,8 @@ class Relationship {
             'widowed': { color: '#333333', width: 3, pattern: 'solid', decoration: 'x' },
             // 訂婚並分居：黑色虛線 + 斜線
             'engaged-separated': { color: '#333333', width: 3, pattern: 'dashed', decoration: 'single-slash' },
+            // 前任關係：黑色長虛線 + 單斜線（-----/-----）
+            'ex-partner': { color: '#333333', width: 3, pattern: 'dashed', decoration: 'single-slash' },
             // 訂婚並同居：黑色點線（同居樣式）
             'engaged-cohabiting': { color: '#333333', width: 3, pattern: 'dotted' },
             // 同居：黑色點線（較短間隔，與訂婚的長虛線區分）

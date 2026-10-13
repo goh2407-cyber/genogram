@@ -143,7 +143,7 @@
                             </svg></span>
                         <span class="tool-label">複製圖片</span>
                     </button>
-                    <button class="tool-btn" id="eventsToolBtn" title="家庭記事（開啟右側記事面板）" aria-label="家庭記事">
+                    <button class="tool-btn" id="eventsToolBtn" title="重大事件（開啟右側事件面板）" aria-label="重大事件">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="3" y="5" width="18" height="16" rx="2" />
@@ -153,7 +153,7 @@
                                 <line x1="7" y1="14.5" x2="12" y2="14.5" />
                                 <line x1="7" y1="17.5" x2="15" y2="17.5" />
                             </svg></span>
-                        <span class="tool-label">記事</span>
+                        <span class="tool-label">事件</span>
                     </button>
                 </div>
             </nav>
@@ -290,7 +290,7 @@
                     <button type="button" role="tab" class="inspector-tab" id="legendTab" data-inspector-tab="legend" aria-controls="legendPanel" aria-selected="false" tabindex="-1">圖例</button>
                     <button type="button" role="tab" class="inspector-tab" id="viewTab" data-inspector-tab="view" aria-controls="viewContent" aria-selected="false" tabindex="-1">檢視</button>
                     <button type="button" role="tab" class="inspector-tab" id="listTab" data-inspector-tab="list" aria-controls="listPanel" aria-selected="false" tabindex="-1">清單</button>
-                    <button type="button" role="tab" class="inspector-tab" id="eventsTab" data-inspector-tab="events" aria-controls="eventsPanel" aria-selected="false" tabindex="-1">記事</button>
+                    <button type="button" role="tab" class="inspector-tab" id="eventsTab" data-inspector-tab="events" aria-controls="eventsPanel" aria-selected="false" tabindex="-1">事件</button>
                 </div>
                 <!-- 屬性編輯面板 -->
                 <section class="panel-section inspector-tab-panel" id="propertyPanel" data-inspector-panel="properties" role="tabpanel" aria-labelledby="propertiesTab">
@@ -321,7 +321,7 @@
                         <label class="view-option"><input type="checkbox" data-view-option="showHouseholds" checked><span>同住圈</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showLifeCircles" checked><span>生活圈</span></label>
                         <label class="view-option"><input type="checkbox" data-view-option="showAbuseRelationships" checked><span>暴力與虐待線</span></label>
-                        <label class="view-option"><input type="checkbox" data-view-option="showEvents" checked><span>記事時間軸</span></label>
+                        <label class="view-option"><input type="checkbox" data-view-option="showEvents" checked><span>重大事件</span></label>
                         <label class="view-option view-option--deid"><input type="checkbox" data-view-option="deidentifyScreen"><span>畫面去識別化（姓名改代號、不顯示備註；年齡保留）</span></label>
                     </div>
                     <div class="panel-content view-spacing" id="viewSpacing">
@@ -345,7 +345,7 @@
                 <!-- 清單：人物／關係（內容由 js/extras/genogram-extras.js 建立） -->
                 <section class="panel-section inspector-tab-panel list-panel" id="listPanel" data-inspector-panel="list"
                     role="tabpanel" aria-labelledby="listTab" hidden></section>
-                <!-- 家庭記事（內容由 js/extras/genogram-extras.js 建立） -->
+                <!-- 重大事件（內容由 js/extras/genogram-extras.js 建立） -->
                 <section class="panel-section inspector-tab-panel list-panel" id="eventsPanel" data-inspector-panel="events"
                     role="tabpanel" aria-labelledby="eventsTab" hidden></section>
             </aside>
@@ -370,6 +370,33 @@
                             <span class="icon same-icon"></span>
                             <span>同性別</span>
                         </button>
+                    </div>
+
+                    <!-- [PET] 寵物（菱形／貓／狗／鳥／魚） -->
+                    <div class="pet-selection-group" id="petSelectionGroup">
+                        <h4 class="pet-heading">寵物</h4>
+                        <div class="gender-selection gender-selection--pets">
+                            <button class="gender-btn gender-btn--pet" data-gender="pet" data-pet="cat">
+                                <svg class="pet-icon" viewBox="-54 -54 108 108" aria-hidden="true"><path d="M-34,-6 C-38,-20 -38,-34 -34,-47 L-16,-32 C-6,-35 6,-35 16,-32 L34,-47 C38,-34 38,-20 34,-6 C44,8 42,30 26,40 C14,47 -14,47 -26,40 C-42,30 -44,8 -34,-6 Z"/><path class="pet-detail" d="M-31,-14 L-31,-38 L-20,-29 M31,-14 L31,-38 L20,-29 M0,14 L0,18 M0,18 Q-5,25 -11,21 M0,18 Q5,25 11,21 M-14,12 L-40,6 M-14,17 L-41,19 M14,12 L40,6 M14,17 L41,19"/><path class="pet-detail-fill" d="M-21,-5 A6,7 0 1 0 -9,-5 A6,7 0 1 0 -21,-5 Z M9,-5 A6,7 0 1 0 21,-5 A6,7 0 1 0 9,-5 Z M-6,8 L6,8 L0,14 Z"/><path class="pet-detail-shine" d="M-19,-8 A2,2 0 1 0 -15,-8 A2,2 0 1 0 -19,-8 Z M11,-8 A2,2 0 1 0 15,-8 A2,2 0 1 0 11,-8 Z"/></svg>
+                                <span>貓</span>
+                            </button>
+                            <button class="gender-btn gender-btn--pet" data-gender="pet" data-pet="dog">
+                                <svg class="pet-icon" viewBox="-54 -54 108 108" aria-hidden="true"><path d="M-24,-40 C-10,-46 10,-46 24,-40 C32,-36 34,-28 33,-20 C34,0 30,26 18,38 C10,46 -10,46 -18,38 C-30,26 -34,0 -33,-20 C-34,-28 -32,-36 -24,-40 Z M22,-41 C34,-46 46,-38 47,-22 C48,-8 46,4 40,8 C34,12 31,2 31,-12 C31,-24 28,-34 22,-41 Z M-22,-41 C-28,-34 -31,-24 -31,-12 C-31,2 -34,12 -40,8 C-46,4 -48,-8 -47,-22 C-46,-38 -34,-46 -22,-41 Z"/><path class="pet-detail" d="M0,19 L0,25 M0,25 Q-7,32 -14,27 M0,25 Q7,32 14,27"/><path class="pet-detail-fill" d="M-17,-10 A5,5.5 0 1 0 -7,-10 A5,5.5 0 1 0 -17,-10 Z M7,-10 A5,5.5 0 1 0 17,-10 A5,5.5 0 1 0 7,-10 Z M-9,10 Q0,4 9,10 Q9,17 0,19 Q-9,17 -9,10 Z"/><path class="pet-detail-shine" d="M-15.3,-12 A1.8,1.8 0 1 0 -11.7,-12 A1.8,1.8 0 1 0 -15.3,-12 Z M8.7,-12 A1.8,1.8 0 1 0 12.3,-12 A1.8,1.8 0 1 0 8.7,-12 Z"/></svg>
+                                <span>狗</span>
+                            </button>
+                            <button class="gender-btn gender-btn--pet" data-gender="pet" data-pet="bird">
+                                <svg class="pet-icon" viewBox="-54 -54 108 108" aria-hidden="true"><path d="M26,-34 C36,-34 41,-27 41,-21 L50,-17 L40,-13 C40,6 29,27 3,28 C-15,29 -27,22 -33,12 L-49,4 L-37,-5 C-31,-19 -13,-25 5,-22 C8,-30 16,-34 26,-34 Z"/><path class="pet-detail" d="M-18,0 C-8,-12 12,-10 20,2 C10,12 -6,12 -18,0 Z M-2,28 L-4,40 L-9,43 M-4,40 L0,43 M9,28 L9,40 L4,43 M9,40 L13,43"/><path class="pet-detail-fill" d="M25.5,-23 A3.5,3.5 0 1 0 32.5,-23 A3.5,3.5 0 1 0 25.5,-23 Z"/><path class="pet-detail-shine" d="M26.8,-24.5 A1.2,1.2 0 1 0 29.2,-24.5 A1.2,1.2 0 1 0 26.8,-24.5 Z"/></svg>
+                                <span>鳥</span>
+                            </button>
+                            <button class="gender-btn gender-btn--pet" data-gender="pet" data-pet="fish">
+                                <svg class="pet-icon" viewBox="-54 -54 108 108" aria-hidden="true"><path d="M46,0 C40,-16 24,-26 4,-26 L-6,-37 L-11,-25 C-22,-21 -30,-12 -34,-6 L-48,-22 L-44,0 L-48,22 L-34,6 C-26,18 -10,26 6,26 C24,26 40,16 46,0 Z"/><path class="pet-detail" d="M20,-17 Q11,0 20,17 M46,0 L38,4 M-4,-10 Q3,-3 -4,4 M-16,-8 Q-10,-2 -16,4"/><path class="pet-detail-fill" d="M27,-6 A4,4 0 1 0 35,-6 A4,4 0 1 0 27,-6 Z"/><path class="pet-detail-shine" d="M28.6,-7.5 A1.4,1.4 0 1 0 31.4,-7.5 A1.4,1.4 0 1 0 28.6,-7.5 Z"/></svg>
+                                <span>魚</span>
+                            </button>
+                            <button class="gender-btn gender-btn--pet" data-gender="pet" data-pet="diamond">
+                                <svg class="pet-icon" viewBox="-54 -54 108 108" aria-hidden="true"><path d="M0,-48 L48,0 L0,48 L-48,0 Z"/></svg>
+                                <span>其他寵物</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 多元性別切換按鈕 -->
@@ -470,6 +497,8 @@
                                     class="legend-line legal-separated"></span>法律分居</button>
                             <button class="rel-btn" data-type="divorced"><span
                                     class="legend-line divorced"></span>離婚</button>
+                            <button class="rel-btn" data-type="ex-partner"><span
+                                    class="legend-line ex-partner"></span>前任關係</button>
                             <button class="rel-btn" data-type="widowed"><span
                                     class="legend-line widowed"></span>喪偶</button>
                             <button class="rel-btn" data-type="affair"><span
@@ -713,7 +742,7 @@
                                 <path d="M8 12l1.5 6L12 13l2.5 5L16 12" />
                             </svg></span>
                         <span class="format-name">Word</span>
-                        <span class="format-desc">圖＋成員表＋記事，貼進個案紀錄</span>
+                        <span class="format-desc">圖＋成員表＋重大事件，貼進個案紀錄</span>
                     </button>
                     <button type="button" class="export-option-btn" data-format="json" aria-pressed="false">
                         <span class="export-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -247,6 +247,12 @@ Object.assign(GenogramApp.prototype, {
             root.querySelector('#personGender').appendChild(option);
             root.querySelector('#personGender').value = person.gender;
         }
+        // [PET] 寵物種類欄
+        const petGroup = root.querySelector('#petTypeGroup');
+        if (petGroup) {
+            petGroup.hidden = person.gender !== 'pet';
+            root.querySelector('#personPetType').value = person.petType || 'diamond';
+        }
         root.querySelector('#twinSettingsHost').appendChild(this.createTwinSettingsElement(person));
         this.setupPropertyFormEvents();
         this.refreshPersonAgeFields(root, person); // [2-1]
@@ -799,7 +805,23 @@ Object.assign(GenogramApp.prototype, {
         // 性別
         this.bindPropertyEdit(document.getElementById('personGender'), e => {
             person.gender = e.target.value;
+            person.petType = Person.normalizePetType(person.petType, person.gender); // [PET]
+            const petGroup = document.getElementById('petTypeGroup');
+            if (petGroup) {
+                petGroup.hidden = person.gender !== 'pet';
+                const sel = document.getElementById('personPetType');
+                if (sel) sel.value = person.petType || 'diamond';
+            }
+            this.refreshPersonAgeFields(document, person); // 寵物隱藏年齡欄
         }, { eventName: 'change', commitOnChange: true });
+
+        // [PET] 寵物種類
+        const petTypeSelect = document.getElementById('personPetType');
+        if (petTypeSelect) {
+            this.bindPropertyEdit(petTypeSelect, e => {
+                person.petType = Person.normalizePetType(e.target.value, person.gender);
+            }, { eventName: 'change', commitOnChange: true });
+        }
 
         // 過世
         this.bindPropertyEdit(document.getElementById('personDeceased'), e => {

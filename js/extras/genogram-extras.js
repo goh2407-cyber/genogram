@@ -1,14 +1,20 @@
 /**
  * 線上版延伸功能（DEMO，參考 genogram.drsexswag.com）：
  * 1. 右側「清單」分頁：人物／關係，可搜尋；點一下定位並選取
- * 2. 右側「記事」分頁：家庭記事（年份自動辨識、類別圓點、原地修改），畫成圖下方的時間軸卡（可拖曳）
+ * 2. 右側「事件」分頁：重大事件（年份＋內容＋加入；清單每筆改／刪），依年份畫成圖下方的事件卡（可拖曳）
  * 3. 畫布左下快捷鈕：畫面去識別化、檢視模式（唯讀簡報）
  * 4. 匯出 Word（圖＋成員表＋事件），程式庫第一次匯出才從 jsDelivr 載入
  * 只在根目錄 index.html 載入；離線包 geno/ 不載入。不改任何線條顏色與樣式。
  */
 class GenogramExtras {
     static DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@9.7.2/+esm';
-    static GENDER = { male: '男', female: '女', pregnancy: '懷孕', same: '其他' };
+    static GENDER = { male: '男', female: '女', pregnancy: '懷孕', same: '其他', pet: '寵物' };
+
+    /** 清單／Word 的性別欄；寵物顯示種類（貓、狗…） */
+    static genderLabel(p) {
+        if (p.gender === 'pet') return '寵物・' + ((typeof Person !== 'undefined' && Person.PET_LABELS[p.petType]) || '其他');
+        return GenogramExtras.GENDER[p.gender] || '';
+    }
 
     constructor(app) {
         this.app = app;
@@ -67,7 +73,7 @@ class GenogramExtras {
         };
         document.getElementById('listTab')?.addEventListener('click', () => this.refreshList(true));
         document.getElementById('eventsTab')?.addEventListener('click', () => this.refreshEvents(true));
-        // 工具列「記事」鈕（複製圖片旁）：展開右側面板並切到記事分頁
+        // 工具列「事件」鈕（複製圖片旁）：展開右側面板並切到事件分頁
         document.getElementById('eventsToolBtn')?.addEventListener('click', () => this.openEventsPanel());
     }
 
@@ -91,51 +97,36 @@ class GenogramExtras {
         this.panel.append(seg, this.search, this.items);
     }
 
-    /** 記事類別：圓點顏色（時間軸卡）與面板標籤共用 */
-    static NOTE_KINDS = [
-        { key: 'family', label: '家庭', color: '#ed1261' },
-        { key: 'health', label: '健康', color: '#16a34a' },
-        { key: 'school', label: '學校', color: '#2563eb' },
-        { key: 'legal', label: '司法', color: '#7c3aed' },
-        { key: 'service', label: '服務', color: '#ea580c' }
-    ];
-
-    static kindOf(key) {
-        return GenogramExtras.NOTE_KINDS.find(k => k.key === key) || GenogramExtras.NOTE_KINDS[0];
-    }
-
-    /** 「2019 父母分居」→ {year:'2019', text:'父母分居'}；開頭不是年份就整句當內容 */
-    static parseNote(raw) {
-        const m = /^\s*((?:約)?\d{4}(?:[./-]\d{1,2})?)\s*[、,:：]?\s*(.*)$/.exec(String(raw || ''));
-        if (m && m[2].trim()) return { year: m[1].trim(), text: m[2].trim() };
-        return { year: '', text: String(raw || '').trim() };
-    }
-
+    /**
+     * 重大事件（2026-10-13 使用者改要參考網站的用法）：
+     * 上方兩欄「年份」「事件內容」＋「加入事件」；下方清單每筆有「改」「刪」。
+     * 「改」把內容帶回上方表單，按「儲存修改」或「取消」。事件依年份由早到晚畫在圖下方的事件卡。
+     */
     buildEventsPanel() {
         this.eventsPanel = document.getElementById('eventsPanel');
         if (!this.eventsPanel) return;
-        this.noteKind = 'family';
-        // 一行式輸入：年份寫在開頭自動辨識；Enter 記下
-        this.evInput = this.el('input', { type: 'text', class: 'note-input', placeholder: '寫一筆記事，年份寫在開頭，例如：2019 父母分居', maxlength: '220', 'aria-label': '記事內容' });
-        this.evInput.addEventListener('keydown', e => {
-            e.stopPropagation();
-            if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this.submitEvent(); }
-        });
-        this.kindChips = this.el('div', { class: 'note-kinds', role: 'radiogroup', 'aria-label': '記事類別' },
-            GenogramExtras.NOTE_KINDS.map(k => {
-                const chip = this.el('button', { type: 'button', class: 'note-kind', 'data-kind': k.key, role: 'radio', 'aria-checked': String(k.key === this.noteKind), onclick: () => this.setNoteKind(k.key) }, [
-                    this.el('span', { class: 'note-dot', style: `background:${k.color}` }), this.el('span', { text: k.label })
-                ]);
-                return chip;
-            }));
-        this.evSubmit = this.el('button', { type: 'button', class: 'list-btn primary', text: '記下', onclick: () => this.submitEvent() });
-        this.eventForm = this.el('div', { class: 'note-composer' }, [
-            this.evInput,
-            this.el('div', { class: 'note-composer-row' }, [this.kindChips, this.evSubmit])
+        const stop = e => e.stopPropagation(); // 不觸發畫布快捷鍵
+        this.evYear = this.el('input', { type: 'text', class: 'ev-year-input', placeholder: '例：2008', maxlength: '12', inputmode: 'numeric', 'aria-label': '年份', id: 'evYearInput' });
+        this.evText = this.el('textarea', { class: 'ev-text-input', rows: '2', placeholder: '例：舉家搬到台南、祖父過世、父母離婚', maxlength: '220', 'aria-label': '事件內容', id: 'evTextInput' });
+        [this.evYear, this.evText].forEach(inp => inp.addEventListener('keydown', e => {
+            stop(e);
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.submitEvent(); }
+            if (e.key === 'Escape' && this.editingEventId) { e.preventDefault(); this.resetEventForm(); }
+        }));
+        this.evSubmit = this.el('button', { type: 'button', class: 'list-btn primary', text: '加入事件', onclick: () => this.submitEvent() });
+        this.evCancel = this.el('button', { type: 'button', class: 'list-btn', text: '取消', onclick: () => this.resetEventForm() });
+        this.evCancel.hidden = true;
+        this.eventForm = this.el('div', { class: 'ev-form' }, [
+            this.el('p', { class: 'list-hint', text: '依年份由早到晚，畫在家系圖下方的「重大事件」卡。適合記錄搬家、過世、離婚、入學、安置等轉折。' }),
+            this.el('div', { class: 'ev-fields' }, [
+                this.el('label', { class: 'ev-field ev-field--year', for: 'evYearInput' }, [this.el('span', { text: '年份' }), this.evYear]),
+                this.el('label', { class: 'ev-field ev-field--text', for: 'evTextInput' }, [this.el('span', { text: '事件內容' }), this.evText])
+            ]),
+            this.el('div', { class: 'ev-actions' }, [this.evCancel, this.evSubmit])
         ]);
-        this.eventItems = this.el('div', { class: 'note-list' });
-        this.eventsCount = this.el('p', { class: 'list-section-title', text: '時間軸（0）' });
-        this.resetEventsPosBtn = this.el('button', { type: 'button', class: 'list-btn', text: '卡片放回預設位置', title: '把時間軸卡放回家系圖左下', onclick: () => {
+        this.eventItems = this.el('div', { class: 'ev-list' });
+        this.eventsCount = this.el('p', { class: 'list-section-title', text: '已加入（0）' });
+        this.resetEventsPosBtn = this.el('button', { type: 'button', class: 'list-btn', text: '事件卡放回預設位置', title: '把事件卡放回家系圖下方', onclick: () => {
             const app = this.app;
             if (!app.eventsLayout) return;
             app.saveState(); app.eventsLayout = null; app.autoSave(); app.render();
@@ -145,18 +136,8 @@ class GenogramExtras {
             this.eventsCount,
             this.eventItems,
             this.el('div', { class: 'list-inline-actions' }, [this.resetEventsPosBtn]),
-            this.el('p', { class: 'list-hint', text: '點記事文字可直接修改；滑到右邊按 × 刪除。時間軸卡畫在家系圖左下，按住可拖到想放的位置，會跟著存檔與匯出。' })
+            this.el('p', { class: 'list-hint', text: '事件卡可以在畫布上按住拖到想放的位置，會跟著存檔與匯出。「檢視」分頁可關閉「重大事件」。' })
         );
-        this.setNoteKind('family');
-    }
-
-    setNoteKind(key) {
-        this.noteKind = GenogramExtras.kindOf(key).key;
-        this.kindChips?.querySelectorAll('.note-kind').forEach(c => {
-            const on = c.dataset.kind === this.noteKind;
-            c.classList.toggle('active', on);
-            c.setAttribute('aria-checked', String(on));
-        });
     }
 
     openEventsPanel() {
@@ -165,7 +146,7 @@ class GenogramExtras {
         else if (app.inspectorDesktopCollapsed) app.setInspectorCollapsed(false);
         app.setInspectorTab('events');
         this.refreshEvents(true);
-        this.evInput?.focus();
+        this.evYear?.focus();
     }
 
     refreshEvents(force = false) {
@@ -174,57 +155,65 @@ class GenogramExtras {
         const codes = this.displayNames();
         const events = this.sortedEvents();
         const sig = ['ev', codes ? 1 : 0, app.eventsLayout ? app.eventsLayout.x + ',' + app.eventsLayout.y : '', this.editingEventId || '',
-            ...events.map(e => e.id + e.year + e.text + (e.kind || ''))].join('|');
+            ...events.map(e => e.id + e.year + e.text)].join('|');
         if (!force && sig === this.lastEventsSignature) return;
         this.lastEventsSignature = sig;
-        this.eventsCount.textContent = `時間軸（${events.length}）`;
+        this.eventsCount.textContent = `已加入（${events.length}）`;
         this.eventItems.replaceChildren();
         events.forEach(e => this.eventItems.appendChild(this.eventRow(e, codes)));
-        if (!events.length) this.eventItems.appendChild(this.el('p', { class: 'list-empty', text: '還沒有記事，在上面寫一筆。' }));
+        if (!events.length) this.eventItems.appendChild(this.el('p', { class: 'list-empty', text: '還沒有事件，在上面填年份和內容後按「加入事件」。' }));
         this.resetEventsPosBtn.hidden = !app.eventsLayout;
+        const editing = !!this.editingEventId;
+        this.evSubmit.textContent = editing ? '儲存修改' : '加入事件';
+        this.evCancel.hidden = !editing;
+        this.eventForm.classList.toggle('editing', editing);
     }
 
-    /** 新增（從一行式輸入解析年份）；editingEventId 有值時改為更新該筆 */
-    submitEvent(rawValue = null) {
+    /** 加入新事件；editingEventId 有值時改為更新那一筆 */
+    submitEvent() {
         const app = this.app;
-        const raw = rawValue !== null ? rawValue : this.evInput.value;
-        const parsed = GenogramExtras.parseNote(raw);
-        if (!parsed.text) { this.evInput.focus(); return; }
+        const year = String(this.evYear.value || '').trim();
+        const text = String(this.evText.value || '').trim();
+        if (!text) { this.evText.focus(); return; }
         app.saveState();
         if (this.editingEventId) {
             const ev = app.events.find(e => e.id === this.editingEventId);
-            if (ev) { ev.year = parsed.year; ev.text = parsed.text; }
+            if (ev) { ev.year = year; ev.text = text; }
             this.editingEventId = null;
         } else {
-            app.events.push({ id: 'ev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), year: parsed.year, text: parsed.text, kind: this.noteKind });
+            app.events.push({ id: 'ev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), year, text });
         }
-        this.evInput.value = '';
+        this.evYear.value = '';
+        this.evText.value = '';
         app.autoSave();
         app.render();
         this.refreshEvents(true);
-        this.evInput.focus();
+        this.evYear.focus();
     }
 
     resetEventForm() {
         this.editingEventId = null;
-        if (this.evInput) this.evInput.value = '';
+        if (this.evYear) this.evYear.value = '';
+        if (this.evText) this.evText.value = '';
         this.refreshEvents(true);
     }
 
-    /** 點記事文字 → 原地改（Enter 儲存、Esc 取消） */
+    /** 「改」：把這筆帶回上方表單 */
     startEditEvent(id) {
+        const ev = (this.app.events || []).find(e => e.id === id);
+        if (!ev) return;
         this.editingEventId = id;
+        this.evYear.value = ev.year || '';
+        this.evText.value = ev.text || '';
         this.refreshEvents(true);
-        const inp = this.eventItems.querySelector('.note-edit');
-        if (inp) { inp.focus(); inp.select(); }
+        this.evText.focus();
     }
 
-    cycleEventKind(ev) {
+    deleteEvent(id) {
         const app = this.app;
-        const kinds = GenogramExtras.NOTE_KINDS;
-        const i = kinds.findIndex(k => k.key === (ev.kind || 'family'));
         app.saveState();
-        ev.kind = kinds[(i + 1) % kinds.length].key;
+        app.events = app.events.filter(e => e.id !== id);
+        if (this.editingEventId === id) this.resetEventForm();
         app.autoSave(); app.render(); this.refreshEvents(true);
     }
 
@@ -288,7 +277,7 @@ class GenogramExtras {
     personRow(p, codes) {
         const app = this.app;
         const age = typeof p.getDisplayAge === 'function' ? p.getDisplayAge(app.ageReferenceDate) : p.age;
-        const meta = [GenogramExtras.GENDER[p.gender] || '', (age !== null && age !== undefined && age !== '') ? `${age} 歲` : '', p.isDeceased ? '已故' : '']
+        const meta = [GenogramExtras.genderLabel(p), (p.gender !== 'pet' && age !== null && age !== undefined && age !== '') ? `${age} 歲` : '', p.isDeceased ? '已故' : '']
             .filter(Boolean).join('｜');
         const glyph = p.lossType ? '●' : p.gender === 'female' ? '○' : p.gender === 'pregnancy' ? '△' : '□';
         const row = this.el('button', { type: 'button', class: 'list-row' + (app.selectedPersonId === p.id ? ' selected' : ''), onclick: () => this.locatePerson(p.id) }, [
@@ -351,35 +340,14 @@ class GenogramExtras {
     }
 
     eventRow(ev, codes) {
-        const app = this.app;
-        const kind = GenogramExtras.kindOf(ev.kind);
         const editing = this.editingEventId === ev.id;
-        const dot = this.el('button', { type: 'button', class: 'note-dot note-dot--btn', style: `background:${kind.color}`, title: `類別：${kind.label}（點一下切換）`, 'aria-label': `類別 ${kind.label}，點一下切換`, onclick: () => this.cycleEventKind(ev) });
-        let body;
-        if (editing) {
-            const inp = this.el('input', { type: 'text', class: 'note-edit', value: `${ev.year ? ev.year + ' ' : ''}${ev.text || ''}`, maxlength: '220', 'aria-label': '修改記事' });
-            inp.addEventListener('keydown', e => {
-                e.stopPropagation();
-                if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this.submitEvent(inp.value); }
-                if (e.key === 'Escape') { e.preventDefault(); this.resetEventForm(); }
-            });
-            inp.addEventListener('blur', () => { if (this.editingEventId === ev.id) this.submitEvent(inp.value); });
-            body = inp;
-        } else {
-            body = this.el('button', { type: 'button', class: 'note-text', title: '點一下修改', onclick: () => this.startEditEvent(ev.id) }, [
+        return this.el('div', { class: 'ev-row' + (editing ? ' editing' : '') }, [
+            this.el('span', { class: 'ev-row-text' }, [
                 this.el('span', { class: 'list-year', text: ev.year || '—' }),
                 this.el('span', { text: codes ? '（去識別化中，內容不顯示）' : (ev.text || '') })
-            ]);
-        }
-        return this.el('div', { class: 'note-row' + (editing ? ' editing' : '') }, [
-            dot,
-            body,
-            this.el('button', { type: 'button', class: 'note-del', text: '×', title: '刪除這筆記事', 'aria-label': '刪除記事', onclick: () => {
-                app.saveState();
-                app.events = app.events.filter(e => e.id !== ev.id);
-                if (this.editingEventId === ev.id) this.editingEventId = null;
-                app.autoSave(); app.render(); this.refreshEvents(true);
-            } })
+            ]),
+            this.el('button', { type: 'button', class: 'list-btn ev-edit', text: '改', title: '修改這筆事件', onclick: () => this.startEditEvent(ev.id) }),
+            this.el('button', { type: 'button', class: 'list-btn danger ev-del', text: '刪', title: '刪除這筆事件（可 Ctrl+Z 復原）', onclick: () => this.deleteEvent(ev.id) })
         ]);
     }
 
@@ -433,7 +401,7 @@ class GenogramExtras {
             this.el('span', { text: '檢視模式中（唯讀）' }), this.el('strong', { text: '離開 Esc' })
         ]);
         document.body.appendChild(this.exitPresent);
-        this.deidBanner = this.el('div', { class: 'deid-banner', role: 'status', text: '去識別化顯示中：姓名以代號呈現，備註、關係說明與記事不顯示（資料未更動）' });
+        this.deidBanner = this.el('div', { class: 'deid-banner', role: 'status', text: '去識別化顯示中：姓名以代號呈現，備註、關係說明與重大事件不顯示（資料未更動）' });
         (document.getElementById('canvasContainer') || document.body).appendChild(this.deidBanner);
     }
 
@@ -564,7 +532,7 @@ class GenogramExtras {
         children.push(table(['姓名／代號', '性別', '年齡', '狀態', '備註'], people.map(p => {
             const age = deidentify ? (p.age ?? '') : (typeof p.getDisplayAge === 'function' ? p.getDisplayAge(app.ageReferenceDate) : p.age);
             const status = [p.isIdentifiedPatient && '案主', p.isDeceased && '已故', p.lossType === 'miscarriage' && '流產', p.lossType === 'abortion' && '人工流產'].filter(Boolean).join('、');
-            return [p.name || '（未命名）', GenogramExtras.GENDER[p.gender] || '', age ?? '', status, deidentify || !showNotes ? '' : (p.notes || '')];
+            return [p.name || '（未命名）', GenogramExtras.genderLabel(p), p.gender === 'pet' ? '' : (age ?? ''), status, deidentify || !showNotes ? '' : (p.notes || '')];
         }), [20, 10, 10, 15, 45]));
 
         // 關係摘要
@@ -579,11 +547,11 @@ class GenogramExtras {
             children.push(table(['成員', '關係', '時間／說明'], relRows, [40, 25, 35]));
         }
 
-        // 家庭記事（去識別化時不輸出：自由文字可能含姓名）
+        // 重大事件（去識別化時不輸出：自由文字可能含姓名）
         const events = this.sortedEvents();
         if (events.length && !deidentify) {
-            children.push(h2('家庭記事'));
-            children.push(table(['年份', '類別', '記事'], events.map(e => [e.year || '', GenogramExtras.kindOf(e.kind).label, e.text || '']), [15, 12, 73]));
+            children.push(h2('重大事件'));
+            children.push(table(['年份', '事件'], events.map(e => [e.year || '', e.text || '']), [15, 85]));
         }
         children.push(new Paragraph({ spacing: { before: 240 }, children: [new TextRun({ text: '本文件由勵馨家系圖生成器產生。' + (deidentify ? '已去識別化。' : '含個案資料，請依機構個資規範保存。'), size: 16, color: '9CA3AF', font })] }));
 
