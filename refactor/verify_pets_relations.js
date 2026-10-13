@@ -214,6 +214,22 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     const petParent = await page.evaluate(() => window.app.parentChildPetProblem('fetus', 'cat', true));
     check('懷孕／流產不能有寵物（親子線）', /懷孕、流產不能有寵物/.test(petParent || ''), String(petParent));
 
+    // ── 4c. 自動排列：寵物排在同組手足最右邊 ──
+    const lay = await page.evaluate(() => {
+        const app = window.app;
+        const pc = (p, c) => ({ id: p + c, fromPersonId: p, toPersonId: c, type: 'parent-child' });
+        app.loadData({ version: '1.1', persons: [
+            { id: 'dad', gender: 'male', x: 300, y: 100 }, { id: 'mom', gender: 'female', x: 460, y: 100 },
+            { id: 'cat', gender: 'pet', petType: 'cat', x: 100, y: 260 }, { id: 'k10', gender: 'male', age: 10, x: 300, y: 260 },
+            { id: 'dog', gender: 'pet', petType: 'dog', x: 380, y: 260 }, { id: 'k8', gender: 'female', age: 8, x: 460, y: 260 },
+            { id: 'fetus', gender: 'pregnancy', x: 540, y: 260 }
+        ], relationships: [{ id: 'm', fromPersonId: 'dad', toPersonId: 'mom', type: 'married' },
+            ...['cat', 'k10', 'dog', 'k8', 'fetus'].flatMap(k => [pc('dad', k), pc('mom', k)])] });
+        const res = new GenogramLayout(app.persons, app.relationships, { grid: GenogramApp.GRID, households: [], lifeCircles: [] }).calculate();
+        return [...res.positions.entries()].filter(([id]) => !['dad', 'mom'].includes(id)).sort((a, b) => a[1].x - b[1].x).map(([id]) => id).join(',');
+    });
+    check('自動排列：孩子長→幼、胎兒最幼，寵物排在最右邊（依原本左右順序）', lay === 'k10,k8,fetus,cat,dog', lay);
+
     // ── 5. 上下對齊的情感線：預設走正中；上方有字或兩人之間有親子線才走右側 ──
     const route = await page.evaluate(() => {
         const app = window.app;

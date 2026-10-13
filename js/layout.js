@@ -278,6 +278,10 @@ class GenogramLayout {
                 const middle = out.filter(id => !chainSide(id));
                 out = [...toLeft, ...middle, ...toRight];
             }
+            // [PET] 寵物不參與年齡排序：一律排在同組手足最右邊（寵物之間維持原本左右順序）
+            if (out.some(id => P(id).gender === 'pet')) {
+                out = [...out.filter(id => P(id).gender !== 'pet'), ...out.filter(id => P(id).gender === 'pet')];
+            }
             return out;
         };
         childrenOfUnion.forEach(list => {
