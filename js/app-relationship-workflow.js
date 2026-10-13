@@ -188,6 +188,15 @@ Object.assign(GenogramApp.prototype, {
                 return;
             }
         }
+        if (category === 'family') {
+            const problem = this.parentChildPetProblem(relationship.fromPersonId, relationship.toPersonId, false);
+            if (problem) {
+                this.closeRelationshipModal();
+                this.updateStatus('⚠️ ' + problem, 'error');
+                this.alertDialog?.(problem, '不能建立親子關係');
+                return;
+            }
+        }
 
         // 新建與編輯必須遵守相同的唯一性規則：伴侶類與親子類在同一對人物間
         // 各只能有一條；情感類可多條並存，但不能有同方向、同類型的完全重複線。
@@ -269,6 +278,36 @@ Object.assign(GenogramApp.prototype, {
             rel.fromPersonId = rel.toPersonId;
             rel.toPersonId = tmp;
         }
+        // [PET] 人與寵物：寵物永遠是子女端（主人養寵物），不論上下位置
+        const from = this.personMap.get(rel.fromPersonId), to = this.personMap.get(rel.toPersonId);
+        if (from && to && from.gender === 'pet' && to.gender !== 'pet') {
+            const tmp = rel.fromPersonId;
+            rel.fromPersonId = rel.toPersonId;
+            rel.toPersonId = tmp;
+        }
+    },
+
+    /**
+     * [PET] 寵物的親子規則（2026-10-13）：寵物之間不能有親子／收養關係；寵物不能當父母。
+     * parentId 已知時檢查方向；只知道兩端（尚未正規化）時傳 null，只擋「兩端都是寵物」。回傳原因或 null。
+     */
+    parentChildPetProblem(aId, bId, parentKnown = true) {
+        const a = this.personMap.get(aId), b = this.personMap.get(bId);
+        if (!a || !b) return null;
+        if (a.gender === 'pet' && b.gender === 'pet') return '寵物之間不能有親子或收養關係';
+        if (parentKnown && a.gender === 'pet') return '寵物不能當父母';
+        return null;
+    },
+
+    /** [PET] 新增成員時的自動連線：擋掉不合理的（寵物當父母、寵物之間親子、寵物伴侶） */
+    isPreviewRelationshipAllowed(rel) {
+        const category = Relationship.getCategory(rel.type);
+        if (category === 'family') return !this.parentChildPetProblem(rel.fromPersonId, rel.toPersonId, true);
+        if (category === 'marriage') {
+            const a = this.personMap.get(rel.fromPersonId), b = this.personMap.get(rel.toPersonId);
+            return !(a?.gender === 'pet' || b?.gender === 'pet');
+        }
+        return true;
     },
 
     /**
@@ -283,6 +322,17 @@ Object.assign(GenogramApp.prototype, {
         const fromPerson = this.personMap.get(fromId);
         const toPerson = this.personMap.get(toId);
         const category = Relationship.getCategory(type);
+
+        // [PET] 寵物之間不能有親子／收養關係（人與寵物則寵物一定在子女端，建立後由正規化處理）
+        if (category === 'family') {
+            const problem = this.parentChildPetProblem(fromId, toId, false);
+            if (problem) {
+                this.closeRelationshipModal();
+                this.updateStatus('⚠️ ' + problem, 'error');
+                this.alertDialog?.(problem, '不能建立親子關係');
+                return;
+            }
+        }
 
         // [驗證] 婚姻類關係的限制規則
         if (category === 'marriage') {
@@ -551,7 +601,7 @@ Object.assign(GenogramApp.prototype, {
             this.pendingParents.forEach(parentId => {
                 // 檢查是否已存在親子關係（單向：from=parent, to=child）
                 const exists = this.hasParentChildLink(parentId, childId);
-                if (!exists) {
+                if (!exists && !this.parentChildPetProblem(parentId, childId, true)) { // [PET] 寵物不當父母
                     const relationship = new Relationship({
                         fromPersonId: parentId,
                         toPersonId: childId,

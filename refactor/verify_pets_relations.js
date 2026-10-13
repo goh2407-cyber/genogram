@@ -116,10 +116,40 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     check('建立被擋：沒有新增關係、跳出提示', blocked.added === 0 && blocked.shown, JSON.stringify(blocked));
     await page.getByRole('button', { name: '知道了' }).click();
 
+    // ── 3b. 寵物的親子規則 ──
+    const petKin = await page.evaluate(() => {
+        const app = window.app;
+        app.loadData({ version: '1.1', persons: [
+            { id: 'cat1', gender: 'pet', petType: 'cat', x: 100, y: 100 }, { id: 'cat2', gender: 'pet', petType: 'cat', x: 100, y: 300 },
+            { id: 'mom', gender: 'female', x: 300, y: 300 }, { id: 'kid', gender: 'male', x: 300, y: 500 }
+        ], relationships: [] });
+        const make = (a, b) => { app.connectingFrom = { person: app.personMap.get(a) }; app.connectingTo = app.personMap.get(b); app.createRelationship('parent-child', 'adopted'); };
+        const n0 = app.relationships.length;
+        make('cat1', 'cat2');
+        const petPetBlocked = app.relationships.length === n0;
+        const m = app.elements.confirmModal;
+        const dialog = m && getComputedStyle(m).display !== 'none' && /寵物之間不能有親子或收養關係/.test(m.textContent);
+        app._resolveConfirm?.(true); app.modalManager?.close?.(m);
+        // 寵物畫在人的上方也一樣：建立後寵物在子女端
+        make('cat1', 'kid');
+        const r = app.relationships[app.relationships.length - 1];
+        const petIsChild = r && r.type === 'parent-child' && r.fromPersonId === 'kid' && r.toPersonId === 'cat1';
+        // 新增成員自動連線：選了寵物再加「子女」→ 不會把寵物當父母
+        const allowed = app.isPreviewRelationshipAllowed({ type: 'parent-child', fromPersonId: 'cat2', toPersonId: 'kid' });
+        const allowedHuman = app.isPreviewRelationshipAllowed({ type: 'parent-child', fromPersonId: 'mom', toPersonId: 'cat2' });
+        const petCouple = app.isPreviewRelationshipAllowed({ type: 'married', fromPersonId: 'mom', toPersonId: 'cat2' });
+        return { petPetBlocked, dialog, petIsChild, previewPetParent: allowed, previewHumanParent: allowedHuman, previewPetCouple: petCouple };
+    });
+    check('寵物之間不能收養（連線被擋、跳提示）', petKin.petPetBlocked && petKin.dialog, JSON.stringify(petKin));
+    check('人與寵物的親子線：寵物一定在子女端', petKin.petIsChild, JSON.stringify(petKin));
+    check('新增成員自動連線：寵物不當父母、不配伴侶；人可以養寵物', !petKin.previewPetParent && petKin.previewHumanParent && !petKin.previewPetCouple, JSON.stringify(petKin));
+    if (await page.getByRole('button', { name: '知道了' }).isVisible().catch(() => false)) await page.getByRole('button', { name: '知道了' }).click();
+
     // ── 4. 關係線提起／放下 ──
     const fx = await page.evaluate(async () => {
         const app = window.app;
         const out = {};
+        app.loadData({ version: '1.1', persons: [{ id: 'a1', gender: 'male', x: 200, y: 300 }, { id: 'U', gender: 'female', x: 400, y: 300 }], relationships: [] });
         app.connectingFrom = { person: app.personMap.get('a1') }; app.connectingTo = app.personMap.get('U');
         app.createRelationship('ex-partner');
         const rel = app.relationships[app.relationships.length - 1];

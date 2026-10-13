@@ -470,7 +470,7 @@ class GenogramCanvas {
             const isSelected = selectedId === person.id;
             const isMultiSelected = (selectedPersonIds || []).includes(person.id);
             const isHighlighted = (highlightedIds || []).includes(person.id);
-            const isConnecting = connectingFrom && connectingFrom.person.id === person.id;
+            const isConnecting = !!(connectingFrom && connectingFrom.person && connectingFrom.person.id === person.id);
             if (!st) { this.drawPerson(person, isSelected || isMultiSelected, isConnecting, isHighlighted, view); return; }
             this.ctx.save();
             this.ctx.translate(person.x, person.y);

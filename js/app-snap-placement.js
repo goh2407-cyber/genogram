@@ -468,11 +468,14 @@ Object.assign(GenogramApp.prototype, {
                 this.canvas.playDrop?.(person.id); // [FX] 落子
                 idMap.set(spec.personId, person.id);
             });
-            previews.forEach(preview => this.relationships.push(new Relationship({
-                ...preview,
-                fromPersonId: idMap.get(preview.fromPersonId) || preview.fromPersonId,
-                toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
-            })));
+            previews.forEach(preview => {
+                const rel = new Relationship({
+                    ...preview,
+                    fromPersonId: idMap.get(preview.fromPersonId) || preview.fromPersonId,
+                    toPersonId: idMap.get(preview.toPersonId) || preview.toPersonId
+                });
+                if (this.isPreviewRelationshipAllowed(rel)) this.relationships.push(rel); // [PET]
+            });
             this.placementSession = null;
             this.selectedPersonId = null;
             this.selectedPersonIds = [];
@@ -495,11 +498,12 @@ Object.assign(GenogramApp.prototype, {
             this.canvas.playDrop?.(person.id); // [FX] 落子
             const previewId = session.request.personId || '__placement__';
             previews.forEach(preview => {
-                this.relationships.push(new Relationship({
+                const rel = new Relationship({
                     ...preview,
                     fromPersonId: preview.fromPersonId === previewId ? person.id : preview.fromPersonId,
                     toPersonId: preview.toPersonId === previewId ? person.id : preview.toPersonId
-                }));
+                });
+                if (this.isPreviewRelationshipAllowed(rel)) this.relationships.push(rel); // [PET] 寵物不當父母、不配對
             });
             this.placementSession = null;
             this.selectedPersonIds = [];
