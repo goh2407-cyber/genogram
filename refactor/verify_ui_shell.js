@@ -192,7 +192,7 @@ async function checkIconOnlyAccessibility(page) {
     await showRoutingWarning(page);
     const wide = await shellMetrics(page);
     check('1920px uses fixed desktop inspector', !wide.compact && !wide.overlay
-        && wide.inspector?.width >= 315 && wide.inspector?.width <= 317, JSON.stringify(wide));
+        && wide.inspector?.width >= 359 && wide.inspector?.width <= 361, JSON.stringify(wide));
     check('1920px canvas dock does not collide with global actions',
         !overlaps(wide.dock, wide.actions), JSON.stringify({ dock: wide.dock, actions: wide.actions }));
     check('desktop routing warning stays within canvas and ignores pointers',
@@ -204,8 +204,8 @@ async function checkIconOnlyAccessibility(page) {
     await page.setViewportSize({ width: 1366, height: 768 });
     await settleResponsiveLayout(page);
     const standard = await shellMetrics(page);
-    check('1366px stays desktop with a 296–336px inspector',
-        !standard.compact && standard.inspector?.width >= 296 && standard.inspector?.width <= 336,
+    check('1366px stays desktop with a 340–380px inspector (2026-10-13 加寬)',
+        !standard.compact && standard.inspector?.width >= 340 && standard.inspector?.width <= 380,
         JSON.stringify(standard));
     check('1366px global bar remains one row', standard.bar?.height <= 66,
         JSON.stringify(standard.bar));
@@ -247,8 +247,8 @@ async function checkIconOnlyAccessibility(page) {
         await settleResponsiveLayout(page);
         await showRoutingWarning(page);
         const opened = await shellMetrics(page);
-        check('compact toggle opens a 296px overlay', opened.compact && opened.overlay
-            && Math.abs((opened.inspector?.width || 0) - 296) < 0.5, JSON.stringify(opened));
+        check('compact toggle opens a 340px overlay', opened.compact && opened.overlay
+            && Math.abs((opened.inspector?.width || 0) - 340) < 0.5, JSON.stringify(opened));
         check('compact overlay does not change canvas layout width',
             Math.abs((opened.canvas?.width || 0) - compactCanvasWidth) < 0.5,
             `${compactCanvasWidth} → ${opened.canvas?.width}`);

@@ -2,7 +2,7 @@
 
 /* 五個分頁並排（屬性／圖例／檢視／清單／事件） */
 .inspector-tabs { grid-template-columns: repeat(5, 1fr); }
-.inspector-tab { padding-left: 2px; padding-right: 2px; font-size: 13px; white-space: nowrap; }
+.inspector-tab { padding-left: 2px; padding-right: 2px; font-size: 15px; white-space: nowrap; }
 
 /* ── 清單分頁 ── */
 .list-panel { padding: 12px 14px 16px; display: grid; gap: 10px; align-content: start; }
@@ -11,52 +11,52 @@
 .list-seg-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 34px; border: 0; border-radius: 8px; background: transparent;
-    font: inherit; font-size: 13px; color: var(--text-secondary); cursor: pointer;
+    font: inherit; font-size: 15px; color: var(--text-secondary); cursor: pointer;
 }
 .list-seg-btn.active { background: #fff; color: var(--brand); font-weight: 600; box-shadow: var(--shadow-sm); }
-.list-count { font-size: 11px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: rgba(0, 0, 0, .06); color: var(--text-secondary); }
+.list-count { font-size: 13px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: rgba(0, 0, 0, .06); color: var(--text-secondary); }
 .list-seg-btn.active .list-count { background: var(--brand-light); color: var(--brand); }
 .list-search, .list-input {
     width: 100%; box-sizing: border-box; padding: 7px 10px;
     border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);
-    font: inherit; font-size: 13px; background: #fff;
+    font: inherit; font-size: 15px; background: #fff;
 }
 .list-search:focus, .list-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
 .list-items { display: grid; gap: 4px; }
 .list-row {
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 8px 10px; border: 1px solid transparent; border-radius: var(--border-radius-sm);
-    background: #fff; font: inherit; font-size: 13px; color: var(--text-primary);
+    background: #fff; font: inherit; font-size: 15px; color: var(--text-primary);
     text-align: left; cursor: pointer;
 }
 .list-row:hover { border-color: var(--border-color); background: var(--bg-light); }
 .list-row.selected { border-color: var(--brand); background: var(--brand-light); }
 .list-row--event { cursor: default; }
-.list-glyph { width: 22px; flex-shrink: 0; text-align: center; font-size: 17px; color: var(--text-secondary); }
+.list-glyph { width: 22px; flex-shrink: 0; text-align: center; font-size: 19px; color: var(--text-secondary); }
 .list-glyph.ip { color: var(--text-primary); }
 .list-main { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .list-title { display: flex; align-items: center; gap: 6px; font-weight: 500; overflow-wrap: anywhere; }
-.list-sub { font-size: 12px; color: var(--text-muted); }
-.list-badge { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--ink-800); color: #fff; font-weight: 500; }
-.list-go { font-size: 12px; color: var(--brand); padding: 2px 6px; border-radius: 6px; opacity: 0; }
+.list-sub { font-size: 14px; color: var(--text-muted); }
+.list-badge { font-size: 13px; padding: 0 6px; border-radius: 999px; background: var(--ink-800); color: #fff; font-weight: 500; }
+.list-go { font-size: 14px; color: var(--brand); padding: 2px 6px; border-radius: 6px; opacity: 0; }
 .list-row:hover .list-go, .list-row.selected .list-go, .list-row:focus-visible .list-go { opacity: 1; }
-.list-kind { flex-shrink: 0; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); color: var(--text-secondary); }
+.list-kind { flex-shrink: 0; font-size: 13px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); color: var(--text-secondary); }
 .list-kind--couple { background: #eef2ff; color: #4338ca; }
 .list-kind--family { background: #f3f4f6; color: #374151; }
 .list-kind--emo { background: #fff1f2; color: #be123c; }
 .list-year { width: 44px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--text-secondary); font-weight: 600; }
 .list-actions { display: flex; gap: 4px; }
-.list-mini { border: 1px solid var(--border-color); background: #fff; border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.list-mini { border: 1px solid var(--border-color); background: #fff; border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 14px; cursor: pointer; }
 .list-mini.danger { color: var(--danger-color); }
-.list-empty, .list-hint { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.list-empty, .list-hint { margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
 .list-empty { text-align: center; padding: 18px 0; }
 .list-event-form { display: grid; gap: 6px; padding: 10px; border: 1px dashed var(--border-color); border-radius: var(--border-radius-sm); background: var(--bg-panel); }
-.list-section-title { margin: 4px 0 0; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.list-section-title { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--text-secondary); }
 .list-inline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .list-event-form[hidden] { display: none; }
 .list-event-row { display: grid; grid-template-columns: 72px 1fr; gap: 6px; }
 .list-event-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.list-btn { border: 1px solid var(--border-color); background: #fff; border-radius: var(--border-radius-sm); padding: 5px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+.list-btn { border: 1px solid var(--border-color); background: #fff; border-radius: var(--border-radius-sm); padding: 5px 14px; font: inherit; font-size: 15px; cursor: pointer; }
 .list-btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 .list-btn[hidden] { display: none; }
 .list-btn.danger { color: var(--danger-color); }
@@ -107,20 +107,20 @@ body.presentation-mode #genogramCanvas { cursor: grab; }
 .ev-form { display: grid; gap: 8px; padding: 10px; border-radius: 10px; background: var(--bg-light); }
 .ev-form.editing { background: var(--brand-light); }
 .ev-fields { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: start; }
-.ev-field { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.ev-year-input, .ev-text-input { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 8px; font: inherit; font-size: 13px; font-weight: 400; color: var(--text-primary); background: #fff; }
+.ev-field { display: grid; gap: 4px; font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.ev-year-input, .ev-text-input { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 8px; font: inherit; font-size: 15px; font-weight: 400; color: var(--text-primary); background: #fff; }
 .ev-text-input { resize: vertical; min-height: 38px; }
 .ev-year-input:focus, .ev-text-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
 .ev-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .ev-list { display: grid; gap: 4px; }
 .ev-row { display: flex; align-items: center; gap: 6px; padding: 6px 4px 6px 2px; border-bottom: 1px solid var(--border-light); }
 .ev-row.editing { background: var(--brand-light); border-radius: 6px; }
-.ev-row-text { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; color: var(--text-primary); overflow-wrap: anywhere; }
-.ev-row-text .list-year { flex-shrink: 0; min-width: 40px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); font-size: 11px; font-weight: 600; text-align: center; }
+.ev-row-text { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 15px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ev-row-text .list-year { flex-shrink: 0; min-width: 40px; padding: 1px 7px; border-radius: 999px; background: var(--bg-light); font-size: 13px; font-weight: 600; text-align: center; }
 .ev-row .list-btn { flex-shrink: 0; padding: 2px 9px; }
 @media (max-width: 420px) { .ev-fields { grid-template-columns: 1fr; } }
 
 /* ── 排列間距（檢視分頁） ── */
 .view-spacing { display: grid; gap: 6px; }
-.view-spacing > label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.view-spacing select { width: 100%; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); font: inherit; font-size: 13px; background: #fff; }
+.view-spacing > label { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.view-spacing select { width: 100%; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); font: inherit; font-size: 15px; background: #fff; }
