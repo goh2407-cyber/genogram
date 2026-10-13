@@ -2,9 +2,9 @@
 /**
  * 三副本同步：root → geno/、refactor/app/
  *
- *   - js/**（含 domain/、ui/；不動 geno/js/vendor/）與 css/styles.css 複製到兩個副本（raw byte 一致）
- *   - index.html 只複製到 refactor/app/；geno/index.html 保留本地字型與 vendor 路徑，**不覆蓋**
- *     （若 root 的 index.html 有改動，會比對「去掉 3 行資產引用後」是否一致並提示）
+ *   - js/**（含 domain/、ui/、extras/；不動 geno/js/vendor/）與 css/styles.css、css/extras.css 複製到兩個副本（raw byte 一致）
+ *   - index.html 原樣複製到 refactor/app/；geno/index.html 由 root 產生，只把兩個線上資產換成本地版：
+ *     Google Fonts → fonts/noto-sans-tc.css、cdnjs jsPDF → js/vendor/jspdf.umd.min.js（2026-10-13 起自動產生，不再手改）
  *   - 完成後印 md5 表，並跑 verify_mirror_sync.js 守門
  *
  * 用法：
@@ -32,8 +32,23 @@ const mirrors = [
 
 const sources = [
     ...walk(path.join(root, 'js')).filter(f => f.endsWith('.js')),
-    path.join(root, 'css', 'styles.css')
+    path.join(root, 'css', 'styles.css'),
+    path.join(root, 'css', 'extras.css')
 ];
+
+/** geno/index.html = root index.html 換掉兩個線上資產（離線可用；其餘內容完全相同） */
+const GENO_ASSET_SWAPS = [
+    [/<link href="https:\/\/fonts\.googleapis\.com\/css2\?family=Noto\+Sans\+TC[^"]*" rel="stylesheet">/, '<link href="fonts/noto-sans-tc.css" rel="stylesheet">'],
+    [/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/jspdf\/[^"]*\/jspdf\.umd\.min\.js"><\/script>/, '<script src="js/vendor/jspdf.umd.min.js"></script>']
+];
+function genoIndexFrom(html) {
+    let out = html;
+    for (const [re, local] of GENO_ASSET_SWAPS) {
+        if (!re.test(out)) throw new Error('root index.html 找不到要換成本地版的資產：' + re);
+        out = out.replace(re, local);
+    }
+    return out;
+}
 
 let copied = 0, skipped = 0;
 for (const m of mirrors) {
@@ -54,17 +69,15 @@ for (const m of mirrors) {
             if (!dry) fs.copyFileSync(srcIndex, dstIndex);
             copied++;
         } else skipped++;
-    } else if (fs.existsSync(dstIndex)) {
-        // geno/index.html：只比對「非資產引用」的內容是否一致，不覆蓋
-        const strip = s => s.replace(/\r\n/g, '\n').split('\n')
-            .filter(l => !/fonts\.googleapis|fonts\/noto-sans-tc\.css|jspdf\.umd\.min\.js|dagre\.min\.js/.test(l)).join('\n');
-        const a = strip(fs.readFileSync(srcIndex, 'utf8'));
-        const b = strip(fs.readFileSync(dstIndex, 'utf8'));
-        if (a !== b) {
-            console.log(`WARN | geno/index.html 與 root index.html 內容（排除本地資產 3 行）不一致 → 請手動套用同一份 HTML 變更到 geno/index.html`);
-        } else {
-            console.log(`OK   | geno/index.html 內容一致（僅資產路徑不同，保留本地版）`);
-        }
+    } else {
+        // geno/index.html：由 root 產生（只換本地字型與 jsPDF）
+        const want = genoIndexFrom(fs.readFileSync(srcIndex, 'utf8'));
+        const have = fs.existsSync(dstIndex) ? fs.readFileSync(dstIndex, 'utf8') : null;
+        if (have !== want) {
+            console.log(`${dry ? 'WOULD WRITE' : 'WRITE'} | index.html → ${rel(dstIndex)}（本地字型＋本地 jsPDF）`);
+            if (!dry) fs.writeFileSync(dstIndex, want, 'utf8');
+            copied++;
+        } else skipped++;
     }
 }
 

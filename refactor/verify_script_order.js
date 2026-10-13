@@ -12,7 +12,7 @@ const expected = ['jspdf.umd.min.js', ...['person', 'layout', 'relationship', 'd
     'domain/family-route-planner', 'history', 'canvas', ...canvasMixins, 'canvas-export', 'storage',
     'ui/modal-manager', 'ui/property-panel-templates', 'app', ...appMixins].map(name => `js/${name}.js`)];
 
-// 線上版（根目錄 index.html 與其驗證副本 refactor/app）在最後多載入 extras；離線包 geno/ 不載入（Word 匯出需線上程式庫）。
+// 三份 index.html 都在最後載入 extras（2026-10-13 起 geno 也載入：放在內網 interhub 使用；Word 匯出需連得到 jsDelivr）。
 // 內部專用程式（js/ai/，由 internal/build.js 注入內部版）不得出現在公開版任何一份 index.html。
 const ONLINE_ONLY_SCRIPTS = ['js/extras/genogram-extras.js'];
 
@@ -74,7 +74,7 @@ assert(!fs.existsSync(path.join(root, 'js', 'ai')) && !fs.existsSync(path.join(r
     'internal-only files must live under internal/');
 console.log('PASS | public tree has no internal-only files');
 for (const file of ['index.html', 'geno/index.html', 'refactor/app/index.html']) {
-    checkOrder(fs.readFileSync(path.join(root, file), 'utf8'), { allowAi: file !== 'geno/index.html' });
+    checkOrder(fs.readFileSync(path.join(root, file), 'utf8'), { allowAi: true });
     console.log(`PASS | ${file} dependency order and synchronous loading`);
 }
 for (const [names, className] of [[canvasMixins, 'GenogramCanvas'], [appMixins, 'GenogramApp']]) {

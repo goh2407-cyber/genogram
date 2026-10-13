@@ -49,7 +49,7 @@ app-snap-placement → app-io
 ```
 
 - **線上版延伸（DEMO）**：`js/extras/genogram-extras.js` + `css/extras.css`（清單分頁、重大事件 `app.events`、畫面去識別化
-  `viewOptions.deidentifyScreen`、隱藏暴力線 `showAbuseRelationships`、檢視模式、Word 匯出）；只在線上版（根目錄、refactor/app）載入，排在所有 app mixin 之後；geno/ 不載入。
+  `viewOptions.deidentifyScreen`、隱藏暴力線 `showAbuseRelationships`、檢視模式、Word 匯出）；三份 index.html 都載入（2026-10-13 起 geno 也載入，部署在內網 interhub），排在所有 app mixin 之後。
   線條可見性一律走 `Relationship.isVisibleInView(type, view)`。回歸 `verify_extras.js`。
 - **文字位置拉桿（成員／關係線文字／同住圈名稱共用）**：`getLabelEditTarget()`（app-property-panel）統一三種目標；
   關係文字位移存 `Relationship.labelOffset {x,y}`、同住圈名稱存 `household.labelOffset {x,y}`（一律換新物件，history 是淺拷貝）。
@@ -59,9 +59,16 @@ app-snap-placement → app-io
 - `internal/` 為內部專用資料夾（gitignored，另有私人 repo），公開 repo 不放其內容。
 - **畫面／匯出去識別化**一律用 `canvas.displayOverride`（只換畫字內容），**不可**換人物複本或改 showNotes，否則繞線會跑掉。
 
+## 文字清晰度（2026-10-13，使用者主管要求）
+
+- 螢幕畫布不透明（`getContext('2d', {alpha:false})`，底色由 `clear()` 填 `--bg-canvas`）、文字基準點對齊整數裝置像素（`_installTextSnap`，只裝在螢幕 ctx）、畫布像素尺寸取整數且 CSS 尺寸 = 像素 ÷ dpr。
+- 畫布文字：微軟正黑體 15px（Mac 退回 Noto Sans TC）；`GenogramCanvas.TEXT_STYLE`：姓名 600 `#1c1d21`、年齡 700 +2px、關係線文字 500 13px `#2b2d33`、備註維持 `#666`。介面字型不變。
+- 下排快速鈕（兒子／女兒／懷孕）會依「提起」後的姓名／備註框自動下移（`getQuickButtonLayout`）。
+- 試過把文字改成 DOM 疊層，未採用（已移除）。
+
 ## 三副本同步
 
-根 `/`、`geno/`、`refactor/app/` 三份 js 副本必須 md5 一致。
+根 `/`、`geno/`、`refactor/app/` 三份 js／css 副本必須 md5 一致；`geno/index.html` 由 `sync_mirrors.js` 從根目錄產生（只換本地字型與本地 jsPDF），不要手改。
 主 Opus 負責每個 Sprint 結束時同步（`geno/`、`refactor/app/` 為 gitignored
 本機副本）。
 
