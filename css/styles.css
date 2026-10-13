@@ -239,20 +239,20 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 19px;
-    height: 19px;
-    font-size: 17px;
+    width: 22px;   /* 2026-10-13 使用者要求工具列圖示加大（原 19px） */
+    height: 22px;
+    font-size: 19px;
     line-height: 1;
 }
 
 .tool-btn .icon svg {
-    width: 19px;
-    height: 19px;
+    width: 22px;
+    height: 22px;
     display: block;
 }
 
 .tool-btn .tool-label {
-    font-size: 10.5px;
+    font-size: 12.5px;   /* 2026-10-13 使用者要求工具列文字放大 2px（原 10.5px） */
     letter-spacing: 0.2px;
     opacity: 0.85;
     white-space: nowrap;
@@ -1474,8 +1474,9 @@ body {
    響應式設計
    =================================== */
 
-/* 中等寬度：收起文字標籤，只留圖示（title 屬性仍提供提示） */
-@media (max-width: 1560px) {
+/* 中等寬度：收起文字標籤，只留圖示（title 屬性仍提供提示）
+   2026-10-13 工具列字放大後，有文字時要約 1740px 才不撞右側檔案鈕群（原 1560px 時其實已經會撞） */
+@media (max-width: 1740px) {
     .tool-btn .tool-label {
         display: none;
     }
@@ -1832,6 +1833,16 @@ body {
 .canvas-tool-dock .tool-btn.active { color: var(--brand); background: var(--brand-light); border-color: rgba(237,18,97,.22); }
 .canvas-tool-dock .tool-btn.primary { color: var(--surface-panel); background: var(--brand); }
 .canvas-tool-dock .tool-divider { height: 24px; background: var(--line-ui); }
+/* 2026-10-13 工具列字放大後：有文字時按鈕高度跟著內容（圖示＋文字），左右留白收窄，避免撞到右側檔案鈕群 */
+@media (min-width: 1741px) {
+    .canvas-tool-dock .tool-btn,
+    .global-actions .tool-btn { height: auto; min-height: var(--control-sm); padding: 1px 5px; gap: 2px; }
+    .global-actions .tool-btn .tool-label,
+    .canvas-tool-dock .tool-btn .tool-label { letter-spacing: 0; line-height: 1.2; }
+    .canvas-tool-dock { padding: 3px; }
+    .canvas-tool-dock .tool-group,
+    .global-actions .tool-group { padding-top: 2px; padding-bottom: 2px; }
+}
 
 .inspector-rail-spacer { display: none; }
 .inspector-panel {
