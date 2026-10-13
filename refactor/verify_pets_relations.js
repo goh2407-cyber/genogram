@@ -281,6 +281,41 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     check('畫的順序：情感線 → 親子線（親子線不被蓋住）', both.emoBeforeFamilies, both.order);
     check('上下對齊：繞到右側的情感線點得到；正中是親子線', both.green === 'e2' && both.black === 'a2', JSON.stringify(both));
 
+    // ── 7. 寵物的親子線自成一組；建立時父母不被移到寵物身上 ──
+    const grp = await page.evaluate(() => {
+        const app = window.app;
+        const pc = (a, c, id) => ({ id, fromPersonId: a, toPersonId: c, type: 'parent-child' });
+        app.loadData({ version: '1.1', persons: [
+            { id: 'gp', name: '外公', gender: 'male', x: 600, y: 120 }, { id: 'gm', name: '外婆', gender: 'female', x: 800, y: 120 },
+            { id: 'mom', name: '母', gender: 'female', x: 500, y: 290 }, { id: 'aunt', name: '阿姨', gender: 'female', x: 1000, y: 290 },
+            { id: 'dog', gender: 'pet', petType: 'dog', x: 1300, y: 290 }, { id: 'cat', gender: 'pet', petType: 'cat', x: 1250, y: 460 }
+        ], relationships: [
+            { id: 'gmar', fromPersonId: 'gp', toPersonId: 'gm', type: 'divorced' },
+            pc('gp', 'mom', 'r1'), pc('gm', 'mom', 'r2'), pc('gp', 'aunt', 'r3'), pc('gm', 'aunt', 'r4'), pc('gp', 'cat', 'r6'), pc('gm', 'cat', 'r7')
+        ] });
+        app.render();
+        app.connectingFrom = { person: app.personMap.get('aunt') }; app.connectingTo = app.personMap.get('dog');
+        app.createRelationship('parent-child');
+        app.render();
+        const P = id => app.personMap.get(id);
+        const rel = id => app.relationships.find(r => r.id === id);
+        const dogRel = app.relationships.find(r => r.type === 'parent-child' && r.toPersonId === 'dog');
+        const dogPath = app.canvas.getRelationshipPath(P('aunt'), P('dog'), dogRel, app.relationships);
+        const catPath = app.canvas.getRelationshipPath(P('gp'), P('cat'), rel('r6'), app.relationships);
+        const groups = app.canvas._buildFamilyGroups(app.relationships.filter(r => r.type === 'parent-child'), new KinshipEngine(app.persons, app.relationships));
+        const catGroup = groups.find(g => g.childIds.includes('cat'));
+        return {
+            auntX: P('aunt').x,
+            dogOverTop: dogPath.length === 4 && dogPath[0].x > 1000 && dogPath.every(pt => pt.y <= 265 + 0.5),
+            catAlone: catGroup && catGroup.childIds.length === 1,
+            catSimple: catPath.length <= 4 && catPath.every(pt => pt.x >= 600 && pt.x <= 1260),
+            dogPath: dogPath.map(pt => Math.round(pt.x) + ',' + Math.round(pt.y)).join(' ')
+        };
+    });
+    check('連接阿姨→狗：阿姨不會被移到狗身上', grp.auntX === 1000, JSON.stringify(grp));
+    check('同列寵物的親子線：從主人頭頂偏側往上繞，不與主人自己的親子線重疊', grp.dogOverTop, grp.dogPath);
+    check('寵物的親子線自成一組，擺得再遠也是簡單的轉彎線', grp.catAlone && grp.catSimple, JSON.stringify(grp));
+
     check('零 console error', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'RESULT OK (ex-partner / pets / no family marriage / relationship fx)');
 })().catch(err => { console.error(err); process.exit(1); });

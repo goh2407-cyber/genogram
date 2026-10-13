@@ -2318,7 +2318,9 @@ class GenogramCanvas {
         const familyMap = new Map();
         Array.from(childParents.keys()).sort().forEach(childId => {
             const parentIds = Array.from(childParents.get(childId)).sort();
-            const familyKey = parentIds.join('\u0001');
+            // [PET] 寵物自成一組：不跟手足共用橫桿，從主人直接拉一條簡單的線（2026-10-13）
+            const childPerson = (this.personMap && this.personMap.get(childId)) || (kinship.getPerson ? kinship.getPerson(childId) : null);
+            const familyKey = parentIds.join('\u0001') + (childPerson && childPerson.gender === 'pet' ? '\u0002pet:' + childId : '');
             if (!familyMap.has(familyKey)) {
                 familyMap.set(familyKey, {
                     key: familyKey,

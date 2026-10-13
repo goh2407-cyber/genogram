@@ -33,7 +33,8 @@ Object.assign(GenogramCanvas.prototype, {
             parentObjs.forEach(parent => childObjs.forEach(child => {
                 const shared = (otherRels || []).some(r => (r.fromPersonId === parent.id && r.toPersonId === child.id)
                     || (r.fromPersonId === child.id && r.toPersonId === parent.id));
-                if (shared) avoidStraightPairs.push(`${parent.id}->${child.id}`);
+                // [PET] 跟主人同一列的寵物：親子線一律從頭頂繞（直線看起來像婚姻線）
+                if (shared || child.gender === 'pet') avoidStraightPairs.push(`${parent.id}->${child.id}`);
             }));
             const localSignature = this._getFamilyPlanCacheSignature(
                 group, parentObjs, childObjs, sourceInfo, relevantObstacles

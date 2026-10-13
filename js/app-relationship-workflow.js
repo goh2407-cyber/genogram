@@ -650,7 +650,7 @@ Object.assign(GenogramApp.prototype, {
             // 單親：直接以自己的子女置中
             if (spouseIds.length === 0) {
                 const childXPositions = this.persons
-                    .filter(ch => this.hasParentChildLink(parentId, ch.id))
+                    .filter(ch => ch.gender !== 'pet' && this.hasParentChildLink(parentId, ch.id)) // [PET] 寵物不參與置中
                     .map(ch => ch.x);
 
                 if (childXPositions.length === 0) return;
@@ -672,7 +672,7 @@ Object.assign(GenogramApp.prototype, {
             processedPairs.add(pairKey);
 
             const sharedChildXPositions = this.persons
-                .filter(ch => this.hasParentChildLink(parentId, ch.id) && this.hasParentChildLink(spouseId, ch.id))
+                .filter(ch => ch.gender !== 'pet' && this.hasParentChildLink(parentId, ch.id) && this.hasParentChildLink(spouseId, ch.id)) // [PET]
                 .map(ch => ch.x);
 
             if (sharedChildXPositions.length === 0) return;

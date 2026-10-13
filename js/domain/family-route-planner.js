@@ -352,8 +352,11 @@ class FamilyRoutePlanner {
                 if (mode === 'same-row' && avoid && candidates.length >= 3) {
                     // 從兩人頭頂往上繞（整條都不碰到兩人之間的水平線）
                     const laneY = Math.min(parent.y, child.y) - half - 22;
+                    // 起點從父母頭頂「偏向子女那一側」出發，不跟父母自己往上接的親子線（頭頂正中）重疊
+                    const dir = child.x >= parent.x ? 1 : -1;
+                    const startX = parent.x + dir * half * 0.5;
                     const overTops = this._dedupePoints([
-                        { x: parent.x, y: parent.y - half }, { x: parent.x, y: laneY },
+                        { x: startX, y: parent.y - half }, { x: startX, y: laneY },
                         { x: child.x, y: laneY }, { x: child.x, y: child.y - half }
                     ]);
                     candidates = [overTops, candidates[1], candidates[2], candidates[0]];
