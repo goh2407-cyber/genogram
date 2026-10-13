@@ -48,6 +48,17 @@ app → app-pointer → app-hittest → app-quick-add → app-property-panel →
 app-snap-placement → app-io
 ```
 
+- **線上版延伸（DEMO）**：`js/extras/genogram-extras.js` + `css/extras.css`（清單分頁、重大事件 `app.events`、畫面去識別化
+  `viewOptions.deidentifyScreen`、隱藏暴力線 `showAbuseRelationships`、檢視模式、Word 匯出）；只在線上版（根目錄、refactor/app）載入，排在所有 app mixin 之後；geno/ 不載入。
+  線條可見性一律走 `Relationship.isVisibleInView(type, view)`。回歸 `verify_extras.js`。
+- **文字位置拉桿（成員／關係線文字／同住圈名稱共用）**：`getLabelEditTarget()`（app-property-panel）統一三種目標；
+  關係文字位移存 `Relationship.labelOffset {x,y}`、同住圈名稱存 `household.labelOffset {x,y}`（一律換新物件，history 是淺拷貝）。
+  命中框於繪製時寫入 `canvas.textLabelBoxes`。回歸 `verify_text_label_move.js`。
+- **生活圈（LC-4）**：`drawLifeCircleSet()` 兩道繪製（先填色後描邊）；名稱錨點 `getLifeCircleLabelAnchor(lc, persons, textW)`；
+  平滑曲線幾何統一由 `_smoothControlPoints()` 供 `buildSmoothClosedPath` / `sampleSmoothClosedPath` 共用（改一處兩處同步）。回歸 `verify_lifecircle_style.js`。
+- `internal/` 為內部專用資料夾（gitignored，另有私人 repo），公開 repo 不放其內容。
+- **畫面／匯出去識別化**一律用 `canvas.displayOverride`（只換畫字內容），**不可**換人物複本或改 showNotes，否則繞線會跑掉。
+
 ## 三副本同步
 
 根 `/`、`geno/`、`refactor/app/` 三份 js 副本必須 md5 一致。

@@ -180,9 +180,20 @@ Object.assign(GenogramCanvas.prototype, {
                 this.ctx.lineWidth = 4;
                 this.ctx.lineJoin = 'round';
                 this.ctx.strokeStyle = '#ffffff';
-                this.ctx.strokeText(household.label, ax, ay - 6);
+                // 手動位移（文字位置拉桿）
+                const lo = household.labelOffset;
+                const tx = ax + (lo ? lo.x : 0);
+                const ty = ay - 6 + (lo ? lo.y : 0);
+                this.ctx.strokeText(household.label, tx, ty);
                 this.ctx.fillStyle = isSelected ? '#4a90d9' : '#333';
-                this.ctx.fillText(household.label, ax, ay - 6);
+                this.ctx.fillText(household.label, tx, ty);
+                if (this.textLabelBoxes) {
+                    const w = this.ctx.measureText(household.label).width;
+                    const box = (cx, by) => ({ left: cx - w / 2 - 3, right: cx + w / 2 + 3, top: by - 17, bottom: by + 2 });
+                    this.textLabelBoxes.set('house:' + household.id, {
+                        kind: 'house', id: household.id, bounds: box(tx, ty), baseBounds: box(ax, ay - 6)
+                    });
+                }
                 this.ctx.restore();
             }
         });
@@ -304,7 +315,7 @@ Object.assign(GenogramCanvas.prototype, {
         // [HH-5c] 快取：成員座標、附近障礙物、走廊與連線一樣 → 直接沿用上次結果
         const nearObstacles = obstacles.filter(o =>
             o.x > minX - exclusion && o.x < maxX + exclusion && o.y > minY - exclusion && o.y < maxY + exclusion);
-        const sig = JSON.stringify([
+        const sig = JSON.stringify(['hh6',
             members.map(m => [m.id, Math.round(m.x * 10), Math.round(m.y * 10)]),
             nearObstacles.map(o => [o.id, Math.round(o.x * 10), Math.round(o.y * 10)]),
             corridorSegments.map(([p, q]) => [Math.round(p.x), Math.round(p.y), Math.round(q.x), Math.round(q.y)]),
@@ -315,10 +326,23 @@ Object.assign(GenogramCanvas.prototype, {
 
         // [HH-5c] 外框 = 光柵化聯集輪廓：成員泡泡 ∪ 走廊帶 ∪ 成員間連線帶 − 障礙物圓（marching squares）。
         // 由建構保證單一簡單多邊形、不自交、無尖刺；障礙物一律在框外。
+        // [HH-6] 帶寬自適應：離最近外人越遠帶子越寬，最寬 = 成員泡泡半徑 → 同排相鄰成員連成平順膠囊，
+        //        不再是「一顆顆泡泡＋細脖子」；外人旁邊維持原本的窄走廊（外人的挖洞仍保證他在框外）。
+        const fullHalf = personRadius + padding;
+        const segDist = (o, p, q) => {
+            const dx = q.x - p.x, dy = q.y - p.y, l2 = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((o.x - p.x) * dx + (o.y - p.y) * dy) / l2));
+            return Math.hypot(o.x - (p.x + dx * t), o.y - (p.y + dy * t));
+        };
+        const bandHalf = (p, q) => {
+            let half = fullHalf;
+            nearObstacles.forEach(o => { half = Math.min(half, segDist(o, p, q) - exclusion - 6); });
+            return Math.max(corridorHalf, half);
+        };
         const shapes = {
-            disks: members.map(m => ({ x: m.x, y: m.y, r: personRadius + padding })),
-            bands: corridorSegments.map(([p, q]) => ({ p, q, half: corridorHalf, isLine: false }))
-                .concat(lineSegments.map(([p, q]) => ({ p, q, half: corridorHalf, isLine: true }))),
+            disks: members.map(m => ({ x: m.x, y: m.y, r: fullHalf })),
+            bands: corridorSegments.map(([p, q]) => ({ p, q, half: bandHalf(p, q), isLine: false }))
+                .concat(lineSegments.map(([p, q]) => ({ p, q, half: Math.min(bandHalf(p, q), corridorHalf * 1.6), isLine: true }))),
             holes: nearObstacles.map(o => ({ x: o.x, y: o.y, r: exclusion })),
             cuts: []
         };
@@ -430,9 +454,35 @@ Object.assign(GenogramCanvas.prototype, {
                 if (!on) {
                     for (const b of bands) { if (inBand(x, y, b)) { on = true; break; } }
                 }
-                if (on) {
-                    for (const h of holes) { if ((x - h.x) ** 2 + (y - h.y) ** 2 < h.r * h.r) { on = false; break; } }
+                inside[j * nx + i] = on ? 1 : 0;
+            }
+        }
+        // [HH-6] 形態學閉合（半徑約 12px）：填平泡泡與帶子交接處的小凹口，讓外框圓順；之後才挖外人的洞
+        const k = Math.max(1, Math.round(12 / cell));
+        const disk = [];
+        for (let dj = -k; dj <= k; dj++) for (let di = -k; di <= k; di++) if (di * di + dj * dj <= k * k) disk.push([di, dj]);
+        const morph = (src, dilate) => {
+            const dst = new Uint8Array(nx * ny);
+            for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+                let v = dilate ? 0 : 1;
+                for (const [di, dj] of disk) {
+                    const ii = i + di, jj = j + dj;
+                    const cellOn = ii >= 0 && jj >= 0 && ii < nx && jj < ny ? src[jj * nx + ii] : 0;
+                    if (dilate && cellOn) { v = 1; break; }
+                    if (!dilate && !cellOn) { v = 0; break; }
                 }
+                dst[j * nx + i] = v;
+            }
+            return dst;
+        };
+        const closed = morph(morph(inside, true), false);
+        for (let j = 0; j < ny; j++) {
+            const y = oy + j * cell;
+            for (let i = 0; i < nx; i++) {
+                if (!closed[j * nx + i]) { inside[j * nx + i] = 0; continue; }
+                const x = ox + i * cell;
+                let on = true;
+                for (const h of holes) { if ((x - h.x) ** 2 + (y - h.y) ** 2 < h.r * h.r) { on = false; break; } }
                 if (on && cuts.length) {
                     for (const cb of cuts) { if (inBand(x, y, cb)) { on = false; break; } }
                 }
@@ -448,7 +498,7 @@ Object.assign(GenogramCanvas.prototype, {
         loops.sort((a, b) => area2(b) - area2(a));
         const main = loops[0];
         if (!members.every(m => GenogramCanvas.pointInPolygon(m.x, m.y, main))) return null;
-        let poly = GenogramCanvas.chaikin(main, 2);
+        let poly = GenogramCanvas.chaikin(main, 3); // [HH-6] 多一輪更圓順
         poly = GenogramCanvas.simplifyClosed(poly, 6);
         poly = GenogramCanvas.dedupePath(poly, true);
         return poly.length >= 3 ? poly : null;

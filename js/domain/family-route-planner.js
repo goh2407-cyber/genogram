@@ -150,7 +150,9 @@ class FamilyRoutePlanner {
                     sourcePrefix, trunkX, barY
                 });
                 if (!candidate.safe) continue;
-                candidate.score = this._routeScore(candidate.relationshipPaths, preferredSource.x, trunkX);
+                candidate.score = this._routeScore(candidate.relationshipPaths, preferredSource.x, trunkX)
+                    + this._parentEdgePenalty(parents, trunkX, half)
+                    + this._avoidPenalty(trunkX, input.avoidXs);
                 candidates.push(candidate);
             }
         }
@@ -451,6 +453,28 @@ class FamilyRoutePlanner {
             }
         }
         return collisions;
+    }
+
+    /** 下垂點太靠近婚姻線記號（離婚斜線、喪偶 × 等；< 16px）時加分懲罰；只影響挑選。 */
+    static _avoidPenalty(trunkX, avoidXs) {
+        const keep = 16;
+        return (Array.isArray(avoidXs) ? avoidXs : []).reduce((sum, ax) => {
+            if (!Number.isFinite(ax)) return sum;
+            const d = Math.abs(trunkX - ax);
+            return sum + (d < keep ? (keep - d) * 6 : 0);
+        }, 0);
+    }
+
+    /** 下垂點貼著父母符號邊緣（< 20px）時加分懲罰；只影響挑選，安全性不變。 */
+    static _parentEdgePenalty(parents, trunkX, half) {
+        const inset = 20;
+        let penalty = 0;
+        (parents || []).forEach(parent => {
+            if (!Number.isFinite(parent.x)) return;
+            const d = Math.abs(trunkX - parent.x) - half; // 到符號邊緣的距離（負值 = 在符號內）
+            if (d < inset) penalty += (inset - Math.max(d, 0)) * 5;
+        });
+        return penalty;
     }
 
     static _routeScore(paths, preferredX, trunkX) {

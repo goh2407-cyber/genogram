@@ -19,11 +19,14 @@ function check(name, condition, detail = '') {
     await page.click('#viewTab');
 
     const result = await page.evaluate(() => {
-        const expected = [
+        const base = [
             'showNames', 'showAges', 'showNotes', 'showMedical',
             'showEmotionalRelationships', 'showHouseholds', 'showLifeCircles'
         ];
+        // 線上版多三個（排最後）：暴力線、事件時間軸（預設開）、畫面去識別化（預設關）
+        const onlineExtra = ['showAbuseRelationships', 'showEvents', 'deidentifyScreen'];
         const controls = [...document.querySelectorAll('[data-view-option]')];
+        const expected = controls.length > base.length ? base.concat(onlineExtra) : base;
         return {
             keys: controls.map(control => control.dataset.viewOption),
             checked: controls.map(control => control.checked),
@@ -35,9 +38,11 @@ function check(name, condition, detail = '') {
     });
     check('seven View controls exist in the approved order',
         JSON.stringify(result.keys) === JSON.stringify(result.expected), JSON.stringify(result.keys));
-    check('all View controls default on', result.checked.every(Boolean), JSON.stringify(result.checked));
+    const defaultOff = new Set(['deidentifyScreen']);
+    check('all View controls default on (畫面去識別化預設關)', result.keys.every((key, i) =>
+        result.checked[i] === !defaultOff.has(key)), JSON.stringify(result.checked));
     check('App state defaults match the controls',
-        result.expected.every(key => result.state[key] === true), JSON.stringify(result.state));
+        result.expected.every(key => result.state[key] === (key !== 'deidentifyScreen')), JSON.stringify(result.state));
     check('ordinary emotional lines are hideable', result.emotionalConflict === true);
     check('abuse lines are not classified as hideable emotional lines', result.emotionalAbuse === false);
 

@@ -140,8 +140,9 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
         const state = app.getState().lifeCircles[0];
         return { pos: lc.labelPosition, notes: lc.notes, label, cx, cy, statePos: state.labelPosition, stateNotes: state.notes, notesDrawn: calls.some(c => c.t === '每週三下午') };
     });
-    check('標籤位置=center → 文字畫在質心；說明存入且不畫在畫布；皆進存檔快照',
-        st.pos === 'center' && st.notes === '每週三下午' && st.label && Math.abs(st.label.x - st.cx) < 1 && Math.abs(st.label.y - st.cy) < 1 && st.statePos === 'center' && st.stateNotes === '每週三下午' && !st.notesDrawn, JSON.stringify(st));
+    // [LC-4] 中央名稱改用面積質心並會避開成員符號：只要求畫在圈內、距頂點平均中心 60px 內
+    check('標籤位置=center → 文字畫在圈中央附近；說明存入且不畫在畫布；皆進存檔快照',
+        st.pos === 'center' && st.notes === '每週三下午' && st.label && Math.abs(st.label.x - st.cx) < 60 && Math.abs(st.label.y - st.cy) < 60 && st.statePos === 'center' && st.stateNotes === '每週三下午' && !st.notesDrawn, JSON.stringify(st));
     await page.selectOption('#lifeCircleLabelPosition', 'bottom');
     await page.waitForTimeout(60);
     st = await page.evaluate(() => {

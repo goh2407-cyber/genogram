@@ -152,7 +152,7 @@ async function checkIconOnlyAccessibility(page) {
         tabContract.every(item => item.hasId && item.controlsPanel), JSON.stringify(tabContract));
     check('inspector tabs use roving tabindex',
         tabContract.filter(item => item.tabIndex === 0).length === 1
-            && tabContract.filter(item => item.tabIndex === -1).length === 2,
+            && tabContract.filter(item => item.tabIndex === -1).length === tabContract.length - 1,
         JSON.stringify(tabContract));
 
     const propertiesTab = page.locator('[data-inspector-tab="properties"]');
@@ -161,18 +161,19 @@ async function checkIconOnlyAccessibility(page) {
     check('ArrowRight activates and focuses the next inspector tab',
         await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'legend'
             && window.app.currentInspectorTab === 'legend'));
+    const lastTab = await page.evaluate(() => [...document.querySelectorAll('[data-inspector-tab]')].at(-1).dataset.inspectorTab);
     await page.keyboard.press('End');
     check('End activates and focuses the last inspector tab',
-        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'view'
-            && window.app.currentInspectorTab === 'view'));
+        await page.evaluate(last => document.activeElement?.dataset.inspectorTab === last
+            && window.app.currentInspectorTab === last, lastTab));
     await page.keyboard.press('Home');
     check('Home activates and focuses the first inspector tab',
         await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'properties'
             && window.app.currentInspectorTab === 'properties'));
     await page.keyboard.press('ArrowLeft');
     check('ArrowLeft wraps to and focuses the previous inspector tab',
-        await page.evaluate(() => document.activeElement?.dataset.inspectorTab === 'view'
-            && window.app.currentInspectorTab === 'view'));
+        await page.evaluate(last => document.activeElement?.dataset.inspectorTab === last
+            && window.app.currentInspectorTab === last, lastTab));
 
     const existingCommandIds = [
         'addPerson', 'selectTool', 'boxSelectTool', 'connectTool', 'householdTool', 'lifeCircleTool',

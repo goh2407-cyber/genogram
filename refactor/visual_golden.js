@@ -422,6 +422,8 @@ const FIXTURES = [
             if (statusBar) statusBar.style.display = 'none';
             const locateIP = document.getElementById('locateIP'); // [3-3] 亦為 UI chrome（verify_locate_lod 驗）
             if (locateIP) locateIP.style.display = 'none';
+            // 其他浮動 UI chrome（標記 data-golden-hide）一律隱藏，只比對畫布內容
+            document.querySelectorAll('[data-golden-hide]').forEach(el => { el.style.display = 'none'; });
         });
         await page.waitForTimeout(150);
         const buf = await page.locator('#genogramCanvas').screenshot();

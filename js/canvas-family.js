@@ -37,6 +37,7 @@ Object.assign(GenogramCanvas.prototype, {
                 source: sourceInfo.source,
                 sourceRange: sourceInfo.sourceRange,
                 sourcePrefix: sourceInfo.sourcePrefix,
+                avoidXs: sourceInfo.avoidXs || [],
                 obstacles: relevantObstacles,
                 personSize: this.personSize,
                 margin: 10

@@ -59,7 +59,7 @@ const check = (name, cond, detail = '') => results.push({ name, ok: !!cond, deta
         app.clearAllSelections();
         await app.waitForCurrentCanvasFonts();
         const spyFont = () => { const fonts = []; const orig = CanvasRenderingContext2D.prototype.fillText; CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { fonts.push({ t: String(t), font: this.font }); return orig.call(this, t, ...rest); }; return () => { CanvasRenderingContext2D.prototype.fillText = orig; return fonts; }; };
-        const nameFontPx = list => { const e = list.find(k => k.t === '路人'); return e ? parseFloat(e.font) : null; };
+        const nameFontPx = list => { const e = list.find(k => k.t === '路人'); const m = e && /([\d.]+)px/.exec(e.font); return m ? parseFloat(m[1]) : null; }; // [CR-4] 字串開頭可能是字重（600 14px …）
         c.scale = 1; c.offsetX = 300; c.offsetY = 300; let done = spyFont(); app.render(); const at100 = nameFontPx(done());
         c.scale = 0.4; done = spyFont(); app.render(); const at40 = nameFontPx(done());
         const lod40 = c.lodScale;

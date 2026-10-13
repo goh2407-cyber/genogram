@@ -134,6 +134,9 @@ class StorageManager {
         };
         // [2-2] 文件 meta（標題/案號/繪製者）原樣帶過，不然三條檔案開啟路徑都會把它丟掉
         if (data.meta && typeof data.meta === 'object') result.meta = data.meta;
+        if (Array.isArray(data.events)) result.events = data.events; // 重大事件（選填）
+        if (data.eventsLayout && typeof data.eventsLayout === 'object') result.eventsLayout = data.eventsLayout;
+        if (Number.isFinite(data.layoutSpacing)) result.layoutSpacing = data.layoutSpacing;
 
         // 這裡可以根據版本進行具體欄位轉換
         // 例如：0.1 -> 1.0 的轉換邏輯
@@ -185,7 +188,7 @@ class StorageManager {
                     const households = data.households || [];
                     const lifeCircles = data.lifeCircles || [];
 
-                    resolve({ persons, relationships, households, lifeCircles, meta: data.meta || null });
+                    resolve({ persons, relationships, households, lifeCircles, meta: data.meta || null, events: data.events || [], eventsLayout: data.eventsLayout || null, layoutSpacing: data.layoutSpacing ?? null });
                 } catch (err) {
                     reject(new Error('檔案解析失敗，請確認檔案格式是否正確: ' + err.message));
                 }
@@ -235,7 +238,7 @@ class StorageManager {
             const households = data.households || [];
             const lifeCircles = data.lifeCircles || [];
 
-            return { persons, relationships, households, lifeCircles, meta: data.meta || null };
+            return { persons, relationships, households, lifeCircles, meta: data.meta || null, events: data.events || [], eventsLayout: data.eventsLayout || null, layoutSpacing: data.layoutSpacing ?? null };
         } catch (err) {
             if (err.name === 'AbortError') {
                 return null; // 用戶取消
@@ -348,7 +351,10 @@ class StorageManager {
             relationships: data.relationships.map(r => Relationship.fromJSON(r)),
             households: data.households || [],
             lifeCircles: data.lifeCircles || [],
-            meta: data.meta || null
+            meta: data.meta || null,
+            events: data.events || [],
+            eventsLayout: data.eventsLayout || null,
+            layoutSpacing: data.layoutSpacing ?? null
         };
     }
 
@@ -432,6 +438,9 @@ class StorageManager {
             this.currentFileName = data.filename || null; // 還原檔名
 
             return { persons, relationships, households, lifeCircles, view, filename: this.currentFileName, savedAt: data.savedAt, meta: data.meta || null,
+                events: data.events || [],
+                eventsLayout: data.eventsLayout || null,
+                layoutSpacing: data.layoutSpacing ?? null,
                 sourceVersion: String(data.version || '0.1') }; // [R4b]
         } catch (err) {
             console.warn('載入自動儲存失敗:', err);
