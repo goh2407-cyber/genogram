@@ -15,6 +15,7 @@ Object.assign(GenogramApp.prototype, {
 
             case 'sibling':
                 // 需要選擇性別
+                this.setGenderModalMode('person');
                 this.quickAddContext = { personId: basePerson.id, type: 'sibling' };
                 this.updateStatus('選擇手足的性別', 'info');
                 this.modalManager.open(this.elements.genderModal);
@@ -22,6 +23,7 @@ Object.assign(GenogramApp.prototype, {
 
             case 'partner':
                 // 需要選擇性別，預設同居關係
+                this.setGenderModalMode('person');
                 this.quickAddContext = { personId: basePerson.id, type: 'partner' };
                 this.updateStatus('選擇伴侶的性別', 'info');
                 this.modalManager.open(this.elements.genderModal);
@@ -38,7 +40,24 @@ Object.assign(GenogramApp.prototype, {
             case 'pregnancy':
                 this.beginQuickRelativePlacement(basePerson, 'child', 'pregnancy');
                 break;
+
+            case 'pet':
+                // [PET] 只顯示寵物種類；選好後掛在這個人（與伴侶）下面，寵物在子女端
+                this.quickAddContext = { personId: basePerson.id, type: 'pet' };
+                this.setGenderModalMode('pet');
+                this.updateStatus('選擇寵物種類', 'info');
+                this.modalManager.open(this.elements.genderModal);
+                break;
         }
+    },
+
+    /** [PET] 性別彈窗模式：'pet' 只顯示寵物種類；'person' 回到一般（每次開啟前設定，不會殘留） */
+    setGenderModalMode(mode) {
+        const modal = this.elements.genderModal;
+        if (!modal) return;
+        modal.classList.toggle('pet-only', mode === 'pet');
+        const title = modal.querySelector('#genderModalTitle');
+        if (title) title.textContent = mode === 'pet' ? '選擇寵物種類' : '選擇性別';
     },
 
     beginQuickRelativePlacement(basePerson, kind, gender, extras = {}) {
@@ -442,7 +461,9 @@ Object.assign(GenogramApp.prototype, {
 
         this.modalManager.close(this.elements.genderModal);
         this.quickAddContext = null;
-        this.beginQuickRelativePlacement(basePerson, type, gender, { sexualOrientation, transgender,
+        // [PET] 寵物鈕：以「子女」位置放置（掛在主人與伴侶下面）
+        const kind = type === 'pet' ? 'child' : type;
+        this.beginQuickRelativePlacement(basePerson, kind, gender, { sexualOrientation, transgender,
             relationshipType: type === 'partner' ? 'married' : undefined });
     },
 

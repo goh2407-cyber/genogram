@@ -1389,6 +1389,12 @@ body {
 .gender-btn--pet { min-width: 72px; }
 .pet-icon { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 6; stroke-linejoin: round; }
 .pet-icon .pet-detail { stroke-width: 3.5; stroke-linecap: round; }
+/* [PET] 快速新增「寵物」：彈窗只留寵物種類 */
+#genderModal.pet-only .gender-selection:not(.gender-selection--pets),
+#genderModal.pet-only .diversity-toggle-row,
+#genderModal.pet-only #diversitySection,
+#genderModal.pet-only .pet-heading { display: none !important; }
+#genderModal.pet-only .pet-selection-group { margin-top: 0; }
 .pet-icon .pet-detail-fill { fill: currentColor; stroke: none; }
 .pet-icon .pet-detail-shine { fill: #fff; stroke: none; }
 

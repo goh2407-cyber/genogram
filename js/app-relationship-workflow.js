@@ -296,6 +296,9 @@ Object.assign(GenogramApp.prototype, {
         if (!a || !b) return null;
         if (a.gender === 'pet' && b.gender === 'pet') return '寵物之間不能有親子或收養關係';
         if (parentKnown && a.gender === 'pet') return '寵物不能當父母';
+        if (parentKnown && b.gender === 'pet' && (a.gender === 'pregnancy' || a.lossType === 'miscarriage' || a.lossType === 'abortion')) {
+            return '懷孕、流產不能有寵物';
+        }
         return null;
     },
 

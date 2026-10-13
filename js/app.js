@@ -1178,6 +1178,7 @@ class GenogramApp {
         }
 
         this.pendingGeneration = generation;
+        this.setGenderModalMode?.('person'); // [PET] 一般新增成員：完整彈窗
         const level = GenogramApp.GENERATION_LEVELS[generation];
         const label = statusLabel || (level ? level.label : (generation || '外部'));
         const message = statusLabel

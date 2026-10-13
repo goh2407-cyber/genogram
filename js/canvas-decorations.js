@@ -122,9 +122,9 @@ Object.assign(GenogramCanvas.prototype, {
 
         const angle = Math.atan2(dy, dx);
 
-        // [New] 垂直線避讓優化：如果是垂直線，強制改為從右側連接
-        // 這樣可以避開人物正下方的備註文字
-        if (Math.abs(dy) > Math.abs(dx) * 3) {
+        // [New] 垂直線避讓優化（2026-10-13 使用者要求改走正中）：上下對齊時預設走正中；
+        // 只有正中「有東西」才改從兩人右側連接：上方那個人底下有姓名／備註，或兩人之間有親子線（子女線佔正中）
+        if (Math.abs(dy) > Math.abs(dx) * 3 && this._verticalCenterBlocked(fromPerson, toPerson, radius, angle)) {
             const start = {
                 x: fromPerson.x + radius, // 右側 (0度)
                 y: fromPerson.y
@@ -147,6 +147,30 @@ Object.assign(GenogramCanvas.prototype, {
 
         // 直接返回直線路徑，不再進行複雜的避讓運算
         return [start, end];
+    },
+
+    /** 上下對齊的情感線若走正中，會不會壓到親子線或上方那個人的姓名／備註 */
+    _verticalCenterBlocked(fromPerson, toPerson, radius, angle) {
+        const rels = Array.isArray(this.lastRelationships) ? this.lastRelationships : [];
+        const hasParentChild = rels.some(r => r && r.type === 'parent-child'
+            && ((r.fromPersonId === fromPerson.id && r.toPersonId === toPerson.id)
+                || (r.fromPersonId === toPerson.id && r.toPersonId === fromPerson.id)));
+        if (hasParentChild) return true;
+        const upper = fromPerson.y <= toPerson.y ? fromPerson : toPerson;
+        let bounds = null;
+        try { bounds = this.getPersonLabelGeometry(upper, this.viewOptions).bounds; } catch (_) { bounds = null; }
+        if (!bounds) return false; // 沒有字 → 正中
+        const start = { x: fromPerson.x + Math.cos(angle) * radius, y: fromPerson.y + Math.sin(angle) * radius };
+        const end = { x: toPerson.x - Math.cos(angle) * radius, y: toPerson.y - Math.sin(angle) * radius };
+        const pad = 3;
+        const box = { left: bounds.left - pad, right: bounds.right + pad, top: bounds.top - pad, bottom: bounds.bottom + pad };
+        if (typeof this._pathHitsRect === 'function') return this._pathHitsRect([start, end], box);
+        // 備援：取樣檢查
+        for (let t = 0; t <= 1; t += 0.05) {
+            const x = start.x + (end.x - start.x) * t, y = start.y + (end.y - start.y) * t;
+            if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return true;
+        }
+        return false;
     },
 
     /**

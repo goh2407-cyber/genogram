@@ -180,6 +180,60 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     check('匯出不套用提起加粗', fx.exportNoBoost);
     check('取消選取 → 放回、動畫狀態清除', fx.settle && fx.settleCleared, JSON.stringify(fx));
 
+    // ── 4b. 快速新增「寵物」鈕 ──
+    const quick = await page.evaluate(() => {
+        const app = window.app;
+        app.loadData({ version: '1.1', persons: [
+            { id: 'dad', gender: 'male', x: 300, y: 260 }, { id: 'mom', gender: 'female', x: 460, y: 260 },
+            { id: 'fetus', gender: 'pregnancy', x: 700, y: 260 }, { id: 'loss', gender: 'female', lossType: 'miscarriage', x: 820, y: 260 },
+            { id: 'cat', gender: 'pet', petType: 'cat', x: 940, y: 260 }
+        ], relationships: [{ id: 'm', fromPersonId: 'dad', toPersonId: 'mom', type: 'married' }] });
+        const has = id => app.canvas.getQuickButtonLayout(app.personMap.get(id)).some(b => b.type === 'pet');
+        const out = { dad: has('dad'), mom: has('mom'), fetus: has('fetus'), loss: has('loss'), cat: has('cat') };
+        app.handleQuickAddClick(app.personMap.get('mom'), 'pet');
+        const m = document.getElementById('genderModal');
+        out.petOnly = m.classList.contains('pet-only') && m.querySelector('#genderModalTitle').textContent === '選擇寵物種類';
+        return out;
+    });
+    await page.locator('.gender-btn--pet[data-pet="dog"]').click();
+    await wait(200);
+    const quickMade = await page.evaluate(() => {
+        const app = window.app; if (app.placementSession) app.commitPlacement();
+        const pet = app.persons.find(x => x.gender === 'pet' && x.id !== 'cat');
+        const parents = app.relationships.filter(r => r.type === 'parent-child' && r.toPersonId === pet?.id).map(r => r.fromPersonId).sort().join(',');
+        app.showGenderModal('parent');
+        const m = document.getElementById('genderModal');
+        const reset = !m.classList.contains('pet-only');
+        app.closeGenderModal();
+        return { petType: pet?.petType, parents, reset };
+    });
+    check('寵物鈕：一般人有；懷孕、流產、寵物本身沒有', quick.dad && quick.mom && !quick.fetus && !quick.loss && !quick.cat, JSON.stringify(quick));
+    check('寵物鈕：彈窗只顯示寵物種類', quick.petOnly, JSON.stringify(quick));
+    check('寵物鈕：建立的寵物掛在主人與伴侶下面（寵物在子女端）', quickMade.petType === 'dog' && quickMade.parents === 'dad,mom', JSON.stringify(quickMade));
+    check('寵物鈕：一般新增成員時彈窗恢復完整', quickMade.reset);
+    const petParent = await page.evaluate(() => window.app.parentChildPetProblem('fetus', 'cat', true));
+    check('懷孕／流產不能有寵物（親子線）', /懷孕、流產不能有寵物/.test(petParent || ''), String(petParent));
+
+    // ── 5. 上下對齊的情感線：預設走正中；上方有字或兩人之間有親子線才走右側 ──
+    const route = await page.evaluate(() => {
+        const app = window.app;
+        app.loadData({ version: '1.1', persons: [
+            { id: 'me', gender: 'male', x: 400, y: 300 }, { id: 'cat', gender: 'pet', petType: 'cat', x: 400, y: 100 },
+            { id: 'mom', name: '王媽媽', gender: 'female', x: 750, y: 100 }, { id: 'son', name: '王小明', gender: 'male', x: 750, y: 300 },
+            { id: 'p', gender: 'female', x: 600, y: 100 }, { id: 'c', gender: 'male', x: 600, y: 300 }
+        ], relationships: [
+            { id: 'e1', fromPersonId: 'me', toPersonId: 'cat', type: 'very-close' }, { id: 'e2', fromPersonId: 'mom', toPersonId: 'son', type: 'close' },
+            { id: 'pc', fromPersonId: 'p', toPersonId: 'c', type: 'parent-child' }, { id: 'e3', fromPersonId: 'p', toPersonId: 'c', type: 'conflict' }
+        ] });
+        app.render();
+        const c = app.canvas, P = id => app.personMap.get(id);
+        const xs = (a, b) => c.getSmartPath(P(a), P(b), app.persons).map(pt => Math.round(pt.x));
+        return { center: xs('me', 'cat'), label: xs('mom', 'son'), parentChild: xs('p', 'c') };
+    });
+    check('上下對齊情感線：沒有字也沒有親子線 → 走正中', route.center.every(x => x === 400), JSON.stringify(route));
+    check('上下對齊情感線：上方有名字 → 走右側', route.label.every(x => x > 750), JSON.stringify(route));
+    check('上下對齊情感線：兩人之間有親子線 → 走右側', route.parentChild.every(x => x > 600), JSON.stringify(route));
+
     check('零 console error', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'RESULT OK (ex-partner / pets / no family marriage / relationship fx)');
 })().catch(err => { console.error(err); process.exit(1); });

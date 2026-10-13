@@ -3326,7 +3326,9 @@ class GenogramCanvas {
         partner: { label: '伴侶', offsetX: 58, offsetY: -28, color: '#e8537a', labelSide: 'above' },
         son: { label: '兒子', offsetX: -46, offsetY: 76, color: '#e8a849', labelSide: 'below' },
         daughter: { label: '女兒', offsetX: 0, offsetY: 76, color: '#e8a849', labelSide: 'below' },
-        pregnancy: { label: '懷孕', offsetX: 46, offsetY: 76, color: '#e8a849', labelSide: 'below' }
+        pregnancy: { label: '懷孕', offsetX: 46, offsetY: 76, color: '#e8a849', labelSide: 'below' },
+        // [PET] 寵物：伴侶鈕正下方；標籤放右側，避開下排「懷孕」鈕
+        pet: { label: '寵物', offsetX: 64, offsetY: 28, color: '#2a9d8f', labelSide: 'right' }
     };
 
     /**
@@ -3388,8 +3390,10 @@ class GenogramCanvas {
             this.ctx.textBaseline = 'middle';
             const tw = this.ctx.measureText(btn.label).width;
             const ph = fontPx + 6 * hud, pw = tw + 10 * hud, pr = ph / 2;
-            const ly = btn.labelSide === 'above' ? by - btnRadius - 4 * hud - ph / 2 : by + btnRadius + 4 * hud + ph / 2;
-            const px = bx - pw / 2, py = ly - ph / 2;
+            const lx = btn.labelSide === 'right' ? bx + btnRadius + 4 * hud + pw / 2 : bx;
+            const ly = btn.labelSide === 'right' ? by
+                : btn.labelSide === 'above' ? by - btnRadius - 4 * hud - ph / 2 : by + btnRadius + 4 * hud + ph / 2;
+            const px = lx - pw / 2, py = ly - ph / 2;
             this.ctx.beginPath();
             this.ctx.moveTo(px + pr, py);
             this.ctx.arcTo(px + pw, py, px + pw, py + ph, pr);
@@ -3400,7 +3404,7 @@ class GenogramCanvas {
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
             this.ctx.fill();
             this.ctx.fillStyle = '#374151';
-            this.ctx.fillText(btn.label, bx, ly);
+            this.ctx.fillText(btn.label, lx, ly);
             this.ctx.restore();
         }
     }
@@ -3447,6 +3451,16 @@ class GenogramCanvas {
             case 'daughter': // 子女線 ＋ 圓
                 line(cx, cy - 9, cx, cy - 4.5);
                 ci(cx, cy + 1, 4.8);
+                break;
+            case 'pet': // 腳印（寵物）
+                ctx.beginPath();
+                ctx.ellipse(cx, cy + 2.6, 4.2, 3.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                [[-5.2, -1.8], [-1.9, -5.2], [1.9, -5.2], [5.2, -1.8]].forEach(([dx, dy]) => {
+                    ctx.beginPath();
+                    ctx.arc(cx + dx, cy + dy, 1.8, 0, Math.PI * 2);
+                    ctx.fill();
+                });
                 break;
             case 'pregnancy': // 子女線 ＋ 三角
                 line(cx, cy - 9, cx, cy - 5);
@@ -3505,6 +3519,10 @@ class GenogramCanvas {
             if (person.gender === 'pregnancy' && (type === 'partner' || type === 'son' || type === 'daughter')) {
                 continue;
             }
+            // [PET] 懷孕、流產／人工流產不顯示寵物鈕
+            if (type === 'pet' && (person.gender === 'pregnancy' || person.lossType === 'miscarriage' || person.lossType === 'abortion')) {
+                continue;
+            }
             layout.push({
                 type,
                 x: person.x + place(btn.offsetX),
@@ -3517,7 +3535,7 @@ class GenogramCanvas {
         }
         // [CR-5] 下排（兒子／女兒／懷孕）若壓到這個人的姓名或備註，整排往下移到文字下方，
         // 讓文字永遠點得到、也看得到（字級變大或備註兩行時才會移動；畫與點擊共用這份配置）
-        const lower = layout.filter(btn => btn.y > person.y);
+        const lower = layout.filter(btn => btn.y > person.y && btn.type !== 'pet');
         if (lower.length) {
             let rows = [];
             try { rows = this.getPersonLabelGeometry(person, this.viewOptions).rows || []; } catch (_) { rows = []; }
