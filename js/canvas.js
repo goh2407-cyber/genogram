@@ -390,7 +390,19 @@ class GenogramCanvas {
             kinship = new KinshipEngine(persons, relationships);
         }
         const visibleOtherRels = otherRels.filter(rel => Relationship.isVisibleInView(rel.type, view));
-        this.drawFamilies(familyRels, persons, visibleOtherRels, selectedRelationshipId, kinship);
+        // 畫的順序：情感線 → 親子線 → 伴侶線（2026-10-13：親子結構線不能被情感線蓋住；選取的線仍會提起到最上層）
+        const relCategoryOf = rel => (typeof rel.getCategory === 'function' ? rel.getCategory() : Relationship.getCategory(rel.type));
+        const drawOrder = [
+            ...visibleOtherRels.filter(rel => relCategoryOf(rel) === 'emotional'),
+            ...visibleOtherRels.filter(rel => relCategoryOf(rel) !== 'emotional')
+        ];
+        const firstMarriageIndex = drawOrder.findIndex(rel => relCategoryOf(rel) !== 'emotional');
+        let familiesDrawn = false;
+        const drawFamiliesOnce = () => {
+            if (familiesDrawn) return;
+            familiesDrawn = true;
+            this.drawFamilies(familyRels, persons, visibleOtherRels, selectedRelationshipId, kinship);
+        };
 
         // 3. 繪製非親子關係（[FX-REL] 提起／放下中的線延後到淡化層之上再畫）
         if (!this.relFx) this.relFx = new Map();
@@ -406,7 +418,8 @@ class GenogramCanvas {
             }
         });
         const deferredRels = [];
-        visibleOtherRels.forEach(rel => {
+        drawOrder.forEach((rel, index) => {
+            if (index === firstMarriageIndex) drawFamiliesOnce(); // 情感線畫完、伴侶線之前畫親子線
             const fromPerson = this.personMap.get(rel.fromPersonId);
             const toPerson = this.personMap.get(rel.toPersonId);
             if (fromPerson && toPerson) {
@@ -423,6 +436,7 @@ class GenogramCanvas {
                 this.drawRelationship(fromPerson, toPerson, rel, isSelected, persons, relationships);
             }
         });
+        drawFamiliesOnce(); // 沒有伴侶線時，在全部情感線之後畫
         const deferredRelIds = new Set(deferredRels.map(d => d.rel.id));
 
         // 3.5 繪製關係線說明日期 (最上層，確保不被遮擋)
@@ -2890,18 +2904,11 @@ class GenogramCanvas {
             return this.getMarriageRoute(
                 fromPerson, toPerson, relationship, allRelationships).points;
         } else {
-            // 情感關係：直線路徑
-            const angle = Math.atan2(toPerson.y - fromPerson.y, toPerson.x - fromPerson.x);
-            const radius = this.personSize / 2 + 5;
-            let startX = fromPerson.x + Math.cos(angle) * radius;
-            let startY = fromPerson.y + Math.sin(angle) * radius;
-            let endX = toPerson.x - Math.cos(angle) * radius;
-            let endY = toPerson.y - Math.sin(angle) * radius;
-
-            // Apply offset for multi-relationships
-            // perp 用 canonical direction（較小 id 當起點），跟 drawRelationship 同步，
-            // 避免反向 path 的 perp 反向造成 hit-test 錯位
-            if (offset !== 0) {
+            // 情感關係：與 drawRelationship 完全相同的路徑（getSmartPath，含上下對齊時繞到右側）＋同一對多條線的位移。
+            // 2026-10-13 修正：原本這裡固定算正中直線，繞到右側的線點不到。
+            let path = this.getSmartPath(fromPerson, toPerson, this.lastPersons || []);
+            if (offset !== 0 && path.length >= 2) {
+                // perp 用 canonical direction（較小 id 當起點），跟 drawRelationship 同步
                 const swap = relationship.fromPersonId > relationship.toPersonId;
                 const cFrom = swap ? toPerson : fromPerson;
                 const cTo = swap ? fromPerson : toPerson;
@@ -2910,15 +2917,9 @@ class GenogramCanvas {
                 const len = Math.sqrt(dx * dx + dy * dy) || 1;
                 const ux = dx / len;
                 const uy = dy / len;
-                // Perpendicular offset
-                startX += -uy * offset;
-                startY += ux * offset;
-                endX += -uy * offset;
-                endY += ux * offset;
+                path = path.map(pt => ({ x: pt.x + (-uy * offset), y: pt.y + (ux * offset) }));
             }
-
-            points.push({ x: startX, y: startY });
-            points.push({ x: endX, y: endY });
+            path.forEach(pt => points.push({ x: pt.x, y: pt.y }));
         }
 
         return points;

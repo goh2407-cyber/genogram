@@ -250,6 +250,37 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     check('上下對齊情感線：上方有名字 → 走右側', route.label.every(x => x > 750), JSON.stringify(route));
     check('上下對齊情感線：兩人之間有親子線 → 走右側', route.parentChild.every(x => x > 600), JSON.stringify(route));
 
+    // ── 6. 主人與寵物之間同時有親子線與情感線 ──
+    const both = await page.evaluate(() => {
+        const app = window.app;
+        app.loadData({ version: '1.1', persons: [
+            { id: 'o1', name: '主人', gender: 'female', x: 200, y: 200 }, { id: 'p1', gender: 'pet', petType: 'dog', x: 360, y: 200 },
+            { id: 'o2', name: '主人', gender: 'male', x: 600, y: 200 }, { id: 'p2', gender: 'pet', petType: 'cat', x: 600, y: 400 }
+        ], relationships: [
+            { id: 'a1', fromPersonId: 'o1', toPersonId: 'p1', type: 'parent-child' }, { id: 'e1', fromPersonId: 'o1', toPersonId: 'p1', type: 'very-close' },
+            { id: 'a2', fromPersonId: 'o2', toPersonId: 'p2', type: 'parent-child' }, { id: 'e2', fromPersonId: 'o2', toPersonId: 'p2', type: 'very-close' }
+        ] });
+        app.canvas.scale = 1; app.canvas.offsetX = 0; app.canvas.offsetY = 0; app.render();
+        const P = id => app.personMap.get(id);
+        const famPath = app.canvas.getRelationshipPath(P('o1'), P('p1'), app.relationships[0], app.relationships);
+        const overTops = famPath.length >= 4 && famPath.every(pt => pt.y <= 200 - 25 + 0.5);
+        // 畫的順序：情感線先、親子線後
+        const order = [];
+        const origRel = app.canvas.drawRelationship, origFam = app.canvas.drawFamilies;
+        app.canvas.drawRelationship = function (...args) { order.push('rel:' + args[2].type); return origRel.apply(this, args); };
+        app.canvas.drawFamilies = function (...args) { order.push('families'); return origFam.apply(this, args); };
+        app.render();
+        app.canvas.drawRelationship = origRel; app.canvas.drawFamilies = origFam;
+        const fi = order.indexOf('families');
+        const emoBeforeFamilies = fi > 0 && order.slice(0, fi).every(x => x === 'rel:very-close') && !order.slice(fi + 1).includes('rel:very-close');
+        // 上下對齊：綠線繞到右側後點得到，正中仍是親子線
+        const green = app.getRelationshipAt(600 + 37, 300), black = app.getRelationshipAt(600, 300);
+        return { overTops, emoBeforeFamilies, green: green && green.id, black: black && black.id, order: order.join(',') };
+    });
+    check('同一列的主人與寵物：親子線從頭頂往上繞，不跟情感線疊在一起', both.overTops, JSON.stringify(both));
+    check('畫的順序：情感線 → 親子線（親子線不被蓋住）', both.emoBeforeFamilies, both.order);
+    check('上下對齊：繞到右側的情感線點得到；正中是親子線', both.green === 'e2' && both.black === 'a2', JSON.stringify(both));
+
     check('零 console error', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'RESULT OK (ex-partner / pets / no family marriage / relationship fx)');
 })().catch(err => { console.error(err); process.exit(1); });

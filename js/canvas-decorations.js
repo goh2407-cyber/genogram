@@ -125,12 +125,14 @@ Object.assign(GenogramCanvas.prototype, {
         // [New] 垂直線避讓優化（2026-10-13 使用者要求改走正中）：上下對齊時預設走正中；
         // 只有正中「有東西」才改從兩人右側連接：上方那個人底下有姓名／備註，或兩人之間有親子線（子女線佔正中）
         if (Math.abs(dy) > Math.abs(dx) * 3 && this._verticalCenterBlocked(fromPerson, toPerson, radius, angle)) {
+            // 離符號邊緣 12px（原本 5px 貼太近，也容易點到人而不是線）
+            const side = this.personSize / 2 + 12;
             const start = {
-                x: fromPerson.x + radius, // 右側 (0度)
+                x: fromPerson.x + side, // 右側 (0度)
                 y: fromPerson.y
             };
             const end = {
-                x: toPerson.x + radius,   // 右側
+                x: toPerson.x + side,   // 右側
                 y: toPerson.y
             };
             return [start, end];

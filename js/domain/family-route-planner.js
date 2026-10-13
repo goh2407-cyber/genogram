@@ -344,9 +344,20 @@ class FamilyRoutePlanner {
         for (const child of children) {
             for (const parent of parents) {
                 const key = `${parent.id}->${child.id}`;
-                const candidates = mode === 'reversed'
+                let candidates = mode === 'reversed'
                     ? this._reversedCandidates(parent, child, half, bounds, margin)
                     : this._sameRowCandidates(parent, child, half, bounds, margin);
+                // 同一列且兩人之間另有伴侶／情感線：直線會跟那條線疊在一起 → 先試上方繞（ㄇ），再下方，直線最後
+                const avoid = Array.isArray(input.avoidStraightPairs) && input.avoidStraightPairs.includes(key);
+                if (mode === 'same-row' && avoid && candidates.length >= 3) {
+                    // 從兩人頭頂往上繞（整條都不碰到兩人之間的水平線）
+                    const laneY = Math.min(parent.y, child.y) - half - 22;
+                    const overTops = this._dedupePoints([
+                        { x: parent.x, y: parent.y - half }, { x: parent.x, y: laneY },
+                        { x: child.x, y: laneY }, { x: child.x, y: child.y - half }
+                    ]);
+                    candidates = [overTops, candidates[1], candidates[2], candidates[0]];
+                }
                 const allowedSymbols = new Set([parent.id, child.id]);
                 let chosen = candidates.find(path => !this._pathHitsPlanObstacle(path, obstacles, allowedSymbols, child.id, true));
                 if (!chosen) {

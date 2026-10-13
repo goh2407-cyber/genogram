@@ -28,9 +28,16 @@ Object.assign(GenogramCanvas.prototype, {
             const relevantObstacles = this._getRelevantFamilyRouteObstacles(
                 obstacles, parentObjs, childObjs, sourceInfo
             );
+            // 同一對（父母→子女）之間另有伴侶／情感線：同一列時親子線不走直線（會跟那條線疊在一起）
+            const avoidStraightPairs = [];
+            parentObjs.forEach(parent => childObjs.forEach(child => {
+                const shared = (otherRels || []).some(r => (r.fromPersonId === parent.id && r.toPersonId === child.id)
+                    || (r.fromPersonId === child.id && r.toPersonId === parent.id));
+                if (shared) avoidStraightPairs.push(`${parent.id}->${child.id}`);
+            }));
             const localSignature = this._getFamilyPlanCacheSignature(
                 group, parentObjs, childObjs, sourceInfo, relevantObstacles
-            );
+            ) + '|avoid:' + avoidStraightPairs.join(',');
             const planInput = {
                 parents: parentObjs,
                 children: childObjs,
@@ -38,6 +45,7 @@ Object.assign(GenogramCanvas.prototype, {
                 sourceRange: sourceInfo.sourceRange,
                 sourcePrefix: sourceInfo.sourcePrefix,
                 avoidXs: sourceInfo.avoidXs || [],
+                avoidStraightPairs,
                 obstacles: relevantObstacles,
                 personSize: this.personSize,
                 margin: 10

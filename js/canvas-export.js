@@ -189,16 +189,8 @@ Object.assign(GenogramCanvas.prototype, {
         const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
         const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
-        this.drawFamilies(familyRels, persons, otherRels);
-
-        // 3. 繪製其餘關係
-        otherRels.forEach(rel => {
-            const fromPerson = this.personMap.get(rel.fromPersonId);
-            const toPerson = this.personMap.get(rel.toPersonId);
-            if (fromPerson && toPerson) {
-                this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
-            }
-        });
+        // 畫的順序與螢幕相同：情感線 → 親子線 → 伴侶線
+        this._drawRelationshipsInLayerOrder(familyRels, otherRels, persons, relationships);
 
         // 3.5 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
         if (effectiveView.showNotes) {
@@ -309,15 +301,7 @@ Object.assign(GenogramCanvas.prototype, {
         const familyRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) === 'family');
         const otherRels = visible.relationships.filter(r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type)) !== 'family');
 
-        this.drawFamilies(familyRels, persons, otherRels);
-
-        otherRels.forEach(rel => {
-            const fromPerson = this.personMap.get(rel.fromPersonId);
-            const toPerson = this.personMap.get(rel.toPersonId);
-            if (fromPerson && toPerson) {
-                this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
-            }
-        });
+        this._drawRelationshipsInLayerOrder(familyRels, otherRels, persons, relationships);
 
         // 繪製關係線說明 (日期/備註) - 根據 showNotes 決定是否繪製
         if (effectiveView.showNotes) {
@@ -353,6 +337,19 @@ Object.assign(GenogramCanvas.prototype, {
         } finally {
             this._restoreExportDerivedState(exportState);
         }
+    },
+
+    /** 匯出用：情感線 → 親子線 → 伴侶線（與螢幕 render 同順序） */
+    _drawRelationshipsInLayerOrder(familyRels, otherRels, persons, relationships) {
+        const cat = r => (typeof r.getCategory === 'function' ? r.getCategory() : Relationship.getCategory(r.type));
+        const draw = rel => {
+            const fromPerson = this.personMap.get(rel.fromPersonId);
+            const toPerson = this.personMap.get(rel.toPersonId);
+            if (fromPerson && toPerson) this.drawRelationship(fromPerson, toPerson, rel, false, persons, relationships);
+        };
+        otherRels.filter(r => cat(r) === 'emotional').forEach(draw);
+        this.drawFamilies(familyRels, persons, otherRels);
+        otherRels.filter(r => cat(r) !== 'emotional').forEach(draw);
     },
 
     /**
