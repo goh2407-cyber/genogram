@@ -123,14 +123,28 @@ class GenogramCanvas {
 
         // [CR-2] 畫布像素必須是整數，且 CSS 尺寸 = 像素 ÷ dpr，畫面才是 1:1 對應；
         // 否則（例如 125%/150% 縮放時寬度帶小數）瀏覽器會把整張畫布微幅拉伸重取樣，字和線都會發糊。
-        this.canvas.width = Math.max(1, Math.round(rect.width * this.dpr));
-        this.canvas.height = Math.max(1, Math.round(rect.height * this.dpr));
+        const newW = Math.max(1, Math.round(rect.width * this.dpr));
+        const newH = Math.max(1, Math.round(rect.height * this.dpr));
+        // 尺寸沒變就不重設（重設 width/height 會清空畫布；不透明畫布會被清成黑色）
+        const changed = this.canvas.width !== newW || this.canvas.height !== newH;
+        if (changed) {
+            this.canvas.width = newW;
+            this.canvas.height = newH;
+        }
         this.canvas.style.width = (this.canvas.width / this.dpr) + 'px';
         this.canvas.style.height = (this.canvas.height / this.dpr) + 'px';
 
         this.width = rect.width;
         this.height = rect.height;
         this._screenBackground = null; // 底色重新讀取
+        if (changed) {
+            // 2026-10-13：尺寸一變就在同一格重畫，不要等下一格（否則切換右側面板時會閃一下黑）
+            this.clear();
+            if (this._hasRendered && typeof this.onResize === 'function' && !this._resizeRepainting) {
+                this._resizeRepainting = true;
+                try { this.onResize(); } finally { this._resizeRepainting = false; }
+            }
+        }
     }
 
     /** [CR-1] 不透明畫布的底色：沿用 .canvas-container 的背景色（CSS 變數 --bg-canvas） */
@@ -333,6 +347,7 @@ class GenogramCanvas {
     render(persons, relationships, highlightedIds = [], selectedId = null, selectedRelationshipId = null, connectingFrom = null, selectedPersonIds = [], boxSelectStart = null, boxSelectEnd = null, households = [], selectedHouseholdId = null, hoveredPersonId = null) {
         // [HitTest] 保留最近一次資料，供關係線點擊路徑計算使用
         this.lastPersons = Array.isArray(persons) ? persons : [];
+        this._hasRendered = true;
         this.textLabelBoxes = new Map(); // 關係線文字、同住圈名稱的命中框（繪製時記錄，供點選／文字位置拉桿）
         this.lastRelationships = Array.isArray(relationships) ? relationships : [];
 
