@@ -281,7 +281,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     check('畫的順序：情感線 → 親子線（親子線不被蓋住）', both.emoBeforeFamilies, both.order);
     check('上下對齊：繞到右側的情感線點得到；正中是親子線', both.green === 'e2' && both.black === 'a2', JSON.stringify(both));
 
-    // ── 7. 寵物的親子線自成一組；建立時父母不被移到寵物身上 ──
+    // ── 7. 寵物的親子線不跟人類子女同組；建立時父母不被移到寵物身上 ──
     const grp = await page.evaluate(() => {
         const app = window.app;
         const pc = (a, c, id) => ({ id, fromPersonId: a, toPersonId: c, type: 'parent-child' });
@@ -314,7 +314,24 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     });
     check('連接阿姨→狗：阿姨不會被移到狗身上', grp.auntX === 1000, JSON.stringify(grp));
     check('同列寵物的親子線：從主人頭頂偏側往上繞，不與主人自己的親子線重疊', grp.dogOverTop, grp.dogPath);
-    check('寵物的親子線自成一組，擺得再遠也是簡單的轉彎線', grp.catAlone && grp.catSimple, JSON.stringify(grp));
+    check('寵物的親子線不跟人類子女同組，擺得再遠也是簡單的轉彎線', grp.catAlone && grp.catSimple, JSON.stringify(grp));
+
+    // ── 8. 同一主人（組合）的寵物共用一條橫桿；人類子女另一組；主人不同就分開（2026-10-14） ──
+    const share = await page.evaluate(() => {
+        const app = window.app;
+        const pc = (a, c) => ({ id: a + '-' + c, fromPersonId: a, toPersonId: c, type: 'parent-child' });
+        app.loadData({ version: '1.1', persons: [
+            { id: 'h', gender: 'male', x: 360, y: 250 }, { id: 'm', gender: 'female', x: 600, y: 250 },
+            { id: 'k1', gender: 'male', x: 240, y: 370 }, { id: 'k2', gender: 'female', x: 360, y: 370 },
+            { id: 'c', gender: 'pet', petType: 'cat', x: 540, y: 370 }, { id: 'd', gender: 'pet', petType: 'dog', x: 660, y: 370 },
+            { id: 'f', gender: 'pet', petType: 'fish', x: 780, y: 370 }
+        ], relationships: [{ id: 'mm', fromPersonId: 'h', toPersonId: 'm', type: 'married' },
+            ...['k1', 'k2', 'c', 'd'].flatMap(c => [pc('h', c), pc('m', c)]), pc('m', 'f')] });
+        app.render();
+        const groups = app.canvas._buildFamilyGroups(app.relationships.filter(r => r.type === 'parent-child'), new KinshipEngine(app.persons, app.relationships));
+        return groups.map(g => g.childIds.slice().sort().join('+')).sort();
+    });
+    check('同主人的寵物合成一組、人類子女另一組、主人不同的寵物分開', JSON.stringify(share) === JSON.stringify(['c+d', 'f', 'k1+k2']), JSON.stringify(share));
 
     check('零 console error', errors.length === 0, errors.join(' | '));
     await finish(browser, passes, failures, 'RESULT OK (ex-partner / pets / no family marriage / relationship fx)');
