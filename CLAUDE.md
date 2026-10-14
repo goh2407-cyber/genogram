@@ -51,6 +51,7 @@ app-snap-placement → app-io
 - **線上版延伸（DEMO）**：`js/extras/genogram-extras.js` + `css/extras.css`（清單分頁、重大事件 `app.events`、畫面去識別化
   `viewOptions.deidentifyScreen`、隱藏暴力線 `showAbuseRelationships`、檢視模式、Word 匯出）；三份 index.html 都載入（2026-10-13 起 geno 也載入，部署在內網 interhub），排在所有 app mixin 之後。
   線條可見性一律走 `Relationship.isVisibleInView(type, view)`。回歸 `verify_extras.js`。
+  Word 匯出程式庫在本機 `js/vendor/docx.iife.js`（docx 9.7.2 IIFE，MIT 授權寫在檔頭），按匯出時用 `<script>` 載入（file:// 不能用 import()），全程不連外。回歸 `verify_word_export.js`。
 - **文字位置拉桿（成員／關係線文字／同住圈名稱共用）**：`getLabelEditTarget()`（app-property-panel）統一三種目標；
   關係文字位移存 `Relationship.labelOffset {x,y}`、同住圈名稱存 `household.labelOffset {x,y}`（一律換新物件，history 是淺拷貝）。
   命中框於繪製時寫入 `canvas.textLabelBoxes`。回歸 `verify_text_label_move.js`。

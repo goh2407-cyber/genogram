@@ -7,7 +7,8 @@
  * 只在根目錄 index.html 載入；離線包 geno/ 不載入。不改任何線條顏色與樣式。
  */
 class GenogramExtras {
-    static DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@9.7.2/+esm';
+    // Word 匯出程式庫放在本機（docx 9.7.2 IIFE，MIT），按「匯出 Word」時才載入；全程不連外（2026-10-14）
+    static DOCX_SRC = 'js/vendor/docx.iife.js';
     static GENDER = { male: '男', female: '女', pregnancy: '懷孕', same: '其他', pet: '寵物' };
 
     /** 清單／Word 的性別欄；寵物顯示種類（貓、狗…） */
@@ -474,14 +475,24 @@ class GenogramExtras {
         };
     }
 
+    /** 以一般 <script> 載入本機 docx（file:// 開啟時 ES module import 會被瀏覽器擋，所以不用 import()） */
+    loadDocx() {
+        if (window.docx && window.docx.Document) return Promise.resolve(window.docx);
+        if (!this._docxLoading) {
+            this._docxLoading = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = GenogramExtras.DOCX_SRC;
+                s.onload = () => (window.docx && window.docx.Document ? resolve(window.docx) : reject(new Error('Word 元件載入失敗')));
+                s.onerror = () => reject(new Error('找不到 Word 元件（js/vendor/docx.iife.js），請確認檔案完整'));
+                document.head.appendChild(s);
+            }).catch(err => { this._docxLoading = null; throw err; });
+        }
+        return this._docxLoading;
+    }
+
     async exportDOCX(showNotes = true, showLegend = true, header = null, deidentify = false, legendAll = false) {
         const app = this.app;
-        let docx;
-        try {
-            docx = await import(GenogramExtras.DOCX_URL);
-        } catch (err) {
-            throw new Error('Word 匯出需要網路（第一次要下載程式庫），請確認可以連線');
-        }
+        const docx = await this.loadDocx();
         await app.waitForCurrentCanvasFonts();
         const ds = app.getExportDataset(deidentify); // 表格用（代號、年齡帶）
         app.canvas.personMap = app.personMap;
