@@ -951,22 +951,7 @@ Object.assign(GenogramApp.prototype, {
                     }
                 });
 
-                // [Safe routing] 僅單一人物拖曳、且使用者未按 Alt 時，才允許半格內的水平微調。
-                // 校正仍在同一個 dragStartSnapshot 交易內，不新增 history，也不改 Y／generation。
-                if (this.canvas.draggedPerson && movingPersonIds.length === 1 && !e.altKey &&
-                    typeof this.canvas.findSafeFamilyRouteAdjustment === 'function') {
-                    const dragged = this.personMap.get(movingPersonIds[0]);
-                    if (dragged) {
-                        const halfCell = GenogramApp.GRID.CELL_WIDTH / 2;
-                        const correction = this.canvas.findSafeFamilyRouteAdjustment(
-                            dragged.id,
-                            [-halfCell, halfCell],
-                            this.persons,
-                            this.relationships
-                        );
-                        if (correction && correction.dx) dragged.x += correction.dx;
-                    }
-                }
+                // 家庭線固定走法（2026-10-27）：放開後不再為了讓線避開別人而自動挪動人物，落點一律照使用者放的位置
                 this.render(); // Snap 後重繪
                 } // end else（個別人物拖曳的逐人吸附路徑）
             }

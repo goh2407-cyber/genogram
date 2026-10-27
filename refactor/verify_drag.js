@@ -300,7 +300,7 @@ const shot = (n) => path.join(__dirname, n);
             `拖曳前=(${before.x},${before.y}) 放開後=(${r.after.pos.x},${r.after.pos.y}) undo後=(${after.x},${after.y})（截圖 drag_07_undo_after.png）`);
     }
 
-    // ---------- 8. 不安全走廊只微調拖曳者半格；Alt 保留精確落點 ----------
+    // ---------- 8. 家庭線固定走法（2026-10-27）：線擋到人也不自動挪動拖曳者，落點照放的位置 ----------
     {
         const correction = await page.evaluate(() => {
             const app = window.app;
@@ -320,7 +320,6 @@ const shot = (n) => path.join(__dirname, n);
             app.history.clear();
             app.render();
 
-            const methodPresent = typeof app.canvas.findSafeFamilyRouteAdjustment === 'function';
             const prepareRelease = () => {
                 kid.x = 530;
                 kid.y = 300;
@@ -343,11 +342,6 @@ const shot = (n) => path.join(__dirname, n);
                 app.canvas.dragGuides = null;
             };
 
-            kid.x = 410;
-            app.render();
-            const probe = methodPresent
-                ? app.canvas.findSafeFamilyRouteAdjustment(kid.id, [-60, 60], app.persons, app.relationships)
-                : null;
             prepareRelease();
             app.handlePointerUp({ altKey: false });
             const adjusted = { x: kid.x, y: kid.y, history: app.history.getUndoCount() };
@@ -356,14 +350,10 @@ const shot = (n) => path.join(__dirname, n);
             prepareRelease();
             app.handlePointerUp({ altKey: true });
             const alt = { x: kid.x, y: kid.y, history: app.history.getUndoCount() };
-            return { methodPresent, probe, adjusted, alt };
+            return { adjusted, alt };
         });
-        record('8. 規劃器找到左移 60px 的安全校正候選',
-            correction.methodPresent && correction.probe && correction.probe.dx === -60 &&
-                correction.probe.afterUnsafe < correction.probe.beforeUnsafe,
-            JSON.stringify(correction.probe));
-        record('8. 放開只水平微調 60px、Y 不變且仍是一筆 history',
-            correction.adjusted.x === 350 && correction.adjusted.y === 300 && correction.adjusted.history === 1,
+        record('8. 線擋到人時放開仍保留精確落點、Y 不變且一筆 history',
+            correction.adjusted.x === 410 && correction.adjusted.y === 300 && correction.adjusted.history === 1,
             JSON.stringify(correction.adjusted));
         record('8. Alt 放開保留精確落點並維持單筆 history',
             correction.alt.x === 410 && correction.alt.y === 300 && correction.alt.history === 1,

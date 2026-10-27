@@ -87,6 +87,7 @@ class GenogramCanvas {
 
         // 繪製設定
         this.personSize = 50;
+        this.generationGap = 120; // 輩分間距（App.render 注入 GRID.CELL_HEIGHT），家庭線橫桿固定高度用
         this.fontSize = 15; // [CR-5] 14 → 15（2026-10-13 使用者與主管比較後選定）
         // [CR-4] 文字層次（2026-10-13 使用者主管：參考網站字較清楚 → 姓名半粗＋近黑、年齡加大；線條不動）
         this.textStyle = { ...GenogramCanvas.TEXT_STYLE };
@@ -2149,7 +2150,7 @@ class GenogramCanvas {
                 rel.linkType || '', rel.routeMode || '', rel.routeLift || 0
             ])
             .sort((a, b) => a[0].localeCompare(b[0]));
-        return JSON.stringify([this.personSize, this.fontSize, this.fontFamily, personData, relationshipData]);
+        return JSON.stringify([this.personSize, this.generationGap, this.fontSize, this.fontFamily, personData, relationshipData]);
     }
 
     _getDerivedGeometrySignature(persons, relationships) {
@@ -2388,32 +2389,33 @@ class GenogramCanvas {
                 const maxX = Math.max(route.attachmentSegment.start.x,
                     route.attachmentSegment.end.x);
                 const y = route.attachmentSegment.start.y;
-                const desiredX = childObjs.length === 1 ? childObjs[0].x : childCenterX;
-                // 下垂點滑向子女平均位置，但偏好位置不貼著父母符號邊緣：兩端各留 inset（婚姻線太短則不留），
-                // 否則子女都在一側時，下垂點會緊貼某一位父母，看起來像只連著那個人。
-                // 搜尋範圍（sourceRange）仍是整段，讓規劃器在擁擠時有安全退路；貼邊另由規劃器計分懲罰。
-                const inset = Math.min(20, (maxX - minX) / 3);
-                const lo = maxX - minX > inset * 2 ? minX + inset : minX;
-                const hi = maxX - minX > inset * 2 ? maxX - inset : maxX;
-                let sourceX = Math.max(lo, Math.min(hi, desiredX));
-                // [L3] 婚姻線中點有記號（離婚斜線、分居斜線、喪偶 ×、house…）時，下垂點避開記號 ±16px，
-                //      不然線會從記號正中間穿過；規劃器也會對靠近記號的候選扣分（avoidXs）
+                // 固定走法（2026-10-27）：下垂點固定在婚姻線中點，不隨子女位置滑動。
+                // 中點被擋時才改用婚姻線上最近的空位：[L3] 線上記號（離婚斜線、喪偶 ×…）左右各 16px，
+                // 以及符號壓在婚姻線上的其他人（符號＋其姓名文字）。只看父母這一列，拖子女時不會跳；
+                // 距離相同時偏向子女那一側。
+                const blocked = [];
                 const style = typeof marriageRel.getLineStyle === 'function' ? marriageRel.getLineStyle() : null;
-                const avoidXs = [];
                 if (style && style.decoration && route.decoration && Number.isFinite(route.decoration.x)
                     && Math.abs(route.decoration.y - y) < 1) {
-                    const cx = route.decoration.x, keep = 16;
-                    avoidXs.push(cx);
-                    if (Math.abs(sourceX - cx) < keep) {
-                        const left = cx - keep, right = cx + keep;
-                        const prefer = desiredX <= cx ? left : right;
-                        const other = desiredX <= cx ? right : left;
-                        sourceX = prefer >= lo && prefer <= hi ? prefer : (other >= lo && other <= hi ? other : sourceX);
-                    }
+                    blocked.push({ left: route.decoration.x - 16, right: route.decoration.x + 16 });
                 }
+                const parentIds = new Set(parentObjs.map(parent => parent.id));
+                const onLineIds = new Set((obstacles || [])
+                    .filter(rect => rect.kind === 'symbol' && !parentIds.has(rect.ownerId)
+                        && rect.top < y && rect.bottom > y && rect.right > minX && rect.left < maxX)
+                    .map(rect => rect.ownerId));
+                (obstacles || []).forEach(rect => {
+                    if (onLineIds.has(rect.ownerId)) blocked.push({ left: rect.left, right: rect.right });
+                });
+                const midX = (minX + maxX) / 2;
+                const isFree = x => x >= minX && x <= maxX
+                    && blocked.every(range => x <= range.left || x >= range.right);
+                const candidates = [midX, ...blocked.flatMap(range => [range.left, range.right])].filter(isFree);
+                candidates.sort((a, b) => Math.abs(a - midX) - Math.abs(b - midX)
+                    || Math.abs(a - childCenterX) - Math.abs(b - childCenterX));
+                const sourceX = candidates.length > 0 ? candidates[0] : midX;
                 return {
                     source: { x: sourceX, y },
-                    avoidXs,
                     sourceRange: { minX, maxX },
                     sourcePrefix: [],
                     marriageRel,
@@ -2486,10 +2488,12 @@ class GenogramCanvas {
         const right = Math.max(...xs);
         const top = Math.min(...ys);
         const bottom = Math.max(...ys);
-        return obstacles.filter(obstacle =>
+        // 父母自己的符號與文字一律保留：橫桿高度要讓開父母的姓名／備註（見 FamilyRoutePlanner._planNormal）
+        const parentIds = new Set(parentObjs.map(parent => parent.id));
+        return obstacles.filter(obstacle => parentIds.has(obstacle.ownerId) || (
             obstacle.right > left && obstacle.left < right &&
             obstacle.bottom > top && obstacle.top < bottom
-        );
+        ));
     }
 
     _getRouteObstacleSignature(obstacles) {
@@ -2510,6 +2514,7 @@ class GenogramCanvas {
             .sort((a, b) => a[0].localeCompare(b[0]));
         return JSON.stringify([
             this.personSize,
+            this.generationGap,
             group.key,
             group.childIds,
             group.relIds,

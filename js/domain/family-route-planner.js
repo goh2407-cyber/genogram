@@ -96,140 +96,44 @@ class FamilyRoutePlanner {
         return count;
     }
 
+    /**
+     * 固定走法（2026-10-27，仿網路版）：下垂點就是 source（婚姻線中點，由 canvas 決定），
+     * 橫桿高度只看父母那一列（父母下方一輩、子女頭頂上方；父母姓名／備註較長時再往下讓開），
+     * 子女被拖得更高時才跟著上移。
+     * 不避讓、不換走法；穿過別人時 safe=false 並列出 collisions，交給使用者手動移開。
+     */
     static _planNormal(input) {
         const { parents, children, obstacles, personSize, margin } = input;
         const half = personSize / 2;
-        const preferredSource = this._finitePoint(input.source) || {
+        const source = this._finitePoint(input.source) || {
             x: parents.reduce((sum, person) => sum + person.x, 0) / parents.length,
             y: Math.max(...parents.map(person => person.y + half))
         };
         const sourcePrefix = this._dedupePoints(
             (Array.isArray(input.sourcePrefix) ? input.sourcePrefix : []).filter(point => this._finitePoint(point))
         );
-        const rawRange = input.sourceRange || { minX: preferredSource.x, maxX: preferredSource.x };
-        const range = {
-            minX: Math.min(this._finite(rawRange.minX, preferredSource.x), this._finite(rawRange.maxX, preferredSource.x)),
-            maxX: Math.max(this._finite(rawRange.minX, preferredSource.x), this._finite(rawRange.maxX, preferredSource.x))
-        };
-        const childrenCenterX = children.reduce((sum, child) => sum + child.x, 0) / children.length;
-        const minChildTop = Math.min(...children.map(child => child.y - half));
         const minSegment = Math.max(8, Math.min(20, margin + 6));
+        const generationGap = this._finitePositive(input.generationGap, 120);
+        const parentRowY = Math.max(...parents.map(person => person.y));
         const parentIds = new Set(parents.map(parent => parent.id));
-        const parentSafetyBottom = obstacles
-            .filter(obstacle => obstacle.kind === 'symbol' && parentIds.has(obstacle.ownerId))
-            .reduce((bottom, obstacle) => Math.max(bottom, obstacle.bottom), preferredSource.y);
-        const minBarY = Math.max(preferredSource.y + minSegment, parentSafetyBottom);
-        const maxBarY = minChildTop - minSegment;
-
-        const clampX = value => Math.max(range.minX, Math.min(range.maxX, value));
-        const trunkXs = this._uniqueNumbers([
-            preferredSource.x,
-            childrenCenterX,
-            preferredSource.x - 30,
-            preferredSource.x + 30,
-            preferredSource.x - 60,
-            preferredSource.x + 60,
-            range.minX,
-            range.maxX
-        ].map(clampX));
-        const barYs = minBarY <= maxBarY
-            ? this._uniqueNumbers([
-                (preferredSource.y + minChildTop) / 2,
-                minBarY,
-                maxBarY,
-                preferredSource.y + 30
-            ].map(value => Math.max(minBarY, Math.min(maxBarY, value))))
-            : [];
-
-        const candidates = [];
-        for (const trunkX of trunkXs) {
-            for (const barY of barYs) {
-                const candidate = this._buildNormalCandidate({
-                    parents, children, obstacles, personSize,
-                    source: { x: trunkX, y: preferredSource.y },
-                    sourcePrefix, trunkX, barY
-                });
-                if (!candidate.safe) continue;
-                candidate.score = this._routeScore(candidate.relationshipPaths, preferredSource.x, trunkX)
-                    + this._parentEdgePenalty(parents, trunkX, half)
-                    + this._avoidPenalty(trunkX, input.avoidXs);
-                candidates.push(candidate);
-            }
-        }
-
-        if (candidates.length > 0) {
-            candidates.sort((a, b) => a.score - b.score || a.trunkX - b.trunkX || a.barY - b.barY);
-            return candidates[0];
-        }
-
-        if (!input._skipStaggered && children.length > 1 && children.every(child => !child.twinGroup)) {
-            const staggered = this._planStaggeredNormal(input);
-            if (staggered) return staggered;
-        }
-
-        const fallbackBarY = Number.isFinite(minChildTop)
-            ? preferredSource.y + Math.max(8, (minChildTop - preferredSource.y) / 2)
-            : preferredSource.y + 20;
-        const bounds = this._obstacleBounds(obstacles, [...parents, ...children], personSize);
-        const laneX = bounds.left - margin - 20;
-        const fallback = this._buildNormalCandidate({
+        const parentLabelBottom = obstacles
+            .filter(obstacle => parentIds.has(obstacle.ownerId))
+            .reduce((bottom, obstacle) => Math.max(bottom, obstacle.bottom), -Infinity);
+        const standardBarY = Math.max(parentRowY + generationGap - half - minSegment, parentLabelBottom);
+        const minChildTop = Math.min(...children.map(child => child.y - half));
+        const barY = Math.max(source.y + 8, Math.min(standardBarY, minChildTop - minSegment));
+        return this._buildNormalCandidate({
             parents, children, obstacles, personSize,
-            source: { x: clampX(preferredSource.x), y: preferredSource.y },
-            sourcePrefix,
-            trunkX: laneX,
-            barY: fallbackBarY,
-            forceSideLane: true
+            source, sourcePrefix, trunkX: source.x, barY
         });
-        fallback.safe = false;
-        fallback.mode = 'side-lane';
-        fallback.collisions = this._collectPlanCollisions(fallback, obstacles, parents);
-        fallback.suggestedDx = null;
-        return fallback;
     }
 
-    static _planStaggeredNormal(input) {
-        const relationshipPaths = {};
-        const childPaths = {};
-        for (const child of input.children) {
-            const childPlan = this._planNormal({ ...input, children: [child], _skipStaggered: true });
-            if (!childPlan.safe) return null;
-            const representative = childPlan.relationshipPaths[`${input.parents[0].id}->${child.id}`];
-            if (!representative) return null;
-            childPaths[child.id] = representative.map(point => ({ ...point }));
-            input.parents.forEach(parent => {
-                const path = childPlan.relationshipPaths[`${parent.id}->${child.id}`];
-                if (path) relationshipPaths[`${parent.id}->${child.id}`] = path.map(point => ({ ...point }));
-            });
-        }
-        return {
-            mode: 'staggered',
-            safe: true,
-            trunkX: null,
-            barY: null,
-            source: null,
-            sourcePath: [],
-            barPath: [],
-            childPaths,
-            twinGroups: [],
-            relationshipPaths,
-            collisions: [],
-            suggestedDx: null
-        };
-    }
-
-    static _buildNormalCandidate({ parents, children, obstacles, personSize, source, sourcePrefix = [], trunkX, barY, forceSideLane = false }) {
+    static _buildNormalCandidate({ parents, children, obstacles, personSize, source, sourcePrefix = [], trunkX, barY }) {
         const half = personSize / 2;
         const prefix = sourcePrefix.length > 0
             ? this._dedupePoints([...sourcePrefix, source])
             : [source];
-        const sourcePath = forceSideLane && Math.abs(source.x - trunkX) > 0.01
-            ? this._dedupePoints([
-                ...prefix,
-                { x: source.x, y: source.y + 8 },
-                { x: trunkX, y: source.y + 8 },
-                { x: trunkX, y: barY }
-            ])
-            : this._dedupePoints([...prefix, { x: trunkX, y: barY }]);
+        const sourcePath = this._dedupePoints([...prefix, { x: trunkX, y: barY }]);
         const twinMap = new Map();
         const nonTwins = [];
         children.forEach(child => {
@@ -317,7 +221,7 @@ class FamilyRoutePlanner {
         }
 
         return {
-            mode: forceSideLane ? 'side-lane' : 'normal-trunk',
+            mode: 'normal-trunk',
             safe,
             trunkX,
             barY,
@@ -440,10 +344,6 @@ class FamilyRoutePlanner {
         return false;
     }
 
-    static _collectPlanCollisions(plan, obstacles, parents) {
-        return this._collectRelationshipCollisions(plan.relationshipPaths, obstacles, parents);
-    }
-
     static _collectRelationshipCollisions(relationshipPaths, obstacles, parents) {
         const parentIds = new Set(parents.map(parent => parent.id));
         const collisions = [];
@@ -467,48 +367,6 @@ class FamilyRoutePlanner {
             }
         }
         return collisions;
-    }
-
-    /** 下垂點太靠近婚姻線記號（離婚斜線、喪偶 × 等；< 16px）時加分懲罰；只影響挑選。 */
-    static _avoidPenalty(trunkX, avoidXs) {
-        const keep = 16;
-        return (Array.isArray(avoidXs) ? avoidXs : []).reduce((sum, ax) => {
-            if (!Number.isFinite(ax)) return sum;
-            const d = Math.abs(trunkX - ax);
-            return sum + (d < keep ? (keep - d) * 6 : 0);
-        }, 0);
-    }
-
-    /** 下垂點貼著父母符號邊緣（< 20px）時加分懲罰；只影響挑選，安全性不變。 */
-    static _parentEdgePenalty(parents, trunkX, half) {
-        const inset = 20;
-        let penalty = 0;
-        (parents || []).forEach(parent => {
-            if (!Number.isFinite(parent.x)) return;
-            const d = Math.abs(trunkX - parent.x) - half; // 到符號邊緣的距離（負值 = 在符號內）
-            if (d < inset) penalty += (inset - Math.max(d, 0)) * 5;
-        });
-        return penalty;
-    }
-
-    static _routeScore(paths, preferredX, trunkX) {
-        let length = 0;
-        let bends = 0;
-        const seen = new Set();
-        Object.values(paths).forEach(path => {
-            const signature = JSON.stringify(path);
-            if (seen.has(signature)) return;
-            seen.add(signature);
-            for (let i = 1; i < path.length; i++) {
-                length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
-                if (i >= 2) {
-                    const previousHorizontal = path[i - 1].y === path[i - 2].y;
-                    const currentHorizontal = path[i].y === path[i - 1].y;
-                    if (previousHorizontal !== currentHorizontal) bends++;
-                }
-            }
-        });
-        return bends * 1000 + length + Math.abs(trunkX - preferredX) * 0.1;
     }
 
     static _segmentIntersectsRect(a, b, rect) {
@@ -640,25 +498,12 @@ class FamilyRoutePlanner {
         return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
     }
 
-    static _finite(value, fallback) {
-        return Number.isFinite(value) ? value : fallback;
-    }
-
     static _finitePositive(value, fallback) {
         return Number.isFinite(value) && value > 0 ? value : fallback;
     }
 
     static _finiteNonNegative(value, fallback) {
         return Number.isFinite(value) && value >= 0 ? value : fallback;
-    }
-
-    static _uniqueNumbers(values) {
-        const result = [];
-        values.forEach(value => {
-            if (!Number.isFinite(value)) return;
-            if (!result.some(existing => Math.abs(existing - value) < 1e-9)) result.push(value);
-        });
-        return result;
     }
 
     static _uniqueStrings(values) {

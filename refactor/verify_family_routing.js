@@ -243,9 +243,11 @@ function isCleanOrthogonalPath(path) {
         check('draw and hit-test reuse the exact cached relationship path',
             JSON.stringify(data.route) === JSON.stringify(data.cached),
             JSON.stringify({ route: data.route, cached: data.cached }));
-        check('blocked central corridor selects a safe non-crossing route',
-            data.safe === true && data.mode === 'normal-trunk' && !data.obstacleCrossing,
-            JSON.stringify({ mode: data.mode, safe: data.safe, crossing: data.obstacleCrossing }));
+        // 固定走法（2026-10-27）：中間有人擋路也不繞，下垂點留在婚姻線中點，只回報 safe=false
+        check('blocked central corridor keeps the fixed trunk and reports the crossing',
+            data.safe === false && data.mode === 'normal-trunk' && data.obstacleCrossing
+                && data.route.every(point => point.x === 500),
+            JSON.stringify({ mode: data.mode, safe: data.safe, crossing: data.obstacleCrossing, route: data.route }));
         check('unchanged consecutive renders reuse the family route cache',
             data.repeatedRenderPlanCalls === 0,
             `planFamily calls=${data.repeatedRenderPlanCalls}`);
@@ -352,6 +354,57 @@ function isCleanOrthogonalPath(path) {
             isCleanOrthogonalPath(edgeModes.reversed)
                 && edgeModes.reversed.every((point, index, points) =>
                     index === 0 || point.y <= points[index - 1].y));
+
+        // 固定走法（2026-10-27）：下垂點固定在婚姻線中點、橫桿高度不隨子女移動；
+        // 只有符號壓在婚姻線上的其他人才讓下垂點改到最近空位
+        const fixed = await page.evaluate(() => {
+            const app = window.app;
+            const P = (id, x, y, gender) => new Person({ id, x, y, gender, name: id });
+            const R = (id, type, from, to) => new Relationship({ id, type, fromPersonId: from, toPersonId: to });
+            const dad = P('fx-dad', 400, 240, 'male');
+            const mom = P('fx-mom', 600, 240, 'female');
+            const kids = [P('fx-k1', 380, 360, 'male'), P('fx-k2', 620, 360, 'female')];
+            const rels = [R('fx-mar', 'married', dad.id, mom.id)];
+            kids.forEach(kid => {
+                rels.push(R(`fx-d-${kid.id}`, 'parent-child', dad.id, kid.id));
+                rels.push(R(`fx-m-${kid.id}`, 'parent-child', mom.id, kid.id));
+            });
+            const plan = () => {
+                app.render();
+                const p = app.canvas._familyRoutePlans.find(item => item.family.childIds.includes('fx-k1'));
+                return { trunkX: p.trunkX, barY: p.barY, mode: p.mode };
+            };
+            app.persons = [dad, mom, ...kids];
+            app.relationships = rels;
+            app._syncPersonMap();
+            const base = plan();
+            kids[1].x = 900;
+            kids[1].y = 600;
+            const childMoved = plan();
+            kids[0].y = 300;
+            const childRaised = plan();
+            kids[0].y = 360;
+            kids[1].x = 620;
+            kids[1].y = 360;
+            const below = P('fx-below', 500, 330, 'same');
+            app.persons.push(below);
+            app._syncPersonMap();
+            const blockerBelow = plan();
+            below.y = 240;
+            const blockerOnLine = plan();
+            return { base, childMoved, childRaised, blockerBelow, blockerOnLine };
+        });
+        check('fixed trunk stays at the marriage midpoint and bar height ignores child moves',
+            fixed.base.trunkX === 500 && fixed.childMoved.trunkX === 500
+                && fixed.childMoved.barY === fixed.base.barY && fixed.childMoved.mode === 'normal-trunk',
+            JSON.stringify(fixed));
+        check('a child dragged above the bar raises it without switching route style',
+            fixed.childRaised.mode === 'normal-trunk' && fixed.childRaised.trunkX === 500
+                && fixed.childRaised.barY < fixed.base.barY,
+            JSON.stringify(fixed.childRaised));
+        check('only a person standing on the marriage line moves the drop point',
+            fixed.blockerBelow.trunkX === 500 && fixed.blockerOnLine.trunkX !== 500,
+            JSON.stringify({ below: fixed.blockerBelow, onLine: fixed.blockerOnLine }));
     }
 
     check('routing integration has no console or page errors', errors.length === 0, errors.join('; '));

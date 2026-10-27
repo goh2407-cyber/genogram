@@ -1780,6 +1780,7 @@ class GenogramApp {
         this.canvas.eventsToDraw = deid ? [] : (this.events || []);
         this.canvas.eventsLayout = this.eventsLayout;
         this.canvas.ageReferenceDate = this.ageReferenceDate; // [2-1]
+        this.canvas.generationGap = GenogramApp.GRID.CELL_HEIGHT;
         this.canvas.lodScale = this.canvas.scale; // [3-3] 螢幕 LOD（匯出期間 canvas 自行固定為 1）
         if (this.labelEditingPersonId !== this.selectedPersonId
             || !this.personMap.has(this.labelEditingPersonId)) {

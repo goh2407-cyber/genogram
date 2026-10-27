@@ -18,7 +18,6 @@ Object.assign(GenogramCanvas.prototype, {
         const groups = this._buildFamilyGroups(familyRels || [], engine);
         const relationshipPaths = new Map();
         const nextFamilyPlanCache = new Map();
-        const allObstacleSignature = this._getRouteObstacleSignature(obstacles);
 
         const plans = groups.map(group => {
             const parentObjs = group.parentIds.map(id => this.personMap.get(id)).filter(Boolean);
@@ -45,34 +44,18 @@ Object.assign(GenogramCanvas.prototype, {
                 source: sourceInfo.source,
                 sourceRange: sourceInfo.sourceRange,
                 sourcePrefix: sourceInfo.sourcePrefix,
-                avoidXs: sourceInfo.avoidXs || [],
                 avoidStraightPairs,
                 obstacles: relevantObstacles,
                 personSize: this.personSize,
+                generationGap: this.generationGap,
                 margin: 10
             };
+            // 固定走法：路徑只由父母／子女位置決定，局部障礙物只用來回報 safe／collisions，不必再用全部障礙物重算
             const cached = this._familyPlanCache.get(group.key);
-            let plan = null;
-            let cacheSignature = localSignature;
-            if (cached && cached.plan) {
-                const expectedSignature = cached.plan.safe
-                    ? localSignature
-                    : `${localSignature}|${allObstacleSignature}`;
-                if (cached.signature === expectedSignature) {
-                    plan = cached.plan;
-                    cacheSignature = expectedSignature;
-                }
-            }
-            if (!plan) {
-                plan = FamilyRoutePlanner.planFamily(planInput);
-                if (!plan.safe && relevantObstacles.length !== obstacles.length) {
-                    plan = FamilyRoutePlanner.planFamily({ ...planInput, obstacles });
-                }
-                if (!plan.safe) {
-                    cacheSignature = `${localSignature}|${allObstacleSignature}`;
-                }
-            }
-            nextFamilyPlanCache.set(group.key, { signature: cacheSignature, plan });
+            const plan = cached && cached.plan && cached.signature === localSignature
+                ? cached.plan
+                : FamilyRoutePlanner.planFamily(planInput);
+            nextFamilyPlanCache.set(group.key, { signature: localSignature, plan });
             plan.family = {
                 key: group.key,
                 parentIds: [...group.parentIds],
@@ -98,55 +81,6 @@ Object.assign(GenogramCanvas.prototype, {
         this._familyRelationshipPaths = relationshipPaths;
         this._familyRouteSignature = signature;
         return plans;
-    },
-
-    findSafeFamilyRouteAdjustment(personId, offsets, persons, relationships) {
-        const allPersons = Array.isArray(persons) ? persons : [];
-        const allRelationships = Array.isArray(relationships) ? relationships : [];
-        const person = this.personMap instanceof Map ? this.personMap.get(personId) : null;
-        if (!person || typeof FamilyRoutePlanner === 'undefined') {
-            return { dx: 0, beforeUnsafe: 0, afterUnsafe: 0 };
-        }
-
-        const familyRels = [];
-        const otherRels = [];
-        allRelationships.forEach(rel => {
-            const category = typeof rel.getCategory === 'function'
-                ? rel.getCategory()
-                : Relationship.getCategory(rel.type);
-            (category === 'family' ? familyRels : otherRels).push(rel);
-        });
-        const engine = new KinshipEngine(allPersons, allRelationships);
-        const unsafeCount = () => this.getFamilyRoutePlans(familyRels, allPersons, otherRels, engine)
-            .filter(plan =>
-                (plan.family.parentIds.includes(personId) || plan.family.childIds.includes(personId)) && !plan.safe
-            ).length;
-
-        const originalX = person.x;
-        const beforeUnsafe = unsafeCount();
-        let best = { dx: 0, beforeUnsafe, afterUnsafe: beforeUnsafe };
-        if (beforeUnsafe > 0) {
-            for (const dx of Array.isArray(offsets) ? offsets : []) {
-                if (!Number.isFinite(dx) || dx === 0) continue;
-                const candidateX = originalX + dx;
-                const occupied = allPersons.some(other =>
-                    other.id !== personId &&
-                    Math.abs(other.x - candidateX) < this.personSize + 10 &&
-                    Math.abs(other.y - person.y) < this.personSize + 10
-                );
-                if (occupied) continue;
-                person.x = candidateX;
-                const candidateUnsafe = unsafeCount();
-                if (candidateUnsafe < best.afterUnsafe) {
-                    best = { dx, beforeUnsafe, afterUnsafe: candidateUnsafe };
-                    if (candidateUnsafe === 0) break;
-                }
-            }
-        }
-
-        person.x = originalX;
-        unsafeCount(); // 還原目前座標對應的繪製／命中快取
-        return best;
     },
 
     _getPlannedFamilyRelationshipPath(relationship, allRelationships) {

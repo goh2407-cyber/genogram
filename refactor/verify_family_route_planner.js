@@ -139,22 +139,45 @@ check('sibling bar stays below the parents symbol safety boundary', () => {
     assert.ok(plan.barY >= 335, `barY ${plan.barY} enters the parent safety band`);
 });
 
-check('a central obstacle selects a safe offset inside the marriage segment', () => {
+check('a central obstacle does not move the fixed trunk; the plan reports the collision', () => {
     const input = baseInput();
     input.obstacles.push({
         ownerId: 'other', kind: 'symbol',
         left: 488, right: 512, top: 330, bottom: 430
     });
     const plan = planFamily(input);
-    assert.equal(plan.safe, true);
-    assert.notEqual(plan.trunkX, 500);
-    assert.ok(plan.trunkX >= 465 && plan.trunkX <= 535);
-    assert.equal(
-        FamilyRoutePlanner.pathIntersectsObstacles(
-            plan.relationshipPaths['dad->kid'], input.obstacles, new Set(['kid'])
-        ),
-        false
-    );
+    assert.equal(plan.mode, 'normal-trunk');
+    assert.equal(plan.trunkX, 500);
+    assert.equal(plan.safe, false);
+    assert.ok(plan.collisions.includes('other:symbol'), JSON.stringify(plan.collisions));
+});
+
+check('sibling bar height depends only on the parents row and generation gap', () => {
+    const input = baseInput();
+    input.children = [
+        { id: 'a', x: 400, y: 500 },
+        { id: 'b', x: 600, y: 620 }
+    ];
+    const plan = planFamily(input);
+    // 父母 y=300、預設輩分 120：300 + 120 - 25 - 16 = 379
+    assert.equal(plan.barY, 379);
+    input.children[1] = { id: 'b', x: 800, y: 900 };
+    const moved = planFamily(input);
+    assert.equal(moved.barY, 379);
+    assert.equal(moved.trunkX, 500);
+    const wider = planFamily({ ...input, generationGap: 180 });
+    assert.equal(wider.barY, 439);
+});
+
+check('sibling bar rises only when a child is dragged above it', () => {
+    const input = baseInput();
+    input.children = [
+        { id: 'near', x: 400, y: 380 },
+        { id: 'far', x: 600, y: 500 }
+    ];
+    const plan = planFamily(input);
+    assert.equal(plan.barY, 380 - 25 - 16);
+    assert.ok(plan.relationshipPaths['dad->far'].every(point => Number.isFinite(point.y)));
 });
 
 check('touching a safety-margin boundary is allowed but entering its interior is blocked', () => {
@@ -257,7 +280,7 @@ check('mixed twins keep one clinical V origin and finite child endpoints', () =>
     assertFinitePath(plan.relationshipPaths['mom->t2']);
 });
 
-check('vertically staggered children receive separate safe branches before any person moves', () => {
+check('vertically staggered children share one bar instead of switching route style', () => {
     const input = baseInput();
     input.parents = [
         { id: 'dad', x: 400, y: 180 },
@@ -267,25 +290,17 @@ check('vertically staggered children receive separate safe branches before any p
         { id: 'near', x: 400, y: 300 },
         { id: 'far', x: 400, y: 420 }
     ];
-    input.source = { x: 425, y: 180 };
-    input.sourceRange = { minX: 425, maxX: 535 };
+    input.source = { x: 480, y: 180 };
     input.obstacles = [
         { ownerId: 'near', kind: 'symbol', left: 365, right: 435, top: 265, bottom: 335 },
         { ownerId: 'far', kind: 'symbol', left: 365, right: 435, top: 385, bottom: 455 }
     ];
     const plan = planFamily(input);
-    assert.equal(plan.mode, 'staggered');
-    assert.equal(plan.safe, true);
+    assert.equal(plan.mode, 'normal-trunk');
+    assert.equal(plan.trunkX, 480);
+    assert.equal(plan.barY, 180 + 120 - 25 - 16);
     assertFinitePath(plan.relationshipPaths['dad->near']);
     assertFinitePath(plan.relationshipPaths['dad->far']);
-    assert.equal(
-        FamilyRoutePlanner.pathIntersectsObstacles(
-            plan.relationshipPaths['dad->far'],
-            input.obstacles,
-            new Set(['far'])
-        ),
-        false
-    );
 });
 
 check('degenerate and fully blocked input returns a finite bounded fallback', () => {

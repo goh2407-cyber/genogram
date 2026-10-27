@@ -153,6 +153,7 @@ Object.assign(GenogramApp.prototype, {
             sourceRange,
             obstacles,
             personSize,
+            generationGap: GenogramApp.GRID.CELL_HEIGHT,
             margin: safety
         });
         return routePlan.safe;
