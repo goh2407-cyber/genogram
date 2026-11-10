@@ -190,6 +190,47 @@ Object.assign(GenogramCanvas.prototype, {
     },
 
     /**
+     * 「符號」被子女線穿過（或貼太近）的成員 id；固定走法不避讓，只回報。
+     * 只看符號：文字壓線是允許的（使用者可自行移動文字），不提示。
+     */
+    getFamilyCollisionPersonIds() {
+        const ids = new Set();
+        (this._familyRoutePlans || []).forEach(plan => {
+            if (plan.safe) return;
+            (plan.collisions || []).forEach(entry => {
+                const text = String(entry);
+                const cut = text.lastIndexOf(':');
+                if (text.slice(cut + 1) !== 'symbol') return;
+                const id = text.slice(0, cut);
+                if (id && id !== 'unknown') ids.add(id);
+            });
+        });
+        return [...ids];
+    },
+
+    /** 螢幕專用提示：被子女線穿過的成員外圍畫桃紅虛線圈，提醒使用者手動拖開。只由 render() 呼叫，不進匯出。 */
+    drawFamilyCollisionHints() {
+        if (this.showRouteHints === false) return;
+        const ids = this.getFamilyCollisionPersonIds();
+        if (!ids.length) return;
+        const ctx = this.ctx;
+        const scale = this.scale || 1;
+        ctx.save();
+        ctx.strokeStyle = '#ed1261';
+        ctx.lineWidth = 1.5 / scale;
+        ctx.lineCap = 'butt';
+        ctx.setLineDash([5 / scale, 4 / scale]);
+        ids.forEach(id => {
+            const person = this.personMap.get(id);
+            if (!person) return;
+            ctx.beginPath();
+            ctx.arc(person.x, person.y, this.personSize / 2 + 10, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
+    },
+
+    /**
      * 繪製家庭樹狀結構；正式路徑由 FamilyRoutePlanner 統一計算。
      */
     drawFamilies(familyRels, persons, otherRels, selectedRelationshipId = null, kinship = null) {

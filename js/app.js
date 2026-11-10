@@ -690,6 +690,7 @@ class GenogramApp {
         this.elements.confirmCancel?.addEventListener('click', () => this._resolveConfirm(false));
         // [R4] 空白畫布引導卡
         this.elements.emptyStateAddBtn?.addEventListener('click', () => this.showGenderModal('parent'));
+        document.getElementById('emptyStateSampleBtn')?.addEventListener('click', () => this.loadSampleFamily());
 
         if (this.elements.autoLayoutBtn) {
             this.elements.autoLayoutBtn.addEventListener('click', () => this.previewAutoLayout());

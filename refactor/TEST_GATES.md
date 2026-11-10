@@ -20,9 +20,8 @@
 - 視圖縮放與位移（zoom/pan）可正確保存與恢復。
 
 ## D. 部署
-- 根目錄是線上／開發版；`geno/` 是離線臨床包；`refactor/app/` 是驗證副本。
-- `geno/index.html` 的字型、jsPDF 與 dagre 皆使用本地資產，且載入時零 HTTP/HTTPS 請求。
-- Service Worker 維持停用；離線能力不依賴瀏覽器快取。
+- 程式只有根目錄一份（2026-11-10 起；`geno/` 離線包與 `refactor/app/` 驗證副本已移除）。公開版放 GitHub Pages，內部 AI 版由 `internal/build.js` 從根目錄打包。
+- Service Worker 維持停用。
 
 ## E. 效能
 - 100 人/200 關係內操作順暢。
@@ -39,20 +38,17 @@
 - `node refactor/verify_drag.js`：無安全路徑時水平校正不超過 60px；`Alt` 保留精確落點；一次 Undo 完整復原。
 - `node refactor/verify_placement.js`：快速父母固定使用 120px 系統格距；近距離伴侶的既有父母擋住第二組置中位置時，只將目前子女向外移動最小安全距離（最多 120px），預覽不寫資料、取消零變更、提交與移動共用一次 Undo；其他受阻情境維持父母剛性平移。
 - `Relationship.getLineStyle()`、`DASH_PATTERNS` 與臨床符號顏色／幾何不得因走線功能修改。
-- 根目錄、`geno/`、`refactor/app/` 的所有 `js/` 檔案 MD5 必須一致。
-- 三份 `index.html` 都必須在 `kinship-engine.js` 後、`canvas.js` 前載入 `family-route-planner.js`；`geno/index.html` 保留本地字型與 vendor 路徑，並通過完全離線驗證。
+- `index.html` 必須在 `kinship-engine.js` 後、`canvas.js` 前載入 `family-route-planner.js`。
 - 效能基準的 200 人 warm render 必須低於 50ms，平移／縮放維持接近 60 FPS；首次建立全圖路徑另行記錄，不與互動重繪混算。
 - Golden 差異只可出現在家庭／親子走線 fixture，必須逐張人工檢視，禁止整批覆寫 baseline。
 
 ## H. 檢視、Fit 與發行守門
 - `node refactor/verify_view_controls.js`、`verify_view_rendering.js`、`verify_view_export.js`、`verify_fit_view.js`、`verify_status_ux.js` 全數通過。
 - `node refactor/verify_legend_consistency.js`：側欄與匯出共用 `Relationship.LEGEND_SECTIONS`；36 種關係順序、名稱與既有線型一致，`getLineStyle()`、虛線表及 CSS 圖例線型雜湊不變。
-- `node refactor/verify_mirror_sync.js`：三副本 JS/CSS raw MD5 一致；root 與 `refactor/app` index 一致；`geno` 保留本地依賴。
 - 1920、1366、1180、1024px 寬度下工具列維持單列且不碰撞；1180px 以下使用 52px 收合軌道與 296px 浮層，開合浮層不得改變 Canvas 寬度。
 - 1024px 是支援下限；更窄視窗保留 1024px 版面並允許水平捲動，不宣稱手機版支援。
 - View 顯示層不寫入 JSON/history；JSON 匯出完整，視覺匯出遵循目前檢視。
 - 大型 JSON 載入後自動符合全圖；自動儲存恢復保留原縮放與位移。
-- `geno` 用於敏感／離線臨床情境，並通過零外部請求驗證。
 
 ## I. 標準伴侶線走法守門
 
@@ -68,7 +64,6 @@ node refactor/verify_relationship_edges.js
 node refactor/verify_view_export.js
 node refactor/verify_view_rendering.js
 node refactor/visual_golden.js
-node refactor/verify_mirror_sync.js
 node refactor/smoke_visual.js
 ```
 

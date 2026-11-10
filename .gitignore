@@ -4,6 +4,8 @@
 *.md
 !README.md
 !CLAUDE.md
+!AGENTS.md
+!.claude/rules/*.md
 !manifest.json
 
 # 測試與紀錄
@@ -42,10 +44,11 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# 打包輸出
+# 打包輸出與封存（geno/、refactor/app/ 副本已於 2026-11-10 移除；萬一又出現也不進版控）
+*.zip
 geno/
 
-# 重構資料夾：保留規劃文件，排除副本程式碼
+# 重構資料夾：保留規劃文件
 !refactor/*.md
 refactor/app/
 

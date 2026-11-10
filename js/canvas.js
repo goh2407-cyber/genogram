@@ -636,6 +636,9 @@ class GenogramCanvas {
             });
         }
 
+        // 9.8 子女線穿過別人的提示圈（螢幕專用；固定走法不避讓，提醒使用者手動拖開）
+        if (familiesDrawn) this.drawFamilyCollisionHints();
+
         // 10. [Snap] 拖曳對齊輔助線（最上層；由 App 在拖曳時注入 dragGuides）
         if (this.dragGuides) {
             this.drawAlignmentGuides(this.dragGuides);

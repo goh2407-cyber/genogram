@@ -160,6 +160,9 @@ SEED_JS = """
         }
     }
 
+    // 直接改寫 app.persons 之後一定要同步 personMap（專案慣例）；否則第 2 輪起 personMap 指向上一輪的舊物件
+    if (typeof app._syncPersonMap === 'function') app._syncPersonMap();
+
     // Return actual counts for verification
     return { persons: app.persons.length, relationships: app.relationships.length };
 })(PLACEHOLDER_N)

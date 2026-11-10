@@ -12,8 +12,8 @@ const expected = ['jspdf.umd.min.js', ...['person', 'layout', 'relationship', 'd
     'domain/family-route-planner', 'history', 'canvas', ...canvasMixins, 'canvas-export', 'storage',
     'ui/modal-manager', 'ui/property-panel-templates', 'app', ...appMixins].map(name => `js/${name}.js`)];
 
-// 三份 index.html 都在最後載入 extras（2026-10-13 起 geno 也載入：放在內網 interhub 使用；Word 匯出需連得到 jsDelivr）。
-// 內部專用程式（js/ai/，由 internal/build.js 注入內部版）不得出現在公開版任何一份 index.html。
+// index.html 在最後載入 extras。2026-11-10 起只有根目錄一份程式（geno/、refactor/app/ 副本已移除）。
+// 內部專用程式（js/ai/，由 internal/build.js 注入內部版）不得出現在公開版 index.html。
 const ONLINE_ONLY_SCRIPTS = ['js/extras/genogram-extras.js'];
 
 function checkOrder(html, { allowAi = false } = {}) {
@@ -73,7 +73,7 @@ function checkMixin(source, name, className) {
 assert(!fs.existsSync(path.join(root, 'js', 'ai')) && !fs.existsSync(path.join(root, 'css', 'ai-assistant.css')),
     'internal-only files must live under internal/');
 console.log('PASS | public tree has no internal-only files');
-for (const file of ['index.html', 'geno/index.html', 'refactor/app/index.html']) {
+for (const file of ['index.html']) {
     checkOrder(fs.readFileSync(path.join(root, file), 'utf8'), { allowAi: true });
     console.log(`PASS | ${file} dependency order and synchronous loading`);
 }

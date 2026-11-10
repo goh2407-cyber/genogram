@@ -946,5 +946,42 @@ Object.assign(GenogramApp.prototype, {
             this.updateStatus(`佈局完成：${personCount} 人，${relCount} 條關係`, 'success');
         }
 
+    },
+
+    /**
+     * 空白畫布引導卡的「先看一張範例」：載入一個虛構的三代小家庭，讓第一次用的人有東西可以點、拖、改。
+     * 只在畫布是空的時候提供（按鈕在引導卡上），不會蓋掉使用者的資料。
+     */
+    loadSampleFamily() {
+        if (this.persons.length > 0) return;
+        const person = (id, name, gender, x, y, extra = {}) => ({ id, name, gender, x, y, ...extra });
+        const rel = (id, type, from, to, extra = {}) => ({ id, type, fromPersonId: from, toPersonId: to, ...extra });
+        this.loadData({
+            version: '1.1',
+            persons: [
+                person('s_gf1', '阿公', 'male', 300, 160, { isDeceased: true, age: 78 }),
+                person('s_gm1', '阿嬤', 'female', 420, 160, { age: 75 }),
+                person('s_gf2', '外公', 'male', 600, 160, { age: 72 }),
+                person('s_gm2', '外婆', 'female', 720, 160, { age: 70 }),
+                person('s_dad', '爸爸', 'male', 420, 280, { age: 45 }),
+                person('s_mom', '媽媽', 'female', 600, 280, { age: 43 }),
+                person('s_c1', '小華', 'female', 450, 400, { age: 15, isIdentifiedPatient: true }),
+                person('s_c2', '小明', 'male', 570, 400, { age: 12 })
+            ],
+            relationships: [
+                rel('s_m1', 'marriage', 's_gf1', 's_gm1'),
+                rel('s_m2', 'marriage', 's_gf2', 's_gm2'),
+                rel('s_m3', 'marriage', 's_dad', 's_mom'),
+                rel('s_p1', 'parent-child', 's_gf1', 's_dad'), rel('s_p2', 'parent-child', 's_gm1', 's_dad'),
+                rel('s_p3', 'parent-child', 's_gf2', 's_mom'), rel('s_p4', 'parent-child', 's_gm2', 's_mom'),
+                rel('s_p5', 'parent-child', 's_dad', 's_c1'), rel('s_p6', 'parent-child', 's_mom', 's_c1'),
+                rel('s_p7', 'parent-child', 's_dad', 's_c2'), rel('s_p8', 'parent-child', 's_mom', 's_c2'),
+                rel('s_e1', 'close', 's_c1', 's_c2')
+            ],
+            households: [{ id: 's_h1', ids: ['s_dad', 's_mom', 's_c1', 's_c2'], label: '', notes: '' }]
+        });
+        this.render();
+        this.updateStatus('這是虛構的範例家庭，可以點選、拖曳、修改；不要了按「清空畫布」', 'info',
+            { autoHideMs: 12000 });
     }
 });

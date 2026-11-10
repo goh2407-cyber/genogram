@@ -28,7 +28,7 @@ const env = { ...process.env };
 if (!env.NODE_PATH && fs.existsSync(defaultNodePath)) env.NODE_PATH = defaultNodePath;
 
 // 需要參數或不是「測試」的腳本排除：contract_harness（工具）、benchmarks（python）
-const EXCLUDE = new Set(['contract_harness.js', 'run_all.js', 'sync_mirrors.js']);
+const EXCLUDE = new Set(['contract_harness.js', 'run_all.js']);
 let scripts = fs.readdirSync(here)
     .filter(f => /^verify_.*\.js$/.test(f) && !EXCLUDE.has(f))
     .sort();

@@ -1,146 +1,60 @@
 # 家系圖專案慣例
 
-## 資料存取（Sprint 2 Phase A 後）
+細節規則依檔案分開放在 `.claude/rules/`（動到相關檔案才載入）：
+`canvas-drawing.md`（畫布、走線、排列）、`app-features.md`（互動、功能語意、存檔）。
 
-- **查找 Person 一律用 `this.personMap.get(id)`**。禁止新增
-  `this.persons.find(p => p.id === ...)` 呼叫 — Sprint 2 已把 51 處
-  改為 O(1) 查表。
+## 版本與部署（2026-11-10 起）
+
+- **程式只有根目錄一份**（`index.html`、`js/`、`css/`）。`geno/` 離線包與 `refactor/app/` 驗證副本已移除，不要再建立副本或同步腳本。
+- 對外有兩個版本，都從根目錄來：
+  - **公開版**：純 JavaScript、沒有 AI，GitHub repo `goh2407-cyber/genogram`（GitHub Pages）。
+  - **內網 AI 版**：`internal/`（gitignored，另有私人 repo）加上根目錄程式，由 `node internal/build.js` 打包。
+    改完公開程式要重跑 build，內部版才會是新的。公開 repo 不放 `internal/` 內容。
+
+## 資料存取
+
+- **查找 Person 一律用 `this.personMap.get(id)`**。禁止新增 `this.persons.find(p => p.id === ...)` 呼叫。
 - **對 `this.persons` 的任何增刪改**必須同步維護 `this.personMap`：
   - 單筆 `push` 後：`this.personMap.set(p.id, p)`
-  - 批次覆寫（`= [...]`、`filter` 重建、`loadData`、`saveState` 復原、
-    `clearAll`、快取 restore）：呼叫 `this._syncPersonMap()`
-- **Canvas 層**不自建 personMap：`App.render()` 注入
-  `this.canvas.personMap`，canvas 方法直接用 `this.personMap.get(id)`。
-  外部直接呼叫 canvas.render 時會 fallback 重建以避免 ReferenceError。
+  - 批次覆寫（`= [...]`、`filter` 重建、`loadData`、`saveState` 復原、`clearAll`、快取 restore）：呼叫 `this._syncPersonMap()`
 
 ## 親屬推論
 
-- 查詢父母、子女、祖先、後代一律透過 `KinshipEngine`：
-  App 內 `this.getKinshipEngine().getParentIds(id)` 等。
-- `KinshipEngine` 僅信任 `parent-child` 關係的 `from→to` 方向
-  （`from=parent, to=child`）。**不得**以 Y 座標推斷親屬方向。
-- **家庭線固定走法（2026-10-27，使用者看過 DEMO 後選定，仿網路版）**：`FamilyRoutePlanner._planNormal` 不再搜尋／避讓／
-  側邊車道／分開走。下垂點固定在婚姻線中點（`canvas._getFamilySource`；只有線上記號 ±16px 或符號壓在婚姻線上的
-  其他人才改到最近空位），橫桿高度只看父母那一列（父母 y + `canvas.generationGap`〔App.render 注入 GRID.CELL_HEIGHT〕
-  − 半徑 − 16，父母姓名較長再往下），子女被拖到更高才上移。擋到別人只回報 `safe=false`／`collisions`，不改線、
-  拖曳放開也**不再自動挪人**（已移除 `findSafeFamilyRouteAdjustment`）。回歸 `verify_family_route_planner.js`、
-  `verify_family_routing.js`、`verify_drag.js` 第 8 項。
-- 舊資料方向由 `App.normalizeLoadedFamilyRelationships()` 在載入時正規化：`parent-child` 一律信任 `from→to`，只有舊版 `family` 型別（無方向資料）才以 Y 座標推斷。存檔 schema 版號 1.1（`storage.migrate` 對更新的版號會提醒）。
+- 查詢父母、子女、祖先、後代一律透過 `KinshipEngine`：App 內 `this.getKinshipEngine().getParentIds(id)` 等。
+- `KinshipEngine` 僅信任 `parent-child` 關係的 `from→to` 方向（`from=parent, to=child`）。**不得**以 Y 座標推斷親屬方向。
 
-## 檔案結構（2026-09-13 拆檔後）
+## Script 載入順序
 
-- `js/canvas.js` 保留 class、constructor、static、render、人物與生活圈繪製、衍生幾何及 labelRoutingWarnings accessor。
-- Canvas mixin：`canvas-marriage.js` 婚姻幾何、`canvas-decorations.js` 線型裝飾、`canvas-family.js` 家庭線規劃與繪製、
-  `canvas-household.js` 同住框與輪廓 helper、`canvas-export.js` 匯出。皆以 `Object.assign(GenogramCanvas.prototype, {...})` 掛回原型。
-  marching squares 等 static 方法仍留在 `canvas.js`。
-- `js/app.js` 保留 class、constructor、static、初始化與主要 DOM 綁定、render / requestRender、updateStatus、
-  getState / saveState / loadData、getKinshipEngine，以及檔尾 DOMContentLoaded 啟動碼。
-- App mixin：`app-pointer.js` 指標／鍵盤互動、`app-hittest.js` 命中判定、`app-quick-add.js` 快速新增與輩分、
-  `app-property-panel.js` 屬性面板與標籤控制、`app-relationship-workflow.js` 關係流程、
-  `app-snap-placement.js` 吸附與放置、`app-io.js` 儲存／載入／匯出／自動儲存／排列預覽。
-  皆以 `Object.assign(GenogramApp.prototype, {...})` 掛回原型，在 `app.js` 之後同步載入，DOMContentLoaded 才建立 App。
-- `js/layout.js` 自動排列引擎：2026-09-03 起為自家分層佈局（Sugiyama-lite），**不依賴 dagre**（三份
-  index.html 已移除 dagre script）。語意：配偶同列相鄰、同一父母子女同列、手足長→幼、多婚依婚期、
-  獨立人物不動。回歸：`verify_auto_layout.js`。婚姻線橫桿距離 `Relationship.routeLift`（R-1）。
-- `js/ui/property-panel-templates.js` 屬性面板靜態模板（`PROPERTY_PANEL_TEMPLATES`），**必須在 app.js 之前載入**。
-- 三份 `index.html` 必須使用以下同步 script 順序；`verify_script_order.js` 檢查順序、語法與 mixin 無頂層副作用，
-  由 `run_all.js` 自動納入。geno 保留本地字型及 `js/vendor/jspdf.umd.min.js`，測試正規化 jsPDF 路徑差異。
+`index.html` 必須使用以下同步 script 順序（不用 bundler、不可 async/defer）；`verify_script_order.js` 檢查順序、語法與
+mixin 無頂層副作用。extras 排在最後。
 
 ```text
 jspdf → person → layout → relationship → domain/kinship-engine → domain/family-route-planner → history →
 canvas → canvas-marriage → canvas-decorations → canvas-family → canvas-household → canvas-export →
 storage → ui/modal-manager → ui/property-panel-templates →
 app → app-pointer → app-hittest → app-quick-add → app-property-panel → app-relationship-workflow →
-app-snap-placement → app-io
+app-snap-placement → app-io → extras/genogram-extras
 ```
 
-- **線上版延伸（DEMO）**：`js/extras/genogram-extras.js` + `css/extras.css`（清單分頁、重大事件 `app.events`、畫面去識別化
-  `viewOptions.deidentifyScreen`、隱藏暴力線 `showAbuseRelationships`、檢視模式、Word 匯出）；三份 index.html 都載入（2026-10-13 起 geno 也載入，部署在內網 interhub），排在所有 app mixin 之後。
-  線條可見性一律走 `Relationship.isVisibleInView(type, view)`。回歸 `verify_extras.js`。
-  Word 匯出程式庫在本機 `js/vendor/docx.iife.js`（docx 9.7.2 IIFE，MIT 授權寫在檔頭），按匯出時用 `<script>` 載入（file:// 不能用 import()），全程不連外。回歸 `verify_word_export.js`。
-- **文字位置拉桿（成員／關係線文字／同住圈名稱共用）**：`getLabelEditTarget()`（app-property-panel）統一三種目標；
-  關係文字位移存 `Relationship.labelOffset {x,y}`、同住圈名稱存 `household.labelOffset {x,y}`（一律換新物件，history 是淺拷貝）。
-  命中框於繪製時寫入 `canvas.textLabelBoxes`。回歸 `verify_text_label_move.js`。
-- **生活圈（LC-4）**：`drawLifeCircleSet()` 兩道繪製（先填色後描邊）；名稱錨點 `getLifeCircleLabelAnchor(lc, persons, textW)`；
-  平滑曲線幾何統一由 `_smoothControlPoints()` 供 `buildSmoothClosedPath` / `sampleSmoothClosedPath` 共用（改一處兩處同步）。回歸 `verify_lifecircle_style.js`。
-- `internal/` 為內部專用資料夾（gitignored，另有私人 repo），公開 repo 不放其內容。
-- **畫面／匯出去識別化**一律用 `canvas.displayOverride`（只換畫字內容），**不可**換人物複本或改 showNotes，否則繞線會跑掉。
+## 不可更動的視覺語意
 
-## 2026-10-13 新增
-
-- **重大事件**（extras 的「事件」分頁，原「記事」）：參考網站用法——「年份」「事件內容」兩欄＋「加入事件」，清單每筆「改／刪」（改＝帶回上方表單）；不再分類。事件卡標題「重大事件」、依年份排序、可拖曳。
-- **前任關係** `ex-partner`：伴侶類，長虛線＋單斜線（與 engaged-separated 同外觀，但只有前任出現在圖例與按鈕）。新增線型時 `verify_legend_consistency.js` 的凍結雜湊與數量要一起更新（先確認既有線型沒變）。
-- **寵物** `gender: 'pet'` ＋ `petType`（diamond／cat／dog／bird／fish）：外形在 `GenogramCanvas.PET_SHAPES`（SVG path，-50..50），螢幕／匯出／選取外框／醫療裁切與彈窗圖示共用；`petType` 只在寵物時寫入存檔；寵物沒有快速新增鈕、不能有伴侶類關係。
-- **家人不能結婚**：`validateMarriageRelationship` → `coupleKinshipProblem(idA, idB, kinship)`（直系、手足、六親等內旁系，`collateralKinshipDegree`）；擋下時 `rejectMarriage` 跳提示。AI 助手用「套用整批後」的 KinshipEngine 呼叫同一函式。
-- **關係線提起／放下**（`GenogramCanvas.REL_FX`、`relFx`、`_relWidthBoost`）：只套用伴侶類與情感類；選取時延後到淡化層之上加粗＋影子重畫，兩端成員補畫；匯出不套用。回歸 `verify_pets_relations.js`。
-
-## 文字清晰度（2026-10-13，使用者主管要求）
-
-- 螢幕畫布不透明（`getContext('2d', {alpha:false})`，底色由 `clear()` 填 `--bg-canvas`）、文字基準點對齊整數裝置像素（`_installTextSnap`，只裝在螢幕 ctx）、畫布像素尺寸取整數且 CSS 尺寸 = 像素 ÷ dpr。
-- 畫布文字：微軟正黑體 15px（Mac 退回 Noto Sans TC）；`GenogramCanvas.TEXT_STYLE`：姓名 600 `#1c1d21`、年齡 700 +2px、關係線文字 500 13px `#2b2d33`、備註維持 `#666`。介面字型不變。
-- 下排快速鈕（兒子／女兒／懷孕）會依「提起」後的姓名／備註框自動下移（`getQuickButtonLayout`）。
-- 試過把文字改成 DOM 疊層，未採用（已移除）。
-
-## 三副本同步
-
-根 `/`、`geno/`、`refactor/app/` 三份 js／css 副本必須 md5 一致；`geno/index.html` 由 `sync_mirrors.js` 從根目錄產生（只換本地字型與本地 jsPDF），不要手改。
-主 Opus 負責每個 Sprint 結束時同步（`geno/`、`refactor/app/` 為 gitignored
-本機副本）。
-
-## 設計文件
-
-- `refactor/REFACTOR_PLAN.md` — 原始重構計畫（風險 #1–#5）
-- `refactor/TEST_GATES.md` — 上線前驗收清單
-- `refactor/GENERATION_POLICY.md` — 輩分/座標語意規則
-- `refactor/PERSONMAP_INDEX_DESIGN.md` — Sprint 2 Phase A personMap 設計
-- `refactor/CANVAS_DESIGN_SPEC.md` — 未採用（使用者保留現有視覺）
-- `refactor/benchmarks/` — FPS 基準測試工具
+- **臨床符號語意**：方=男、圓=女、三角=懷孕、圓頂方底=同性別、案主灰底、死亡 X、各關係線型／黑紅綠藍配色標準。
+- **三方圖例一致**：側欄 CSS 圖例 = `drawExportLegend` 匯出圖例 = `Relationship.getLineStyle()` 實際線條（顏色與虛線間距）。
+  改線型時三處要一起動。新增線型時 `verify_legend_consistency.js` 的凍結雜湊與數量要一起更新（先確認既有線型沒變）。
+- **UI 設計系統**：以勵馨品牌桃紅 `#ed1261`（`--brand`）為主色；工具列圖示為內嵌 SVG（stroke=currentColor），不用 emoji。
 
 ## 測試
 
-- **一鍵回歸**：`node refactor/run_all.js`（自動帶 NODE_PATH；`--quick` 略過 golden）。
-- **三副本同步**：`node refactor/sync_mirrors.js`（js/css → geno、refactor/app；不覆蓋 geno/index.html）。
-- **邏輯層**（Node 直測 KinshipEngine）：Sprint 1 時 18/18 pass
-- **UI 層**（Playwright headless）：Sprint 1 時 14/14 pass
-- **視覺煙霧測試**：`NODE_PATH=<playwright所在node_modules> node refactor/smoke_visual.js`
-  （載入頁面、建小家庭、驗證零 console error、輸出 refactor/smoke_*.png）
-- **拖曳吸附回歸**：`node refactor/verify_drag.js`（16 項：等距/鏡像/對齊/
-  父母中點吸附、輔助線清理、跨輩拖曳、history 合併）與
-  `node refactor/verify_fixes.js`（12 項：標題對齊、blur 清理、1px 手震、
-  lineCap 不洩漏、off-row Y 假對齊、zoom 標尺）— 同樣需要 NODE_PATH
-- **同住框/生活圈回歸**：`node refactor/verify_hh_lc.js`（19 項：undo 語意、
-  剛體拖框、狗骨頭限單列、巢狀框命中、ghost 清洗、邊界帶命中、
-  z-order、屬性面板）
-- **效能基準**：`PYTHONIOENCODING=utf-8 python refactor/benchmarks/fps_bench.py`
-- **before/after 比對**：`python refactor/benchmarks/compare.py <old.json> <new.json>`
+- **一鍵回歸**：`node refactor/run_all.js`（自動帶 NODE_PATH；`--quick` 略過 golden；後面接關鍵字只跑名稱相符的腳本）。
+- 單支腳本：`NODE_PATH=$HOME/.cache/pw-smoke/node_modules node refactor/verify_xxx.js`。
+- **視覺煙霧測試**：`refactor/smoke_visual.js`（載入頁面、建小家庭、驗證零 console error、輸出 refactor/smoke_*.png）。
+- **效能基準**：`PYTHONIOENCODING=utf-8 python refactor/benchmarks/fps_bench.py`；
+  before/after 比對 `python refactor/benchmarks/compare.py <old.json> <new.json>`。
+- Golden 基準圖有差異時逐張人工檢視，禁止整批覆寫 baseline。
 
-## 視覺基準（2026-06-10 更新）
+## 設計文件
 
-原 2026-04-22 視覺凍結（commit `98e4891` 基準）已由使用者於
-2026-06-10 解除，並完成全面視覺更新：
-
-- **UI 設計系統**：以勵馨品牌桃紅 `#ed1261`（`--brand`）為主色；
-  工具列圖示為內嵌 SVG（stroke=currentColor），不用 emoji。
-- **Canvas**：人物淡性別底色見 `GenogramCanvas.GENDER_FILLS`；
-  快速新增按鈕與關係編輯鉛筆為向量繪製（不用 emoji fillText）。
-- **不可更動**：臨床符號語意（方=男、圓=女、三角=懷孕、圓頂方底=
-  同性別、案主灰底、死亡 X、各關係線型/黑紅綠藍配色標準）。
-- 背景網格僅由 `canvas.js drawGrid()` 繪製，CSS **不得**再疊網格。
-- **拖曳吸附（2026-06-10 新增）**：`App.computeDragSnap()` 即時吸附
-  （X：他人對齊/父母中點/同列等距〔成對延伸·正中、單鄰居 CELL_WIDTH、
-  手足以父母中點鏡像〕；Y：輩分列與列上他人）；輔助線桃紅 `#ed1261`
-  由 `canvas.drawAlignmentGuides()` 繪製，僅出現在 render()，不進匯出。
-  放開時有 X 輔助線則保留精準 X；位移 <3px 視為點擊不重排。
-- **三方圖例一致**：側欄 CSS 圖例 = `drawExportLegend` 匯出圖例 =
-  `Relationship.getLineStyle()` 實際線條（顏色與虛線間距）。改線型時
-  三處要一起動。
-- **同住框/生活圈（2026-06-11 體檢後）**：
-  - 生活圈在 `canvas.render()` 步驟 0.5「最底層」繪製（App.render 注入
-    `lifeCirclesToDraw`），螢幕與匯出 z-order 一致；形狀用
-    `buildSmoothClosedPath()`（Path2D，控制點夾制 45% 邊長防過衝），
-    螢幕/匯出/點擊判定三處共用。
-  - 生活圈點擊 = 「平滑邊界帶或頂點」（`isPointOnLifeCircleEdge`），
-    圈內空白讓給同住框與畫布平移；pointerdown 順序：圈邊界 > 同住框。
-  - 同住框狗骨頭膠囊僅限「單列成員」（Y 跨距 < 60），多列走凹包；
-    整框拖曳放開 = 剛體平移（只吸附錨點）。
-  - `getState()` 對 households/lifeCircles 必須深拷貝（拖曳 history 依賴）。
+- `refactor/TEST_GATES.md` — 上線前驗收清單
+- `refactor/GENERATION_POLICY.md` — 輩分/座標語意規則
+- `refactor/REFACTOR_PLAN.md`、`refactor/PERSONMAP_INDEX_DESIGN.md` — 早期重構與 personMap 設計紀錄
+- `refactor/CANVAS_DESIGN_SPEC.md` — 未採用（使用者保留現有視覺）
