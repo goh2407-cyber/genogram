@@ -2393,15 +2393,10 @@ class GenogramCanvas {
                     route.attachmentSegment.end.x);
                 const y = route.attachmentSegment.start.y;
                 // 固定走法（2026-10-27）：下垂點固定在婚姻線中點，不隨子女位置滑動。
-                // 中點被擋時才改用婚姻線上最近的空位：[L3] 線上記號（離婚斜線、喪偶 ×…）左右各 16px，
-                // 以及符號壓在婚姻線上的其他人（符號＋其姓名文字）。只看父母這一列，拖子女時不會跳；
-                // 距離相同時偏向子女那一側。
+                // 線上記號（離婚斜線、喪偶 ×…）也留在中點，子女線直接穿過（2026-11-13 使用者看過 A/B/C 對照選 B，
+                // 原本避開記號 ±16px 會讓正下方的子女線轉彎）。只有符號壓在婚姻線上的其他人（符號＋其姓名文字）
+                // 才改用婚姻線上最近的空位；只看父母這一列，拖子女時不會跳；距離相同時偏向子女那一側。
                 const blocked = [];
-                const style = typeof marriageRel.getLineStyle === 'function' ? marriageRel.getLineStyle() : null;
-                if (style && style.decoration && route.decoration && Number.isFinite(route.decoration.x)
-                    && Math.abs(route.decoration.y - y) < 1) {
-                    blocked.push({ left: route.decoration.x - 16, right: route.decoration.x + 16 });
-                }
                 const parentIds = new Set(parentObjs.map(parent => parent.id));
                 const onLineIds = new Set((obstacles || [])
                     .filter(rect => rect.kind === 'symbol' && !parentIds.has(rect.ownerId)

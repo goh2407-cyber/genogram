@@ -24,10 +24,14 @@ paths:
 ## 家庭線固定走法（2026-10-27，使用者看過 DEMO 後選定，仿網路版）
 
 `FamilyRoutePlanner._planNormal` 不再搜尋／避讓／側邊車道／分開走。下垂點固定在婚姻線中點（`canvas._getFamilySource`；
-只有線上記號 ±16px 或符號壓在婚姻線上的其他人才改到最近空位），橫桿高度只看父母那一列（父母 y + `canvas.generationGap`
+只有符號壓在婚姻線上的其他人才改到最近空位），橫桿高度只看父母那一列（父母 y + `canvas.generationGap`
 〔App.render 注入 GRID.CELL_HEIGHT〕− 半徑 − 16，父母姓名較長再往下），子女被拖到更高才上移。擋到別人只回報
 `safe=false`／`collisions`，不改線、拖曳放開也**不再自動挪人**（已移除 `findSafeFamilyRouteAdjustment`）。
 回歸 `verify_family_route_planner.js`、`verify_family_routing.js`、`verify_drag.js` 第 8 項。
+
+**記號不讓（2026-11-13，使用者回報「子女線變成沒有直線」，看過 A 記號右挪／B 線穿過記號／C 子女線讓開 三種對照後選 B）**：
+線上記號（離婚斜線、喪偶 ×…）留在婚姻線中點，下垂點**不**避開記號，子女線直接穿過；不要再改回避讓或把記號挪開。
+回歸 `verify_family_routing.js`（divorce slash stays at the midpoint）。
 
 **穿人提示圈（2026-11-10）**：子女線穿過別人的「符號」時，`drawFamilyCollisionHints()` 在那個人外圍畫桃紅虛線圈
 （只在 `render()`，不進匯出；`canvas.showRouteHints = false` 可關）。只看符號，文字壓線不提示——編輯器不顯示文字警告是既有決定。

@@ -405,6 +405,30 @@ function isCleanOrthogonalPath(path) {
         check('only a person standing on the marriage line moves the drop point',
             fixed.blockerBelow.trunkX === 500 && fixed.blockerOnLine.trunkX !== 500,
             JSON.stringify({ below: fixed.blockerBelow, onLine: fixed.blockerOnLine }));
+
+        // 2026-11-13（使用者選 B）：離婚斜線留在中點，下垂點不讓，正下方單一子女的子女線是一條直線
+        const decorated = await page.evaluate(() => {
+            const app = window.app;
+            const dad = new Person({ id: 'dv-dad', x: 400, y: 240, gender: 'male' });
+            const mom = new Person({ id: 'dv-mom', x: 600, y: 240, gender: 'female' });
+            const kid = new Person({ id: 'dv-kid', x: 500, y: 360, gender: 'female' });
+            const marriage = new Relationship({ id: 'dv-mar', type: 'divorced', fromPersonId: dad.id, toPersonId: mom.id });
+            const edges = [dad, mom].map(p => new Relationship({
+                id: `dv-${p.id}`, type: 'parent-child', fromPersonId: p.id, toPersonId: kid.id }));
+            app.persons = [dad, mom, kid];
+            app.relationships = [marriage, ...edges];
+            app._syncPersonMap();
+            app.render();
+            const plan = app.canvas._familyRoutePlans.find(item => item.family.childIds.includes(kid.id));
+            return {
+                decoration: { ...app.canvas.marriageRouteCache.get('dv-mar').decoration },
+                path: plan.relationshipPaths[`${dad.id}->${kid.id}`]
+            };
+        });
+        check('a divorce slash stays at the midpoint and a single child line runs straight through it',
+            decorated.decoration.x === 500
+                && decorated.path.length === 2 && decorated.path.every(point => point.x === 500),
+            JSON.stringify(decorated));
     }
 
     check('routing integration has no console or page errors', errors.length === 0, errors.join('; '));
