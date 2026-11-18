@@ -55,6 +55,11 @@ paths:
 - 畫布文字：微軟正黑體 15px（Mac 退回 Noto Sans TC）；`GenogramCanvas.TEXT_STYLE`：姓名 600 `#1c1d21`、年齡 700 +2px、
   關係線文字 500 13px `#2b2d33`、備註維持 `#666`。介面字型不變。
 - 試過把文字改成 DOM 疊層，未採用（已移除）。
+- **文字大小（2026-11-18，使用者反映姓名與文字太小）**：檢視分頁「文字大小」標準／大／更大／特大（1／1.2／1.4／1.6）。
+  `canvas.setTextScale(f)` 改 `fontSize`（15×f）、`textStyle.relSize`（13×f）、`labelFontSize`（同住圈／生活圈名稱 13×f）；
+  線型、符號大小、座標不動。同住圈外框成員泡泡往下多包 `fontSize − 15`（標準時外形不變）。
+  App 端 `textScale` 跟著存檔（標準不寫）、進 history；新畫布沿用 localStorage `genogram_text_scale`。
+  重大事件卡與圖例字級未跟著放大。回歸 `verify_text_scale.js`。
 
 ## 同住框／生活圈
 

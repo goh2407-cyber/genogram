@@ -175,6 +175,7 @@ Object.assign(GenogramApp.prototype, {
         this.events = [];
         this.eventsLayout = null;
         this.applyGridSpacing(1);
+        this.applyTextScale(this.readTextScalePref()); // 新個案沿用上次選的文字大小
         this.documentMeta = GenogramApp.normalizeDocumentMeta(null);
         this.selectedPersonId = null;
         this.selectedPersonIds = [];
@@ -242,6 +243,7 @@ Object.assign(GenogramApp.prototype, {
         if ((this.events || []).length) extra.events = this.events.map(ev => ({ ...ev })); // 重大事件（選填欄位）
         if (this.eventsLayout) extra.eventsLayout = { ...this.eventsLayout }; // 事件卡位移（選填）
         if ((this.layoutSpacing || 1) !== 1) extra.layoutSpacing = this.layoutSpacing; // 排列間距倍率（選填；標準不寫）
+        if ((this.textScale || 1) !== 1) extra.textScale = this.textScale; // 文字大小倍率（選填；標準不寫）
         return extra;
     },
 
@@ -619,6 +621,7 @@ Object.assign(GenogramApp.prototype, {
         this.events = [];
         this.eventsLayout = null;
         this.applyGridSpacing(1);
+        this.applyTextScale(this.readTextScalePref()); // 清空 = 新個案，沿用上次選的文字大小（Ctrl+Z 可回到原本）
         this.documentMeta = GenogramApp.normalizeDocumentMeta(null); // [2-2] 清空 = 新個案
         this.selectedPersonId = null;
         this.selectedRelationshipId = null;
@@ -746,6 +749,11 @@ Object.assign(GenogramApp.prototype, {
             this.households = saved.households || [];
             this.lifeCircles = saved.lifeCircles || [];
             this.documentMeta = GenogramApp.normalizeDocumentMeta(saved.meta); // [2-2]
+            // 重大事件、事件卡位移、排列間距、文字大小也要從暫存還原（原本漏掉：重新整理後事件會不見）
+            this.events = GenogramApp.normalizeEvents(saved.events);
+            this.eventsLayout = GenogramApp.normalizeEventsLayout(saved.eventsLayout);
+            this.applyGridSpacing(saved.layoutSpacing);
+            this.applyTextScale(saved.textScale);
             this.normalizeLoadedFamilyRelationships({ inferDirectionFromY: GenogramApp.isLegacySchema(saved.sourceVersion) }); // [R4b]
             this.isDirty = true; // [1-2] 從瀏覽器暫存恢復：內容尚未在任何檔案裡
 

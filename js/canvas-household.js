@@ -174,7 +174,8 @@ Object.assign(GenogramCanvas.prototype, {
                 }
                 this.ctx.save();
                 this.ctx.setLineDash(DASH_PATTERNS.solid);
-                this.ctx.font = `600 13px ${this.fontFamily}`;
+                const labelPx = this.labelFontSize || 13;
+                this.ctx.font = `600 ${labelPx}px ${this.fontFamily}`;
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'bottom';
                 this.ctx.lineWidth = 4;
@@ -189,7 +190,7 @@ Object.assign(GenogramCanvas.prototype, {
                 this.ctx.fillText(household.label, tx, ty);
                 if (this.textLabelBoxes) {
                     const w = this.ctx.measureText(household.label).width;
-                    const box = (cx, by) => ({ left: cx - w / 2 - 3, right: cx + w / 2 + 3, top: by - 17, bottom: by + 2 });
+                    const box = (cx, by) => ({ left: cx - w / 2 - 3, right: cx + w / 2 + 3, top: by - labelPx - 4, bottom: by + 2 });
                     this.textLabelBoxes.set('house:' + household.id, {
                         kind: 'house', id: household.id, bounds: box(tx, ty), baseBounds: box(ax, ay - 6)
                     });
@@ -315,7 +316,9 @@ Object.assign(GenogramCanvas.prototype, {
         // [HH-5c] 快取：成員座標、附近障礙物、走廊與連線一樣 → 直接沿用上次結果
         const nearObstacles = obstacles.filter(o =>
             o.x > minX - exclusion && o.x < maxX + exclusion && o.y > minY - exclusion && o.y < maxY + exclusion);
-        const sig = JSON.stringify(['hh6',
+        // 文字放大時，成員泡泡往下多包「多出來的字高」，姓名才不會壓在框線上（標準字級 = 0，外形與原本完全相同）
+        const textExtraDown = Math.max(0, (this.fontSize || 15) - (GenogramCanvas.BASE_FONT_SIZE || 15));
+        const sig = JSON.stringify(['hh6', textExtraDown,
             members.map(m => [m.id, Math.round(m.x * 10), Math.round(m.y * 10)]),
             nearObstacles.map(o => [o.id, Math.round(o.x * 10), Math.round(o.y * 10)]),
             corridorSegments.map(([p, q]) => [Math.round(p.x), Math.round(p.y), Math.round(q.x), Math.round(q.y)]),
@@ -340,7 +343,8 @@ Object.assign(GenogramCanvas.prototype, {
             return Math.max(corridorHalf, half);
         };
         const shapes = {
-            disks: members.map(m => ({ x: m.x, y: m.y, r: fullHalf })),
+            disks: members.map(m => ({ x: m.x, y: m.y, r: fullHalf }))
+                .concat(textExtraDown ? members.map(m => ({ x: m.x, y: m.y + textExtraDown, r: fullHalf })) : []),
             bands: corridorSegments.map(([p, q]) => ({ p, q, half: bandHalf(p, q), isLine: false }))
                 .concat(lineSegments.map(([p, q]) => ({ p, q, half: Math.min(bandHalf(p, q), corridorHalf * 1.6), isLine: true }))),
             holes: nearObstacles.map(o => ({ x: o.x, y: o.y, r: exclusion })),

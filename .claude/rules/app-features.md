@@ -32,6 +32,8 @@ paths:
 - 舊資料方向由 `App.normalizeLoadedFamilyRelationships()` 在載入時正規化：`parent-child` 一律信任 `from→to`，
   只有舊版 `family` 型別（無方向資料）才以 Y 座標推斷。存檔 schema 版號 1.1（`storage.migrate` 對更新的版號會提醒）。
 - `getState()` 對 households/lifeCircles 必須深拷貝（拖曳 history 依賴）。
+- 文件層級的選填欄位（`events`、`eventsLayout`、`layoutSpacing`、`textScale`）新增時要一起接：`getDocumentExtra`、
+  `storage.migrate` 與三條開檔路徑、`loadData`、`loadAutoSave`（重新整理後從暫存還原）、`getState`＋undo/redo。
 
 ## 互動
 

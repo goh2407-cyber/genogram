@@ -91,6 +91,9 @@ class GenogramCanvas {
         this.fontSize = 15; // [CR-5] 14 → 15（2026-10-13 使用者與主管比較後選定）
         // [CR-4] 文字層次（2026-10-13 使用者主管：參考網站字較清楚 → 姓名半粗＋近黑、年齡加大；線條不動）
         this.textStyle = { ...GenogramCanvas.TEXT_STYLE };
+        // 文字大小倍率（App 依存檔欄位 textScale 注入）：姓名、備註、年齡、關係線文字、同住圈／生活圈名稱一起放大
+        this.textScale = 1;
+        this.labelFontSize = GenogramCanvas.BASE_LABEL_FONT_SIZE;
         // [CR-5] 畫布文字用微軟正黑體：Windows 螢幕小字有 hinting，比網頁字型 Noto Sans TC 銳利；
         // Mac／沒有正黑體時退回 Noto Sans TC（geno 離線包有本地字型）。介面（面板、工具列）字型不變。
         this.fontFamily = '"Microsoft JhengHei", "Noto Sans TC", sans-serif';
@@ -1134,13 +1137,31 @@ class GenogramCanvas {
     static TEXT_STYLE = Object.freeze({ nameWeight: 600, nameColor: '#1c1d21', noteColor: '#666', ageWeight: 700, ageSizeDelta: 2, ageColor: '#1c1d21',
         relWeight: 500, relSize: 13, relColor: '#2b2d33' }); // rel：關係線上的文字（日期、說明），比姓名輕一階
 
+    static BASE_FONT_SIZE = 15;
+    static BASE_LABEL_FONT_SIZE = 13; // 同住圈／生活圈名稱
+
+    /**
+     * 設定文字大小倍率（1 = 標準）。只換字級，不動線型與座標；幾何快取的簽章含 fontSize，會自動失效。
+     */
+    setTextScale(factor) {
+        const f = Number.isFinite(factor) && factor > 0 ? factor : 1;
+        this.textScale = f;
+        this.fontSize = Math.round(GenogramCanvas.BASE_FONT_SIZE * f);
+        this.textStyle = { ...GenogramCanvas.TEXT_STYLE, relSize: Math.round(GenogramCanvas.TEXT_STYLE.relSize * f) };
+        this.labelFontSize = Math.round(GenogramCanvas.BASE_LABEL_FONT_SIZE * f);
+        return f;
+    }
+
     /** [3-3] 低縮放時姓名放大倍率（螢幕 LOD）：<75% 才放大，最多 1.6 倍；匯出期間 lodScale=1 → 1 */
     static LOD = Object.freeze({ nameScaleBelow: 0.75, nameMaxFactor: 1.6, hideNotesBelow: 0.5 });
 
     lodNameFactor() {
         const s = Number.isFinite(this.lodScale) && this.lodScale > 0 ? this.lodScale : 1;
         const L = GenogramCanvas.LOD;
-        return s < L.nameScaleBelow ? Math.min(L.nameMaxFactor, L.nameScaleBelow / s) : 1;
+        const lod = s < L.nameScaleBelow ? Math.min(L.nameMaxFactor, L.nameScaleBelow / s) : 1;
+        // 文字大小已放大時扣掉這部分，避免兩種放大疊加（畫面上至少與「標準＋LOD」一樣大）
+        const ts = Number.isFinite(this.textScale) && this.textScale > 0 ? this.textScale : 1;
+        return Math.max(1, lod / ts);
     }
 
     drawPersonText(person, options = {}) {
@@ -1554,7 +1575,7 @@ class GenogramCanvas {
 
         // 處理換行
         const lines = relationship.date.split('\n');
-        const lineHeight = 16;
+        const lineHeight = this.textStyle.relSize + 3; // 13px → 16（標準）
 
         let maxWidth = 0;
         lines.forEach(line => {
@@ -3651,13 +3672,14 @@ class GenogramCanvas {
         if (lc.label) {
             this.ctx.save();
             this.ctx.setLineDash(DASH_PATTERNS.solid);
-            this.ctx.font = `600 13px ${this.fontFamily}`;
+            const labelPx = this.labelFontSize || GenogramCanvas.BASE_LABEL_FONT_SIZE;
+            this.ctx.font = `600 ${labelPx}px ${this.fontFamily}`;
             const textW = this.ctx.measureText(lc.label).width;
             const anchor = this.getLifeCircleLabelAnchor(lc, persons || this.lastPersons || [], textW);
             const lo = lc.labelOffset;
             const tx = anchor.x + (lo ? lo.x : 0);
             const ty = anchor.y + (lo ? lo.y : 0);
-            const padX = 7, h = 20;
+            const padX = 7, h = labelPx + 7;
             const top = anchor.baseline === 'bottom' ? ty - h : anchor.baseline === 'top' ? ty : ty - h / 2;
             const left = tx - textW / 2 - padX;
             const w = textW + padX * 2;

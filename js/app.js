@@ -40,6 +40,16 @@ class GenogramApp {
         return GenogramApp.LAYOUT_SPACINGS.includes(n) ? n : 1;
     }
 
+    /** 文字大小倍率（標準 15px／大 18／更大 21／特大 24）；跟著存檔，新畫布沿用上次選的 */
+    static TEXT_SCALES = [1, 1.2, 1.4, 1.6];
+    static TEXT_SCALE_LABELS = Object.freeze({ 1: '標準', 1.2: '大', 1.4: '更大', 1.6: '特大' });
+    static TEXT_SCALE_PREF_KEY = 'genogram_text_scale';
+
+    static normalizeTextScale(v) {
+        const n = Number(v);
+        return GenogramApp.TEXT_SCALES.includes(n) ? n : 1;
+    }
+
     // 生活圈色票（半透明填色；屬性面板色票與 getNextLifeCircleColor 共用）
     static LIFE_CIRCLE_COLORS = [
         'rgba(74, 144, 226, 0.15)',   // 藍色
@@ -122,6 +132,7 @@ class GenogramApp {
         this.events = []; // 家庭記事 [{id, year, text, kind?}]
         this.eventsLayout = null; // 重大事件卡的拖曳位移 {x, y}（相對預設位置）；null = 預設
         this.layoutSpacing = 1; // 排列間距倍率（1 標準／1.25 寬鬆／1.5 更寬）；跟著存檔
+        this.textScale = 1; // 文字大小倍率（GenogramApp.TEXT_SCALES）；跟著存檔
 
         // 範圍圈選狀態
         this.isBoxSelecting = false;
@@ -206,6 +217,7 @@ class GenogramApp {
         // 傳入 onResize callback，讓 ResizeObserver 觸發後會重繪
         this.canvas = new GenogramCanvas('genogramCanvas', 'canvasContainer', () => this.render());
         this.canvas.fxRedraw = () => this.requestRender(); // [FX] 提起／落子動畫逐幀重繪
+        this.applyTextScale(this.readTextScalePref()); // 新畫布沿用上次選的文字大小（有暫存或載入檔案時會被覆寫）
         this.setupLabelPositionPopover();
         this.renderRelationshipLegend();
         // 圖例移入 hidden tab 後，瀏覽器不再自動載入其 Noto unicode-range subsets。
@@ -611,6 +623,7 @@ class GenogramApp {
 
         // 排列間距（檢視分頁）
         document.getElementById('layoutSpacingSelect')?.addEventListener('change', e => this.setLayoutSpacing(parseFloat(e.target.value)));
+        document.getElementById('textScaleSelect')?.addEventListener('change', e => this.setTextScale(parseFloat(e.target.value)));
         document.querySelectorAll('[data-view-option]').forEach(control => {
             control.addEventListener('change', event => {
                 this.setViewOption(event.currentTarget.dataset.viewOption, event.currentTarget.checked);
@@ -2100,6 +2113,7 @@ class GenogramApp {
             this.events = prevState.events || [];
             this.eventsLayout = prevState.eventsLayout || null;
             this.applyGridSpacing(prevState.layoutSpacing || 1);
+            this.applyTextScale(prevState.textScale || 1);
             this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
             this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
                 ? selectedRelationshipId : null;
@@ -2144,6 +2158,7 @@ class GenogramApp {
             this.events = nextState.events || [];
             this.eventsLayout = nextState.eventsLayout || null;
             this.applyGridSpacing(nextState.layoutSpacing || 1);
+            this.applyTextScale(nextState.textScale || 1);
             this.selectedPersonId = this.personMap.has(selectedPersonId) ? selectedPersonId : null;
             this.selectedRelationshipId = this.relationships.some(r => r.id === selectedRelationshipId)
                 ? selectedRelationshipId : null;
@@ -2176,8 +2191,41 @@ class GenogramApp {
             })),
             events: (this.events || []).map(ev => ({ ...ev })),
             eventsLayout: this.eventsLayout ? { ...this.eventsLayout } : null,
-            layoutSpacing: this.layoutSpacing || 1
+            layoutSpacing: this.layoutSpacing || 1,
+            textScale: this.textScale || 1
         };
+    }
+
+    /** 只套用文字大小（載入、undo/redo、清空時用）；同步下拉與畫布字級 */
+    applyTextScale(factor) {
+        const f = GenogramApp.normalizeTextScale(factor);
+        this.textScale = f;
+        if (this.canvas && typeof this.canvas.setTextScale === 'function') this.canvas.setTextScale(f);
+        const sel = document.getElementById('textScaleSelect');
+        if (sel) sel.value = String(f);
+        this._dataVersion++;
+        return f;
+    }
+
+    readTextScalePref() {
+        try { return GenogramApp.normalizeTextScale(localStorage.getItem(GenogramApp.TEXT_SCALE_PREF_KEY)); } catch (_) { return 1; }
+    }
+
+    /** 切換文字大小：一步 undo、標記未儲存；同時記成這台電腦的偏好，之後的新畫布沿用 */
+    setTextScale(factor) {
+        const f = GenogramApp.normalizeTextScale(factor);
+        try { localStorage.setItem(GenogramApp.TEXT_SCALE_PREF_KEY, String(f)); } catch (_) { /* 私密模式等 */ }
+        if (f === (this.textScale || 1)) return false;
+        if (this.isPreviewingLayout) this.cancelPreviewedLayout();
+        this.commitPropertyEditSession();
+        this.saveState();
+        this.applyTextScale(f);
+        this.markDirty();
+        this.autoSave();
+        this.render();
+        const label = GenogramApp.TEXT_SCALE_LABELS[f] || String(f);
+        this.updateStatus(`文字大小：${label}（匯出圖片／PDF 也一樣；Ctrl+Z 可復原）`, 'success');
+        return true;
     }
 
     /**
@@ -2302,6 +2350,7 @@ class GenogramApp {
         this.events = GenogramApp.normalizeEvents(data.events);
         this.eventsLayout = GenogramApp.normalizeEventsLayout(data.eventsLayout);
         this.applyGridSpacing(data.layoutSpacing); // 檔案內的座標已是該倍率；缺欄位 = 標準
+        this.applyTextScale(data.textScale); // 缺欄位（舊檔或標準）= 標準
         // [R4b] 1.1 起建立關係時就保證 parent→child 方向；更早的檔案（含未標版號）才允許以 Y 座標推斷
         const norm = this.normalizeLoadedFamilyRelationships({
             inferDirectionFromY: GenogramApp.isLegacySchema(data.sourceVersion || data.version)
